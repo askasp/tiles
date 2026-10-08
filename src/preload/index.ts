@@ -9,7 +9,7 @@ const api: ChatOSAPI = {
   probeModel: invoke('probeModel'), skipModel: invoke('skipModel'),
   opencodeProbe: invoke('opencodeProbe'), opencodeStart: invoke('opencodeStart'), opencodeDisconnect: invoke('opencodeDisconnect'),
   terminalOpen: invoke('terminalOpen'), terminalInput: invoke('terminalInput'), terminalResize: invoke('terminalResize'), terminalClose: invoke('terminalClose'), terminalFocus: invoke('terminalFocus'),
-  readImage: invoke('readImage'), findFolders: invoke('findFolders'),
+  readImage: invoke('readImage'), findPaths: invoke('findPaths'),
   loadDesktop: legacy => { const result = ipcRenderer.sendSync('chatos:storage-load', legacy); if (result.error) throw new Error(result.error); return result.value },
   flushDesktop: raw => { const result = ipcRenderer.sendSync('chatos:storage-flush', raw); if (result.error) throw new Error(result.error) },
   saveDesktop: invoke('saveDesktop'), backupStorage: invoke('backupStorage'),

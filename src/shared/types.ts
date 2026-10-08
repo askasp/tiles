@@ -248,7 +248,7 @@ export interface ChatOSAPI {
   terminalResize(id: string, cols: number, rows: number): Promise<void>
   terminalClose(id: string): Promise<void>
   terminalFocus(focused: boolean): Promise<void>
-  findFolders(query: string): Promise<LocalPath[]>
+  findPaths(query: string): Promise<LocalPath[]>
   readImage(path: string): Promise<{ path: string; size: number; dataURL: string }>
   loadDesktop(legacy?: string | null): string | null
   flushDesktop(raw: string): void

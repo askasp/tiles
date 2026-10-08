@@ -22,6 +22,7 @@ let storage: Storage | undefined
 let connectors: Connectors | undefined
 let model: ModelBroker | undefined
 let terminals: Terminals | undefined
+const files = new Files()
 // While a terminal has focus, plain Ctrl chords (Ctrl+W, Ctrl+L, Ctrl+K…) belong to the shell.
 let terminalFocused = false
 
@@ -50,7 +51,6 @@ function registerIPC() {
   const server = () => { if (!bridge) throw new Error('Not ready'); return bridge }
   const browser = () => { if (!browsers) throw new Error('Not ready'); return browsers }
   const integrations = () => { if (!services) throw new Error('Not ready'); return services }
-  const files = new Files()
   const database = () => { if (!storage) throw new Error('Storage is unavailable'); return storage }
   const recipes = () => { if (!connectors) throw new Error('Connectors are unavailable'); return connectors }
   const ai = () => { if (!model) throw new Error('AI model is unavailable'); return model }
@@ -73,7 +73,7 @@ function registerIPC() {
   handle('terminalClose', id => shells().close(id))
   handle('terminalFocus', focused => { terminalFocused = focused === true })
   handle('readImage', path => files.image(path))
-  handle('findFolders', query => files.findFolders(query, homedir()))
+  handle('findPaths', query => files.findPaths(query, homedir()))
   for (const channel of ['storage-load', 'storage-flush']) {
     ipcMain.removeAllListeners(`chatos:${channel}`)
     ipcMain.on(`chatos:${channel}`, (event, input) => {
@@ -186,6 +186,7 @@ async function createWindow() {
   model ||= new ModelBroker(storage, secrets, confirm)
   connectors ||= new Connectors(storage, secrets, confirm, prompt => model!.generate(prompt), undefined, undefined, url => shell.openExternal(url))
   registerIPC()
+  files.warm(homedir())
   window.on('ready-to-show', () => window?.show())
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', event => event.preventDefault())

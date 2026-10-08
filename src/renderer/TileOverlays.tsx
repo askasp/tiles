@@ -1,6 +1,6 @@
 import { FileText, FolderOpen, Globe, LayoutGrid, Mail, MessageSquare, SquareTerminal, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ConnectionInfo, ServiceID, ServiceInfo, ServiceSearch, SessionInfo } from '../shared/types'
+import type { ConnectionInfo, LocalPath, ServiceID, ServiceInfo, ServiceSearch, SessionInfo } from '../shared/types'
 import type { OpenMode, Tile, TileDesktop, TileInput } from '../shared/tiles'
 import { browserTile, fileTile, focusedTile, frontConversationTile, frontInboxTile, projectsTile, projectTile, recipeTile, sessionTile, shelfTiles, tileTitle } from '../shared/tiles'
 import type { ConnectorDefinition, ConnectorInfo, ConnectorSearch } from '../shared/connectors'
@@ -77,7 +77,7 @@ export function TileLauncher(props: LauncherProps) {
   const [providerBusy, setProviderBusy] = useState(false)
   const [connectorResult, setConnectorResult] = useState<ConnectorSearch>({ resources: [], errors: [] })
   const [connectorBusy, setConnectorBusy] = useState(false)
-  const [folders, setFolders] = useState<ProjectEntry[]>([])
+  const [found, setFound] = useState<LocalPath[]>([])
   const searchVersion = useRef(0)
   const list = useRef<HTMLDivElement>(null)
   const input = useRef<HTMLInputElement>(null)
@@ -121,10 +121,10 @@ export function TileLauncher(props: LauncherProps) {
     return () => { clearTimeout(timer); searchVersion.current++ }
   }, [clean, source, tidyQuery, intent.create, connectors, searchable])
   useEffect(() => {
-    setFolders([])
+    setFound([])
     if (!searchable || clean.length < 2 || urlLike(clean) || clean.includes('/') || tidyQuery || intent.create || (source && source !== 'files' && source !== 'terminal')) return
     let valid = true
-    const timer = setTimeout(() => { void api.findFolders(clean).then(found => { if (valid) setFolders(found.map(f => ({ id: `folder:${f.path}`, name: f.name, directory: f.path }))) }).catch(() => {}) }, 150)
+    const timer = setTimeout(() => { void api.findPaths(clean).then(paths => { if (valid) setFound(paths) }).catch(() => {}) }, 150)
     return () => { valid = false; clearTimeout(timer) }
   }, [clean, searchable, tidyQuery, intent.create, source])
   const askAI = async () => {
@@ -158,6 +158,11 @@ export function TileLauncher(props: LauncherProps) {
       const input = sessionTile(session)
       if (!keys.has(input.key)) { candidates.push({ input, score: Math.max(rank(`${input.title} ${input.directory || ''}`, targetQuery), query.trim() ? rank(input.title, query.trim()) : 0) }); keys.add(input.key) }
     }
+    for (const file of found.filter(f => f.kind === 'file')) {
+      const input = fileTile(file.path, 'file', file.name)
+      if (!keys.has(input.key)) { candidates.push({ input, score: rank(file.name, targetQuery) || 5 }); keys.add(input.key) }
+    }
+    const folders: ProjectEntry[] = found.filter(f => f.kind === 'folder').map(f => ({ id: `folder:${f.path}`, name: f.name, directory: f.path }))
     for (const project of [...projects, ...folders.filter(f => !projects.some(p => p.directory === f.directory))]) {
       for (const input of [fileTile(project.directory, 'folder', project.name), ...(opencodeConnected && project.projectID ? [projectTile(project.directory, project.name)] : [])]) {
         if (!keys.has(input.key)) { candidates.push({ input, score: rank(`${project.name} ${project.directory}`, targetQuery) }); keys.add(input.key) }
@@ -251,15 +256,18 @@ export function TileLauncher(props: LauncherProps) {
       for (const entry of sources.filter(s => availableSources.includes(s.id) && s.name.toLowerCase() === clean.toLowerCase() && !(s.id === 'terminal' && shell))) result.unshift({ key: `source:${entry.id}`, icon: entry.id, title: entry.name, source: 'Source', subtitle: entry.hint, action: 'Narrow to source', scope: entry.id, run: () => {} })
       if (!availableSources.includes('opencode') && /^opencode$/i.test(clean)) result.unshift({ key: 'add-opencode', icon: 'opencode', title: 'Add OpenCode', source: 'Source', subtitle: 'not connected yet', action: 'Set up', fill: 'add opencode', run: () => {} })
     }
+    if (!query.trim() && !scope) result.push({ key: 'add-source', icon: 'add', title: 'Add a source', source: 'K', subtitle: model?.ready ? 'OpenCode, Front, GitHub, or anything with an API' : 'OpenCode, Front, GitHub… · a model lets K add any API', action: 'Choose', fill: 'add ', run: () => {} })
     if (clean && !intent.create && !clean.startsWith('/') && (!source || source === 'web')) {
       const q = clean.slice(0, 500)
       result.push({ key: 'web-search', icon: 'search', title: `Search the web for “${q}”`, source: 'Web search', subtitle: 'DuckDuckGo', action: 'Search', run: mode => open(browserTile(`https://duckduckgo.com/?q=${encodeURIComponent(q)}`), mode) })
     }
     return result
-  }, [panel, add, query, model?.ready, model?.model, connection.enabled, desktop, projects, sessions, remote, targetQuery, clean, source, intent.create, tidyQuery, serviceLinks, waiting, open, newSession, terminal, tidy, providerResult, connectors, connectorResult, availableSources, opencodeConnected, focusedDirectory, sessionProject, firstMessage, props.home, folders])
+  }, [panel, add, query, model?.ready, model?.model, connection.enabled, desktop, projects, sessions, remote, targetQuery, clean, source, intent.create, tidyQuery, serviceLinks, waiting, open, newSession, terminal, tidy, providerResult, connectors, connectorResult, availableSources, opencodeConnected, focusedDirectory, sessionProject, firstMessage, props.home, found])
   const expandedRow = rows.find(r => r.key === expanded)
   const shown: Row[] = expandedRow ? expandedRow.others!.map((o, i) => ({ key: `${expandedRow.key}:other:${i}`, icon: expandedRow.icon, title: o.label, source: expandedRow.source, subtitle: expandedRow.title, action: o.label, run: o.run })) : rows
   useEffect(() => { list.current?.querySelector('.selected')?.scrollIntoView({ block: 'nearest' }) }, [index])
+  // Clicked rows and finished panels unmount; keep typing and ↵ going to K.
+  useEffect(() => { if (document.activeElement === document.body || !document.activeElement?.isConnected) input.current?.focus() })
   useEffect(() => { setExpanded(undefined) }, [query, scope])
   const chosen = Math.min(index, shown.length - 1)
   const execute = async (mode: OpenMode, i = chosen) => {
@@ -284,9 +292,13 @@ export function TileLauncher(props: LauncherProps) {
       if (e.key === 'ArrowLeft' && expandedRow) { e.preventDefault(); setIndex(Math.max(0, rows.indexOf(expandedRow))); setExpanded(undefined) }
       if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey && scopes.length) {
         e.preventDefault(); e.stopPropagation()
-        const byName = clean && scopes.find(s => s.name.toLowerCase().startsWith(clean.toLowerCase()))
+        const byName = clean && !add && scopes.find(s => s.name.toLowerCase().startsWith(clean.toLowerCase()))
+        const at = scopes.findIndex(s => s.id === scope)
+        // Tab walks All → each source → Add source → All.
         if (byName && !scope) { setScope(byName.id); setQuery('') }
-        else { const at = scopes.findIndex(s => s.id === scope); setScope(scopes[(at + 1) % scopes.length].id) }
+        else if (/^add\s*$/i.test(query)) { setQuery(''); setScope(undefined) }
+        else if (at === scopes.length - 1) { setScope(undefined); setQuery('add ') }
+        else setScope(scopes[at + 1].id)
         setIndex(0)
       }
       if (e.key === 'Enter') { e.preventDefault(); void execute(e.shiftKey ? 'move' : e.ctrlKey ? 'new' : 'here') }
