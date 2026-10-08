@@ -15,7 +15,7 @@ export function shortcutFor(input: Input): string | undefined {
     if (key === 'tab') return 'overview'
     if ((key === 'k' && !input.shift) || key === ' ' || key === 'space') return 'launcher'
     if (key === 'enter') return 'promote'
-    if (key === 'n') return 'new-session'
+    if (key === 'n') return 'new'
     if (key === 't') return 'new-terminal'
     if (key === ',') return 'settings'
     if (key === 'q' && input.shift) return 'close-tile'
@@ -29,12 +29,47 @@ export function shortcutFor(input: Input): string | undefined {
     if (directions[key]) return `${input.shift ? 'swap' : 'focus'}:${directions[key]}`
   }
   if (input.control && !input.alt && !input.meta) {
-    if (key === '.') return 'attach-selection'
+    if (key === 'k' || key === ' ' || key === 'space') return 'launcher'
     if (key === 'l') return 'address'
+    if (key === '.') return 'attach-selection'
     if (key === 't') return input.shift ? 'restore-closed' : 'new-browser'
-    if (key === 'w') return 'close-tile'
     if (key === 'tab') return input.shift ? 'previous-tile' : 'next-tile'
-    if (key === 'k') return 'launcher'
     if (key === 'b' && input.shift) return 'fullscreen'
+  }
+  if ((input.alt && !input.control && !input.meta && key === 'd') || (key === 'f6' && !input.control && !input.alt && !input.meta)) return 'address'
+  if (key === 'f2' && !input.control && !input.alt && !input.meta) return 'rename'
+}
+
+/** Vim's window keys: Ctrl+W, then a key. */
+export const windowChord: Record<string, string> = {
+  h: 'focus:left', j: 'focus:down', k: 'focus:up', l: 'focus:right',
+  H: 'swap:left', J: 'swap:down', K: 'swap:up', L: 'swap:right',
+  arrowleft: 'focus:left', arrowdown: 'focus:down', arrowup: 'focus:up', arrowright: 'focus:right',
+  w: 'next-tile', W: 'previous-tile', p: 'previous-tile',
+  q: 'close-tile', c: 'close-tile', o: 'fullscreen', '-': 'shelf-tile', '=': 'restore-tile', '+': 'restore-tile', x: 'promote',
+}
+/** Reads keys including the Ctrl+W chord. One reader per window, shared with its pages,
+ * so Ctrl+W pressed in a web page and h pressed after still pair up. */
+export function createShortcutReader(now = () => Date.now()) {
+  let pendingUntil = 0
+  return (input: Input): { action?: string; swallow: boolean } => {
+    if (input.type !== 'keyDown') return { swallow: false }
+    if (pendingUntil > now()) {
+      if (['Shift', 'Control', 'Alt', 'Meta'].includes(input.key)) return { swallow: false }
+      pendingUntil = 0
+      if (input.key === 'Escape') return { action: 'chord-cancel', swallow: true }
+      // Ctrl+W Ctrl+H works too, like vim.
+      const key = input.key.length === 1 && !input.control ? input.key : input.key.toLowerCase()
+      const action = !input.alt && !input.meta ? windowChord[key] : undefined
+      if (action) return { action, swallow: true }
+      const other = shortcutFor(input)
+      return { action: other || 'chord-cancel', swallow: !!other }
+    }
+    if (input.control && !input.alt && !input.meta && !input.shift && input.key.toLowerCase() === 'w') {
+      pendingUntil = now() + 1500
+      return { action: 'chord', swallow: true }
+    }
+    const action = shortcutFor(input)
+    return { action, swallow: !!action }
   }
 }

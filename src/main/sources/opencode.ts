@@ -6,9 +6,10 @@ import { access, constants } from 'node:fs/promises'
 import { delimiter, join } from 'node:path'
 import { homedir } from 'node:os'
 import type {
-  ChatOSAPI, ConnectionInfo, DesktopEvent, MessageInfo, MessagePage,
+  ConnectionInfo, MessageInfo, MessagePage, OpenCodeAPI, OpenCodeEvent,
   OpenCodeProbe, SessionDetail, SessionInfo, SessionPage, Snapshot,
-} from '../shared/types'
+} from '../../shared/sources/opencode/types'
+import type { MainContext, MainSource } from '../registry'
 
 /** Remembered OpenCode source. Absent means OpenCode is not a source. */
 export interface OpenCodeSettingsStore {
@@ -87,7 +88,7 @@ export class OpenCodeBridge {
   connection: ConnectionInfo = { connected: false, automatic: true, enabled: false }
 
   constructor(
-    private readonly emit: (event: DesktopEvent) => void,
+    private readonly emit: (event: OpenCodeEvent) => void,
     readonly directory: string,
     settings: { url?: string; token?: string } = {},
     private readonly store?: OpenCodeSettingsStore,
@@ -243,7 +244,7 @@ export class OpenCodeBridge {
     }
   }
 
-  async sessions(query: Parameters<ChatOSAPI['sessions']>[0] = {}): Promise<SessionPage> {
+  async sessions(query: Parameters<OpenCodeAPI['sessions']>[0] = {}): Promise<SessionPage> {
     return this.ready().session.list({ ...query, limit: 50, parentID: 'null', ...(!query?.cursor && { order: 'desc' }) }, timeout())
   }
 
@@ -253,10 +254,6 @@ export class OpenCodeBridge {
   }
 
   // One-shot generation has no tools and creates/modifies no server sessions.
-  async generateText(prompt: string, model?: { providerID: string; id: string }): Promise<string> {
-    return (await this.ready().generate.text({ prompt, ...(model && { model }) }, { signal: AbortSignal.timeout(120_000) })).text
-  }
-
   async messages(id: string, cursor?: string): Promise<MessagePage> {
     return messagesForUI(await this.ready().message.list({ sessionID: id, limit: 40, ...(cursor ? { cursor } : { order: 'desc' }) }, timeout()))
   }
@@ -272,7 +269,7 @@ export class OpenCodeBridge {
     return { session, messages, permissions, forms, inbox }
   }
 
-  async catalog(directory: string): ReturnType<ChatOSAPI['catalog']> {
+  async catalog(directory: string): ReturnType<OpenCodeAPI['catalog']> {
     const client = this.ready()
     const input = { location: { directory } }
     const [agents, models, defaultModel] = await Promise.all([
@@ -288,12 +285,12 @@ export class OpenCodeBridge {
     }
   }
 
-  async createSession(input: Parameters<ChatOSAPI['createSession']>[0]): Promise<SessionInfo> {
+  async createSession(input: Parameters<OpenCodeAPI['createSession']>[0]): Promise<SessionInfo> {
     if (!input.directory) throw new Error('Choose a project folder first.')
     return this.ready().session.create({ location: { directory: input.directory }, agent: input.agent, model: input.model }, timeout())
   }
 
-  async prompt(input: Parameters<ChatOSAPI['prompt']>[0]) {
+  async prompt(input: Parameters<OpenCodeAPI['prompt']>[0]) {
     if (!input.text.trim() && !input.files?.length) throw new Error('Write a message first.')
     await this.ready().session.prompt(input, timeout())
   }
@@ -307,12 +304,12 @@ export class OpenCodeBridge {
   }
 
   async switchAgent(id: string, agent: string) { await this.ready().session.switchAgent({ sessionID: id, agent }, timeout()) }
-  async switchModel(id: string, model: Parameters<ChatOSAPI['switchModel']>[1]) { await this.ready().session.switchModel({ sessionID: id, model }, timeout()) }
-  async permissionReply(input: Parameters<ChatOSAPI['permissionReply']>[0]) { await this.ready().permission.reply(input, timeout()) }
-  async formReply(input: Parameters<ChatOSAPI['formReply']>[0]) { await this.ready().session.form.reply(input, timeout()) }
-  async formCancel(input: Parameters<ChatOSAPI['formCancel']>[0]) { await this.ready().session.form.cancel(input, timeout()) }
+  async switchModel(id: string, model: Parameters<OpenCodeAPI['switchModel']>[1]) { await this.ready().session.switchModel({ sessionID: id, model }, timeout()) }
+  async permissionReply(input: Parameters<OpenCodeAPI['permissionReply']>[0]) { await this.ready().permission.reply(input, timeout()) }
+  async formReply(input: Parameters<OpenCodeAPI['formReply']>[0]) { await this.ready().session.form.reply(input, timeout()) }
+  async formCancel(input: Parameters<OpenCodeAPI['formCancel']>[0]) { await this.ready().session.form.cancel(input, timeout()) }
 
-  async diff(input: Parameters<ChatOSAPI['diff']>[0]) {
+  async diff(input: Parameters<OpenCodeAPI['diff']>[0]) {
     const result = await this.ready().vcs.diff({ location: { directory: input.directory }, mode: input.mode }, timeout())
     return result.data
   }
@@ -322,4 +319,38 @@ export class OpenCodeBridge {
     this.generation++
     this.stream?.abort()
   }
+}
+
+/** OpenCode as a ChatOS source: one bridge, its IPC methods and its remembered connection. */
+export function createOpenCodeSource(ctx: MainContext): MainSource<'opencode'> {
+  const store = ctx.storage, secrets = ctx.secrets
+  const bridge = new OpenCodeBridge(event => ctx.emit(event), ctx.env.CHATOS_DIRECTORY || process.cwd(), {
+    url: ctx.env.CHATOS_SERVER_URL, token: ctx.env.CHATOS_SERVER_TOKEN,
+  }, {
+    load: () => {
+      const raw = store.get('opencode-source')
+      if (!raw) return undefined
+      const saved = JSON.parse(raw) as { url?: string }
+      const secret = store.secret('opencode:token')
+      let token: string | undefined
+      if (secret && secrets.available()) { try { token = secrets.decrypt(secret) } catch { /* Locked keychain: reconnect without the token. */ } }
+      return { ...(typeof saved.url === 'string' && { url: saved.url }), ...(token && { token }) }
+    },
+    save: settings => {
+      if (!settings) { store.saveSecret('opencode:token'); store.delete('opencode-source'); return }
+      store.saveSecret('opencode:token', settings.token && secrets.available() ? secrets.encrypt(settings.token) : undefined)
+      store.set('opencode-source', JSON.stringify({ ...(settings.url && { url: settings.url }) }))
+    },
+  })
+  const api: OpenCodeAPI = {
+    probe: () => bridge.probe(), start: () => bridge.start(), disconnect: async () => bridge.disconnect(),
+    bootstrap: () => bridge.bootstrap(ctx.home, ctx.platform), reconnect: settings => bridge.connect(settings),
+    sessions: query => bridge.sessions(query), activeSessions: () => bridge.activeSessions(),
+    session: id => bridge.session(id), messages: (id, cursor) => bridge.messages(id, cursor), catalog: directory => bridge.catalog(directory),
+    createSession: input => bridge.createSession(input), prompt: input => bridge.prompt(input), interrupt: id => bridge.interrupt(id),
+    renameSession: (id, title) => bridge.renameSession(id, title), switchAgent: (id, agent) => bridge.switchAgent(id, agent), switchModel: (id, model) => bridge.switchModel(id, model),
+    permissionReply: input => bridge.permissionReply(input), formReply: input => bridge.formReply(input), formCancel: input => bridge.formCancel(input),
+    diff: input => bridge.diff(input),
+  }
+  return { id: 'opencode', api, dispose: () => bridge.dispose() }
 }

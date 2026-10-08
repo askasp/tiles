@@ -1,14 +1,18 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { ChatOSAPI, DesktopEvent } from '../shared/types'
+import type { ChatOSAPI, CoreAPI, DesktopEvent } from '../shared/types'
+import { sourceMethods, type SourceAPIs } from '../shared/registry-api'
 
-const invoke = <K extends keyof ChatOSAPI>(name: K) =>
-  (...args: Parameters<ChatOSAPI[K]>) => ipcRenderer.invoke(`chatos:${name}`, ...args)
+type Method = Exclude<keyof CoreAPI, 'onEvent' | 'loadDesktop' | 'flushDesktop'>
+const invoke = <K extends Method>(name: K) =>
+  (...args: Parameters<CoreAPI[K]>) => ipcRenderer.invoke(`chatos:${name}`, ...args)
+// Each source's methods live under its own namespace: chatos.opencode.sessions(…)
+const sourceAPIs = Object.fromEntries(Object.entries(sourceMethods).map(([id, methods]) => [id, Object.fromEntries((methods as readonly string[]).map(method => [method, (...args: unknown[]) => ipcRenderer.invoke(`chatos:${id}.${method}`, ...args)]))])) as unknown as SourceAPIs
 
 const api: ChatOSAPI = {
+  ...sourceAPIs,
   modelInfo: invoke('modelInfo'), saveModel: invoke('saveModel'), forgetModelKey: invoke('forgetModelKey'), discoverSource: invoke('discoverSource'),
   probeModel: invoke('probeModel'), skipModel: invoke('skipModel'),
-  opencodeProbe: invoke('opencodeProbe'), opencodeStart: invoke('opencodeStart'), opencodeDisconnect: invoke('opencodeDisconnect'),
-  terminalOpen: invoke('terminalOpen'), terminalInput: invoke('terminalInput'), terminalResize: invoke('terminalResize'), terminalClose: invoke('terminalClose'), terminalFocus: invoke('terminalFocus'),
+  terminalOpen: invoke('terminalOpen'), terminalInput: invoke('terminalInput'), terminalResize: invoke('terminalResize'), terminalClose: invoke('terminalClose'), keyMode: invoke('keyMode'), environment: invoke('environment'),
   readImage: invoke('readImage'), findPaths: invoke('findPaths'),
   loadDesktop: legacy => { const result = ipcRenderer.sendSync('chatos:storage-load', legacy); if (result.error) throw new Error(result.error); return result.value },
   flushDesktop: raw => { const result = ipcRenderer.sendSync('chatos:storage-flush', raw); if (result.error) throw new Error(result.error) },
@@ -19,14 +23,7 @@ const api: ChatOSAPI = {
   inspectPath: invoke('inspectPath'), listFolder: invoke('listFolder'), readTextFile: invoke('readTextFile'),
   services: invoke('services'), saveService: invoke('saveService'), validateService: invoke('validateService'), disconnectService: invoke('disconnectService'), removeService: invoke('removeService'),
   searchServices: invoke('searchServices'),
-  frontConversations: invoke('frontConversations'), frontConversation: invoke('frontConversation'),
-  bootstrap: invoke('bootstrap'), reconnect: invoke('reconnect'),
-  sessions: invoke('sessions'), activeSessions: invoke('activeSessions'),
-  session: invoke('session'), messages: invoke('messages'), catalog: invoke('catalog'),
-  createSession: invoke('createSession'), prompt: invoke('prompt'), interrupt: invoke('interrupt'),
-  renameSession: invoke('renameSession'), switchAgent: invoke('switchAgent'), switchModel: invoke('switchModel'),
-  permissionReply: invoke('permissionReply'), formReply: invoke('formReply'), formCancel: invoke('formCancel'),
-  diff: invoke('diff'), chooseFolder: invoke('chooseFolder'), chooseFiles: invoke('chooseFiles'),
+  frontConversations: invoke('frontConversations'), frontConversation: invoke('frontConversation'), frontWrite: invoke('frontWrite'), chooseFolder: invoke('chooseFolder'), chooseFiles: invoke('chooseFiles'),
   browserLayout: invoke('browserLayout'), browserAction: invoke('browserAction'), browserClose: invoke('browserClose'),
   browserContext: invoke('browserContext'), browserScreenshot: invoke('browserScreenshot'),
   onEvent(listener) {

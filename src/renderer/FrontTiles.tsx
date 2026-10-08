@@ -47,7 +47,7 @@ export function FrontInbox({ tile, visible, account, open, settings, web }: {
       <div className="front-presets">{frontFilters(account.front).map(filter => <button className="pill" key={filter.title} disabled={!filter.ready} title={filter.ready ? filter.query : 'Set your email, teammate ID or tag ID in Front settings'} onClick={() => open(frontInboxTile(filter.query, `Front · ${filter.title}`))}>{filter.title}</button>)}<button className="text-button" onClick={settings}>Configure “me”</button></div>
       <div className="front-filter-note">{tile.frontQuery || 'All accessible conversations'} · ↑/↓ select · Enter open · Shift+Enter move here<br />Filters are saved as separate unique tiles; reading does not mark mail read.</div>
       {error && <div className="inline-error" role="alert">{error}<button className="text-button" onClick={() => void refresh()}>Retry</button></div>}
-      <div className="front-results" ref={rows} tabIndex={0} role="list" aria-label="Front conversations" onKeyDown={e => {
+      <div className="front-results" ref={rows} tabIndex={0} data-arrow-keys role="list" aria-label="Front conversations" onKeyDown={e => {
         if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setSelected(i => Math.max(0, Math.min(page.items.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))) }
         if (e.key === 'Enter') { e.preventDefault(); choose(selected, e.shiftKey ? 'move' : e.ctrlKey ? 'new' : 'here') }
       }}>{page.items.map((item, index) => <button key={item.id} className={`front-conversation-row ${index === selected ? 'selected' : ''}`} onFocus={() => setSelected(index)} onMouseEnter={() => setSelected(index)} onClick={e => choose(index, e.shiftKey ? 'move' : e.ctrlKey ? 'new' : 'here')}><span className="front-row-heading"><strong>{item.subject}</strong><small>{item.status}</small></span><span className="front-row-sender">{item.sender}{item.assignee && ` · Assigned to ${item.assignee}`}</span>{item.preview && <span className="front-row-preview">{item.preview}</span>}<span className="front-tags">{item.tags.map(tag => <span key={tag}>{tag}</span>)}</span></button>)}
@@ -59,9 +59,10 @@ export function FrontInbox({ tile, visible, account, open, settings, web }: {
   </div>
 }
 
-export function FrontConversationBody({ tile, visible, account, settings, web }: {
-  tile: Tile; visible: boolean; account?: ServiceInfo; settings: () => void; web: () => void;
+export function FrontConversationBody({ tile, visible, account, settings, web, change }: {
+  tile: Tile; visible: boolean; account?: ServiceInfo; settings: () => void; web: () => void; change: (patch: Partial<Tile>) => void;
 }) {
+  const [sending, setSending] = useState<'reply' | 'comment'>(), [notice, setNotice] = useState('')
   const [detail, setDetail] = useState<FrontDetail>()
   const [loading, setLoading] = useState(false), [error, setError] = useState('')
   const generation = useRef(0)
@@ -75,6 +76,18 @@ export function FrontConversationBody({ tile, visible, account, settings, web }:
     } catch (e) { if (revision === generation.current) setError(friendlyError(e)) }
     finally { if (revision === generation.current) setLoading(false) }
   }, [account, tile.conversationID])
+  const write = async (kind: 'reply' | 'comment') => {
+    const body = tile.draft
+    if (!body.trim() || sending) return
+    setSending(kind); setNotice(''); setError('')
+    try {
+      await api.frontWrite({ id: tile.conversationID!, kind, body })
+      // Clear only the text that was sent; later edits stay.
+      change({ draft: '' })
+      setNotice(kind === 'reply' ? 'Reply sent.' : 'Comment added.')
+      void refresh()
+    } catch (e) { setError(friendlyError(e)) } finally { setSending(undefined) }
+  }
   useEffect(() => {
     if (!account?.hasToken) { setDetail(undefined); setError(''); setLoading(false) }
     if (visible) void refresh()
@@ -95,7 +108,11 @@ export function FrontConversationBody({ tile, visible, account, settings, web }:
         {detail?.next && <button className="pill load-more" disabled={loading} onClick={() => void refresh(detail.next)}>Older messages</button>}
         {loading && <p className="empty-list">Loading messages…</p>}{detail && !loading && !detail.messages.length && <p className="empty-list">No messages were returned for this conversation.</p>}
       </div>
-      <footer className="front-footer">Latest first · read-only · remote images blocked · replies/attachments in Front web</footer>
+      <form className="front-reply" onSubmit={e => e.preventDefault()}>
+        <textarea aria-label="Front reply draft" placeholder={`Reply to ${detail?.conversation.sender || 'the conversation'}, or comment for your team…`} value={tile.draft} onChange={e => change({ draft: e.target.value })} rows={2} />
+        <div className="button-row">{notice && <span className="muted" role="status">{notice}</span>}<button type="button" className="pill" disabled={!!sending || !tile.draft.trim()} onClick={() => void write('comment')}>{sending === 'comment' ? 'Commenting…' : 'Comment · confirm…'}</button><button type="button" className="pill primary" disabled={!!sending || !tile.draft.trim()} onClick={() => void write('reply')}>{sending === 'reply' ? 'Sending…' : 'Reply · confirm…'}</button></div>
+      </form>
+      <footer className="front-footer">Latest first · remote images blocked · every reply and comment asks first · attachments in Front web</footer>
     </>}
   </div>
 }

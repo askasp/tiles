@@ -1,7 +1,7 @@
 import { BrowserWindow, WebContentsView, session } from 'electron'
 import type { BrowserPlacement, BrowserState, ChatOSAPI, DesktopEvent } from '../shared/types'
-import { normalizeURL } from '../shared/workspaces'
-import { shortcutFor } from '../shared/shortcuts'
+import { normalizeURL } from '../shared/util'
+import { readShortcut } from './keys'
 
 interface BrowserRecord {
   view: WebContentsView
@@ -79,8 +79,9 @@ export class Browsers {
       if (mainFrame && code !== -3) { record.error = description; this.changed(placement.id) }
     })
     contents.on('before-input-event', (event, input) => {
-      const action = shortcutFor(input)
-      if (action) { event.preventDefault(); this.emit({ type: 'shortcut', action }) }
+      const { action, swallow } = readShortcut(input)
+      if (swallow) event.preventDefault()
+      if (action) this.emit({ type: 'shortcut', action })
     })
     contents.on('render-process-gone', () => { record.error = 'The page stopped. Reload to reopen it.'; this.changed(placement.id) })
     void contents.loadURL(record.url).catch(() => { /* did-fail-load updates the UI. */ })

@@ -39,7 +39,7 @@ test('V3 messages, permissions, questions, unique browser, linked move, and rest
       await c.executeJavaScript("localStorage.setItem('move-marker','keep-this-page')")
     })
     const browserID = await page.locator('[data-kind="browser"]').getAttribute('data-tile-id')
-    await page.getByRole('button', { name: 'Attach page to session', exact: true }).click()
+    await page.getByRole('button', { name: 'Attach page', exact: true }).click()
     await expect(page.locator('.context-chip')).toContainText('Local preview')
     // Moving the session also moves its preview, without reconstructing Chromium.
     await page.locator(`[data-tile-id="${id}"] textarea`).click()
@@ -53,7 +53,7 @@ test('V3 messages, permissions, questions, unique browser, linked move, and rest
     await page.getByRole('textbox', { name: 'Launcher search' }).press('Enter')
     await expect(page.locator('.resource-tile:visible')).toHaveCount(2)
     expect(await app.evaluate(({ webContents }) => webContents.getAllWebContents().filter(c => c.getURL().endsWith('/preview')).length)).toBe(1)
-    await page.getByRole('button', { name: 'Shelf New session', exact: true }).click()
+    await page.getByRole('button', { name: 'Shelf Test the API round trip', exact: true }).click()
     await expect(page.locator('.resource-tile:visible')).toHaveCount(0)
     fixture.askPermission(id)
     await expect(page.getByRole('button', { name: 'Go to waiting session' })).toContainText('1 waiting')

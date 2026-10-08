@@ -1,5 +1,5 @@
 import { homedir } from 'node:os'
-import { OpenCodeBridge } from '../src/main/opencode'
+import { OpenCodeBridge } from '../src/main/sources/opencode'
 
 const bridge = new OpenCodeBridge(() => {}, process.cwd(), {
   url: process.env.CHATOS_SERVER_URL, token: process.env.CHATOS_SERVER_TOKEN,

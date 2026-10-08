@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { addTab, closeTab, hideWorkspace, initialState, moveTab, normalizeURL, openSession, restoreState, restoreTab, serializableState, splitWorkspace } from '../src/shared/workspaces'
-import type { SessionInfo } from '../src/shared/types'
+import { addTab, closeTab, hideWorkspace, initialState, moveTab, normalizeURL, openSession, restoreState, restoreTab, serializableState, splitWorkspace } from '../src/shared/sources/opencode/legacy'
+import type { SessionInfo } from '../src/shared/sources/opencode/types'
 import { shortcutFor } from '../src/shared/shortcuts'
 
 const session: SessionInfo = { id: 'ses_test', projectID: 'project', title: 'Test session', cost: 0, tokens: { input: 0, output: 0 }, time: { created: 1, updated: 1 }, location: { directory: '/workspace' } }

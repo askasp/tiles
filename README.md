@@ -15,7 +15,7 @@ Or `npm run build` then `npm start`.
 
 ### First launch (clean install)
 
-1. K opens and asks for one thing: **a model**. Paste a base URL and key for any OpenAI-compatible endpoint (the key is checked as you paste it, and the model list fills in), or choose **Use a local model instead** (e.g. Ollama at `http://localhost:11434/v1`, no key). **Use your ChatGPT subscription** routes K through OpenCode instead: K uses any model your OpenCode service is signed into (run `opencode auth login` → OpenAI → ChatGPT Plus/Pro; the panel can open a terminal with that command typed for you). No key is stored in ChatOS, and that model is ready whenever OpenCode is connected. **Skip for now** is allowed: Browser, Files and Terminal work without a model. Type `model` in K later to set it up.
+1. K opens and asks for one thing: **a model**. Paste a base URL and key for any OpenAI-compatible endpoint (the key is checked as you paste it, and the model list fills in), or choose **Use a local model instead** (e.g. Ollama at `http://localhost:11434/v1`, no key). K's model is independent of every source: a ChatGPT Plus/Pro subscription is not an API key, so use an OpenAI API key (billed separately) or a local model. **Skip for now** is allowed: Browser, Files and Terminal work without a model. Type `model` in K later to set it up.
 2. The desktop starts empty. Built in: **Browser**, **Files** (folders, text and images) and **Terminal** (a real shell in any folder, `Super+T` or `terminal` in K). Nothing else is preinstalled, listed or contacted.
 3. Everything else is a source you add with K: `add opencode`, `add front`, `add github`, `add slack`, or `add <anything with an API>`. Tab in an empty K walks the sources and ends on **Add source**.
 
@@ -52,29 +52,50 @@ Browser views have no desktop preload, Node access or app tokens. They use a sha
 
 | Action | Shortcut |
 | --- | --- |
-| Find or open anything | System+K / System+Space / Ctrl+K |
-| Launcher: open here or go to existing owner | Enter |
-| Launcher: move here, with linked tiles | Shift+Enter |
-| Launcher: unopened resource in a new workspace | Ctrl+Enter |
-| Empty desktop / workspace | System+0 / 1–9 |
+| Find or open anything (K) | Ctrl+K / System+K / System+Space |
+| Choose a result in K | ↑↓ / Ctrl+J or Ctrl+N down / Ctrl+K or Ctrl+P up |
+| K: open here, or go to the existing tile | Enter |
+| K: move here, with linked tiles / in a new workspace | Shift+Enter / Ctrl+Enter |
+| K: other actions for a result / back | → or Ctrl+L / ← or Ctrl+H |
+| K: narrow to a source, then Add source | Tab (Backspace in an empty K widens again) |
+| **Window keys (vim): Ctrl+W, then…** | h j k l focus · H J K L swap · w / W next / previous · o fullscreen · x promote · − shelf · = restore · q close |
+| Inside a list (files, sessions, inbox, rows) | j / k down / up · l open · h back |
+| Files: open here / beside / new workspace | Enter / Ctrl+Enter / Ctrl+Shift+Enter |
+| Files: back / forward / up / refresh | Backspace or h or Alt+← / Alt+→ / - / r |
+| Files: actions on this folder | t terminal · s OpenCode sessions · n new session |
+| Rename focused tile | F2 |
+| Empty desktop / workspace 1–9 | System+0 / 1–9 |
 | Move tile and linked tiles to a workspace | System+Shift+1–9 |
-| Directional focus | System+arrows or H/J/L |
-| Swap with a neighbour | System+Shift+arrows or H/J/K/L |
-| Promote focused tile to first/big slot | System+Enter |
-| Fullscreen focused tile / return | System+F |
+| Focus / swap with System keys | System+arrows or H/J/L · System+Shift+arrows |
+| Promote / fullscreen | System+Enter / System+F |
 | Shelf / restore last shelved tile | System+− / System+= |
-| Close locally | System+Shift+Q / Ctrl+W |
+| Close | System+Shift+Q / Ctrl+W q |
 | Restore last closed tile | Ctrl+Shift+T |
 | Workspace and shelf overview | System+Tab |
-| Go to a session waiting for input | System+U |
+| Go to what is waiting on you | System+U |
 | Undo arrangement | System+Z |
 | Cycle tiles | Ctrl+Tab / Ctrl+Shift+Tab |
-| New blank session | System+N |
-| Browser address / new browser tile | Ctrl+L / Ctrl+T |
-| Selected browser/message text to a session draft | Ctrl+. |
-| Session send / newline / queue / interrupt | Enter / Shift+Enter / Alt+Enter / Esc |
+| Terminal in the focused folder | System+T |
+| New item in the focused source (e.g. an OpenCode session) | System+N |
+| Settings | System+, |
+| Browser address / new browser tile | Ctrl+L, Alt+D or F6 / Ctrl+T |
+| Selection or page as context to another tile (never sends) | Ctrl+. |
 
-Super+K is reserved for the launcher, so upward focus uses Super+Up rather than Super+K. Text undo remains Ctrl+Z; Ctrl+Z in an **empty launcher** undoes an arrangement. Visible buttons provide alternatives to the keys. The overview supports dragging visible/shelved tiles onto workspaces and an explicit numbered Move control.
+Buttons are icons that show their key; the key does the same thing. Ctrl+W shows a short hint while it waits for its second key (1.5 s), in a page too.
+
+While a **terminal** has focus, plain Ctrl keys (Ctrl+W, Ctrl+L, Ctrl+K…) belong to the shell, so vim in a terminal keeps its own Ctrl+W; use System or Ctrl+Alt chords to manage tiles from there. While a dialog such as K is open, plain Ctrl keys belong to it. In web pages, Ctrl+K opens K and Ctrl+W starts the window chord. Text undo remains Ctrl+Z; Ctrl+Z in an **empty launcher** undoes an arrangement.
+
+### How sources plug in
+
+Every source (Browser, Files, Terminal, generated connectors, Front, Slack, GitHub, OpenCode) implements one renderer interface, `Source` in `src/renderer/sources/types.ts`: search results, slower async search, commands such as “start session in …”, → actions it offers on any resource, its tiles, status chips, attention, shortcuts, context targets, its `add …` setup panel and its Settings row. The core desktop, K and Settings know no source by name.
+
+Optional sources are listed in exactly three registries: `src/shared/registry.ts` (+ `registry-api.ts` for its API namespace), `src/main/registry.ts` and `src/renderer/sources/registry.ts`. OpenCode lives entirely in `src/shared/sources/opencode/`, `src/main/sources/opencode.ts` and `src/renderer/sources/opencode/`; deleting those and its one line in each registry still builds. Its API is namespaced (`window.chatos.opencode.*`, IPC `chatos:opencode.*`) and its live events arrive as `{ type: 'source', source: 'opencode' }`.
+
+### A long day stays bounded
+
+Shelved tiles stay live (pages keep scroll and logins) up to 8; older ones close, releasing their page while keeping identity, name and draft, and K reopens them in place. Terminals are never closed automatically. The 200 most recent closed tiles are remembered (any with an unsent draft or context always are). Workspaces are capped at the nine reachable with System+1–9; Ctrl+Enter beyond that opens in the current one. The desktop is saved within 100 ms of a change even while pages and sessions keep updating. `tests/desktop/developer-day.spec.ts` simulates a day (Slack DMs, tagged Front mail with a comment and a reply, 3 sessions in each of 2 projects, heavy open/move/shelf/close, a restart) and checks that live pages match live tiles and what's saved matches the screen; set `DAY_PASSES=12` for a longer day. `tests/desktop/real-e2e.spec.ts` (`CHATOS_REAL_E2E=1`, optional `CHATOS_MODEL_URL`) runs a fresh install against real services on the machine: a local OpenAI-compatible model, K building a connector for a public API and reading it, the running OpenCode service with one throwaway session in a temp folder, Files navigation and window keys.
+
+K's model may be small and local. K states the connector rules explicitly, maps harmless near-misses (`items: "."`, `view: "detail"`), and sends a rejected proposal back to the model with the exact validator error (twice at most); errors name the operation or recipe. `<think>` blocks are ignored.
 
 ### Sources, resources and actions
 
@@ -145,7 +166,7 @@ Backups contain private drafts and may retain earlier **encrypted** credentials.
 
 ### Files tiles
 
-Folders and files are independent native resources, not OpenCode projects or sessions. Folder rows support ↑/↓ and Enter, and their filter matches the loaded folder's names. Opening a child or parent goes to its own unique tile; LRU shelving keeps the desktop bounded. Folder tiles offer **Open terminal here**, and, once OpenCode is a source, **Show OpenCode sessions** and **Start OpenCode session here**. OpenCode project tiles offer **Browse files**. Image files (PNG, JPEG, GIF, WebP, AVIF, BMP, ICO, SVG up to 25 MB) open in an image viewer; SVG renders as an image, so scripts never run.
+Folders and files are independent native resources, not OpenCode projects or sessions. **Enter navigates the tile in place** (into a subfolder, or into a file), Ctrl+Enter opens beside, and each Files tile has its own Back/Forward history; if the target is already open in another tile, Enter goes there instead. Folder rows support ↑/↓ and Enter, and their filter matches the loaded folder's names. Opening a child or parent goes to its own unique tile; LRU shelving keeps the desktop bounded. Folder tiles offer **Open terminal here**, and, once OpenCode is a source, **Show OpenCode sessions** and **Start OpenCode session here**. OpenCode project tiles offer **Browse files**. Image files (PNG, JPEG, GIF, WebP, AVIF, BMP, ICO, SVG up to 25 MB) open in an image viewer; SVG renders as an image, so scripts never run.
 
 Terminal tiles run your login shell in a real pseudo-terminal via the system `script` command (macOS and Linux; no native modules). Shelving keeps the shell running; closing the tile ends it. After a restart the tile comes back and starts a fresh shell in the same folder. While a terminal has focus, plain Ctrl chords (Ctrl+W, Ctrl+L, Ctrl+K…) go to the shell; Super / Ctrl+Alt chords still manage tiles.
 
@@ -180,9 +201,9 @@ Requests use fixed HTTPS provider endpoints with bearer tokens in headers only, 
 
 “Replies to my mail” means conversations you authored whose latest message is inbound—not a precise “new replies since last seen” feed. The API token must have access to the inboxes you want; private inboxes may need an administrator to allow API access.
 
-Email HTML is converted to plain text in the main process before rendering. Scripts, iframes, remote images/tracking pixels and automatic attachment downloads are excluded. Front reads only use GET requests and never mark mail read, archive, assign, or reply. **Open in Front / reply** switches the same conversation tile to its web presentation; **Use Front API** switches back without creating another copy. Comments, sending replies and attachment downloads still use that explicit web fallback. Merged-conversation redirects are not followed with credentials; the error points you to web fallback.
+Email HTML is converted to plain text in the main process before rendering. Scripts, iframes, remote images/tracking pixels and automatic attachment downloads are excluded. Reading uses only GET requests and never marks mail read, archives or assigns. **Open in Front / reply** switches the same conversation tile to its web presentation; **Use Front API** switches back without creating another copy. **Comment** (internal, team only) and **Reply** (to the people on the conversation) are native: each opens a native confirmation showing the exact text and the Front API URL, posts once, and is never retried automatically. Your teammate ID from the Front settings is sent as the author. The draft lives on the tile, so it survives moves and restarts. Attachment downloads still use the web fallback. Merged-conversation redirects are not followed with credentials; the error points you to web fallback.
 
-Native Front sending/archive actions and continuous provider notifications are not implemented. API reads and discovery have been verified with mocked responses and sandboxed desktop fixtures, **not real account credentials**. Slack DM directory scans are bounded to 2,000 users/conversations; launcher source results are limited to 20. Front native lists/messages fetch 25 items per page with explicit pagination. You can always open full URLs manually. The workday fixture uses private resources, not your accounts.
+Front archive/assign actions and continuous provider notifications are not implemented. API reads and discovery have been verified with mocked responses and sandboxed desktop fixtures, **not real account credentials**. Slack DM directory scans are bounded to 2,000 users/conversations; launcher source results are limited to 20. Front native lists/messages fetch 25 items per page with explicit pagination. You can always open full URLs manually. The workday fixture uses private resources, not your accounts.
 
 Select text in a browser and use **Ctrl+.** to add only that selection to its linked session’s draft, or choose a destination session for an unlinked tile. Password fields are excluded. Nothing is sent until you explicitly send the session draft. The page toolbar’s Attach action adds page context instead of just the selection.
 

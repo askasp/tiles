@@ -87,13 +87,27 @@ describe('independent model for K', () => {
     expect(prompts[0]).not.toContain('steal()')
     expect(prompts[0]).not.toContain('menu')
   })
-  it('a non-JSON model answer becomes a plain reply, and OpenCode URLs must come from the user', async () => {
+  it('fixes near-miss proposals, and sends a rejected one back to the model with the exact error', async () => {
+    const good = { ...exampleConnector, baseURL: 'https://api.helpdesk.example' }
+    const nearMiss = { ...good, recipes: good.recipes.map((r, i) => i === 0 ? { ...r, items: '.' } : { ...r, view: 'detail' }) }
+    const broken = { ...good, recipes: good.recipes.map((r, i) => i === 0 ? { ...r, idField: 'a b c' } : r) }
+    const answers = [JSON.stringify({ kind: 'connector', text: 'x', definition: broken }), `Here you go:\n${JSON.stringify({ kind: 'connector', text: 'fixed', definition: nearMiss })}`]
+    const prompts: string[] = []
+    const broker = new ModelBroker(store(), codec, async () => true, (async (_url: string, init?: RequestInit) => { prompts.push(JSON.parse(String(init?.body)).messages[0].content); return json({ choices: [{ message: { content: answers.shift() } }] }) }) as typeof fetch, async () => {})
+    await broker.save({ baseURL: 'http://localhost:11434/v1', model: 'llama' })
+    const result = await broker.discover([{ role: 'user', text: 'add helpdesk' }])
+    expect(result.kind).toBe('connector')
+    expect(prompts).toHaveLength(2)
+    expect(prompts[1]).toContain('REJECTED BY THE VALIDATOR')
+    if (result.kind === 'connector') { expect(result.definition.recipes[0].items).toBe(''); expect(result.definition.recipes[1].view).toBe('record') }
+  })
+  it('a non-JSON model answer becomes a plain reply, and the model cannot propose connecting a source itself', async () => {
     let answer = 'Which API do you mean?'
     const broker = new ModelBroker(store(), codec, allow, (async () => json({ choices: [{ message: { content: answer } }] })) as typeof fetch, async () => {})
     await broker.save({ baseURL: 'http://localhost:11434/v1', model: 'llama' })
     expect(await broker.discover([{ role: 'user', text: 'add thing' }])).toEqual({ kind: 'answer', text: 'Which API do you mean?', read: [] })
     answer = JSON.stringify({ kind: 'opencode', text: 'Connect', url: 'http://127.0.0.1:9999' })
-    await expect(broker.discover([{ role: 'user', text: 'add opencode' }])).rejects.toThrow('invented the server URL')
+    await expect(broker.discover([{ role: 'user', text: 'add opencode' }])).rejects.toThrow('unsupported action')
   })
 })
 
@@ -125,5 +139,32 @@ describe('built-in Files and Terminal', () => {
       terminals.close('t1')
       await until(() => events.some(e => e.type === 'terminal-exit' && e.id === 't1'))
     } finally { terminals.dispose() }
+  })
+})
+
+describe('a long day stays bounded', () => {
+  it('keeps at most SHELF_LIVE shelved tiles live; older ones close but keep identity and drafts, terminals stay', async () => {
+    const { SHELF_LIVE, browserTile, shelfTile, updateTile } = await import('../src/shared/tiles')
+    let s = openTile(desktopInitial(), terminalTile('/tmp'))
+    const term = s.tiles[0].id
+    s = shelfTile(s, term)
+    for (let n = 0; n < 20; n++) { s = openTile(s, browserTile(`https://example.test/${n}`)); const id = s.tiles.at(-1)!.id; if (n === 0) s = updateTile(s, id, { draft: 'keep me' }); s = shelfTile(s, id) }
+    const shelved = s.tiles.filter(t => t.status === 'shelf' && t.kind !== 'terminal')
+    expect(shelved).toHaveLength(SHELF_LIVE)
+    expect(shelved.map(t => t.url)).toContain('https://example.test/19')
+    expect(s.tiles.find(t => t.id === term)?.status).toBe('shelf')
+    const first = s.tiles.find(t => t.url === 'https://example.test/0')!
+    expect(first.status).toBe('closed'); expect(first.draft).toBe('keep me')
+    s = openTile(s, browserTile('https://example.test/0'))
+    expect(s.tiles.filter(t => t.url === 'https://example.test/0')).toHaveLength(1)
+    expect(s.tiles.find(t => t.url === 'https://example.test/0')?.status).toBe('visible')
+  })
+  it('forgets the oldest closed tiles beyond CLOSED_KEPT, but never ones with an unsent draft', async () => {
+    const { CLOSED_KEPT, browserTile, shelfTile, updateTile } = await import('../src/shared/tiles')
+    let s = desktopInitial()
+    for (let n = 0; n < CLOSED_KEPT + 30; n++) { s = openTile(s, browserTile(`https://example.test/c${n}`)); const id = s.tiles.at(-1)!.id; if (n === 0) s = updateTile(s, id, { draft: 'unsent' }); s = shelfTile(s, id, true) }
+    expect(s.tiles.filter(t => t.status === 'closed').length).toBe(CLOSED_KEPT + 1)
+    expect(s.tiles.some(t => t.url === 'https://example.test/c0')).toBe(true)
+    expect(s.tiles.some(t => t.url === 'https://example.test/c1')).toBe(false)
   })
 })

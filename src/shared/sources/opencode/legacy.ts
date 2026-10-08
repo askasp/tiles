@@ -1,8 +1,38 @@
-import type { SessionInfo, StageTab, Workspace, WorkspaceState } from './types'
+import type { ContextItem, StageTab } from '../../types'
+import type { SessionInfo } from './types'
+
+import { basename, normalizeURL, uid } from '../../util'
+export { basename, normalizeURL, uid }
+
+export interface Workspace {
+  id: string
+  kind: 'session' | 'web'
+  sessionID?: string
+  title: string
+  directory?: string
+  hidden: boolean
+  tabs: StageTab[]
+  panes: [string | null, string | null]
+  tabPane: Record<string, 0 | 1>
+  split: false | 'vertical' | 'horizontal'
+  focusedPane: 0 | 1
+  fullscreen: boolean
+  draft: string
+  context: ContextItem[]
+  closedTabs: StageTab[]
+}
+
+export interface WorkspaceState {
+  version: 1
+  activeID: string
+  workspaces: Workspace[]
+  folders: string[]
+  selectedDirectory: string
+  pinned: string[]
+  homeDraft: string
+}
 
 export const HOME = 'home'
-export const uid = () => crypto.randomUUID()
-export const basename = (path: string) => path.replace(/\/$/, '').split('/').pop() || path
 export const sessionTitle = (session: SessionInfo) => session.title || 'New session'
 export const directoryOf = (session: SessionInfo) => session.location.directory || ''
 
@@ -119,16 +149,6 @@ export function moveTab(workspace: Workspace): Workspace {
 export function restoreTab(workspace: Workspace): Workspace {
   const tab = workspace.closedTabs.at(-1)
   return tab ? addTab({ ...workspace, closedTabs: workspace.closedTabs.slice(0, -1) }, tab) : workspace
-}
-
-export function normalizeURL(input: string): string {
-  const value = input.trim()
-  if (!value) throw new Error('Enter a URL')
-  const url = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(value) ? value : `${/^(localhost|127(?:\.\d{1,3}){3}|\[::1\])(:|\/|$)/.test(value) ? 'http' : 'https'}://${value}`)
-  if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) {
-    throw new Error('Only HTTP and HTTPS URLs without embedded credentials are supported')
-  }
-  return url.href
 }
 
 export function restoreState(raw: string | null, directory: string): WorkspaceState {

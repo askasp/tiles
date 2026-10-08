@@ -83,10 +83,11 @@ export function displayValue(value: unknown): string {
   if (value === undefined || value === null) return ''
   return (typeof value === 'string' ? value : typeof value === 'object' ? JSON.stringify(value) : String(value)).slice(0, 60_000)
 }
-function object(value: unknown, keys: string[]): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Expected an object')
+function object(value: unknown, keys: string[], where = 'value'): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${where} must be a JSON object, got ${Array.isArray(value) ? 'an array' : JSON.stringify(value)?.slice(0, 60) ?? 'nothing'}`)
   const result = value as Record<string, unknown>
-  if (Object.keys(result).some(key => !keys.includes(key))) throw new Error('Unsupported connector field; scripts, headers and credentials are not allowed')
+  const extra = Object.keys(result).filter(key => !keys.includes(key))
+  if (extra.length) throw new Error(`${where} has unsupported field “${extra[0]}” (allowed: ${keys.join(', ')}); scripts, headers and credentials are not allowed`)
   return result
 }
 function text(value: unknown, max = 300): string {
@@ -103,7 +104,7 @@ function template(value: unknown): string {
 function mappings(value: unknown): Record<string, string> | undefined {
   if (value === undefined) return undefined
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length > 30) throw new Error('Invalid parameter mappings')
-  return Object.fromEntries(Object.entries(value).map(([key, val]) => { if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(key) || forbidden.has(key) || /token|secret|password|authorization|api.?key/i.test(key)) throw new Error('Credentials belong in the broker, not mappings'); return [key, template(val)] }))
+  return Object.fromEntries(Object.entries(value).map(([key, val]) => { if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(key) || forbidden.has(key) || /token|secret|password|authorization|api.?key/i.test(key)) throw new Error(`query/body key ${JSON.stringify(key)} looks like a credential; authentication belongs in auth, never in mappings`); return [key, template(val)] }))
 }
 export function connectorBaseURL(value: unknown): string {
   const url = new URL(text(value, 2000))
@@ -111,17 +112,46 @@ export function connectorBaseURL(value: unknown): string {
   if ((url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) || url.username || url.password || url.search || url.hash) throw new Error('Use HTTPS (HTTP allowed only on localhost), without credentials or query parameters')
   return url.href.replace(/\/$/, '')
 }
+/** Rules every proposal must follow, stated for models (the validator enforces them). */
+export const connectorRules = `Rules (the validator rejects anything else):
+- Top level: {version:1,id,name,baseURL,auth,operations,recipes}. id is lowercase letters, digits and dashes.
+- auth.type is "none", "bearer" (token pasted later), "oauth-required" or "oauth2". Never put keys or tokens in paths, query or body.
+- operations: {id,label,method,effect,path,query?,body?,pagination?}. GET ⇔ effect "read"; other methods are effect "write". path starts with "/" and may use {id} or {parent} only.
+- query/body: objects of string templates; placeholders {query} {cursor} {draft}.
+- recipes: {id,label,shape,view,operation,idField,titleField,...}. shape "collection" uses view list|table|timeline and MUST set itemRecipe to the id of an item recipe; shape "item" uses view record|document|conversation|diff.
+- items: dotted path to the array in the response; "" when the response itself is the array.
+- Field paths are dotted names like "user.name" (no "$", brackets or expressions). fields: [{label,path,kind?}] with kind text|number|date|badge.
+- Keep it small: one or two collections with their item recipes, read-only unless asked for writes.`
+
+/** Models often use near-miss names (`items: "."`, `view: "detail"`). Map the harmless ones
+ * before validation; everything else still has to validate exactly. */
+export function normalizeConnectorDraft(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value
+  const d = structuredClone(value) as Record<string, unknown>
+  const views: Record<string, string> = { detail: 'record', details: 'record', item: 'record', object: 'record', grid: 'table', chat: 'conversation', thread: 'conversation', messages: 'conversation', markdown: 'document', text: 'document', feed: 'timeline', cards: 'list' }
+  if (Array.isArray(d.recipes)) d.recipes = d.recipes.map(raw => {
+    if (!raw || typeof raw !== 'object') return raw
+    const r = { ...(raw as Record<string, unknown>) }
+    if (typeof r.items === 'string' && ['.', '$', '/', '[]', '$[*]'].includes(r.items.trim())) r.items = ''
+    if (typeof r.view === 'string' && views[r.view.toLowerCase()]) r.view = views[r.view.toLowerCase()]
+    for (const key of ['idField', 'titleField', 'subtitleField', 'textField', 'items', 'messages', 'timeField', 'nextField']) if (typeof r[key] === 'string') r[key] = (r[key] as string).replace(/^\$\.?/, '').replace(/^\./, '')
+    if (Array.isArray(r.fields)) r.fields = r.fields.map(f => f && typeof f === 'object' && typeof (f as { path?: unknown }).path === 'string' ? { ...f, path: (f as { path: string }).path.replace(/^\$\.?/, '') } : f)
+    return r
+  })
+  if (Array.isArray(d.operations)) d.operations = d.operations.map(raw => raw && typeof raw === 'object' && typeof (raw as { method?: unknown }).method === 'string' ? { ...raw, method: (raw as { method: string }).method.toUpperCase() } : raw)
+  return d
+}
 export function validateConnector(value: unknown): ConnectorDefinition {
   if (JSON.stringify(value).length > 100_000) throw new Error('Keep connector definitions under 100 KB')
-  const d = object(value, ['version', 'id', 'name', 'baseURL', 'auth', 'operations', 'recipes'])
+  const d = object(value, ['version', 'id', 'name', 'baseURL', 'auth', 'operations', 'recipes'], 'connector')
   if (d.version !== 1) throw new Error('Unsupported connector version')
   const connectorID = id(d.id)
   if (['opencode', 'front', 'slack', 'github', 'files', 'web'].includes(connectorID)) throw new Error('This identifier belongs to a built-in source; choose a custom connector identifier')
-  const a = object(d.auth, ['type', 'help', 'oauth'])
+  const a = object(d.auth, ['type', 'help', 'oauth'], 'auth')
   if (!['none', 'bearer', 'oauth-required', 'oauth2'].includes(String(a.type))) throw new Error('Unsupported authentication type')
   let oauth: OAuthConfiguration | undefined
   if (a.type === 'oauth2') {
-    const config = object(a.oauth, ['clientID', 'authorizationURL', 'tokenURL', 'scopes', 'callbackPort', 'offline'])
+    const config = object(a.oauth, ['clientID', 'authorizationURL', 'tokenURL', 'scopes', 'callbackPort', 'offline'], 'auth.oauth')
     if (!Array.isArray(config.scopes) || config.scopes.length > 30 || !config.scopes.length || config.scopes.some(scope => typeof scope !== 'string' || !scope || /\s/.test(scope))) throw new Error('OAuth needs 1–30 explicit scopes')
     if (config.callbackPort !== undefined && (!Number.isSafeInteger(config.callbackPort) || Number(config.callbackPort) < 1024 || Number(config.callbackPort) > 65535)) throw new Error('OAuth callbackPort must be 1024–65535, or omitted for a dynamic loopback port')
     if (config.offline !== undefined && typeof config.offline !== 'boolean') throw new Error('offline must be boolean')
@@ -129,21 +159,22 @@ export function validateConnector(value: unknown): ConnectorDefinition {
     if (!oauth.clientID) throw new Error('Supply a registered native OAuth client ID')
   } else if (a.oauth !== undefined) throw new Error('OAuth configuration belongs to auth.type oauth2')
   if (!Array.isArray(d.operations) || !d.operations.length || d.operations.length > 30 || !Array.isArray(d.recipes) || !d.recipes.length || d.recipes.length > 30) throw new Error('Provide 1–30 operations and recipes')
-  const operations: ConnectorOperation[] = d.operations.map(raw => {
-    const op = object(raw, ['id', 'label', 'method', 'effect', 'path', 'query', 'body', 'pagination'])
+  const at = <T,>(where: string, run: () => T): T => { try { return run() } catch (e) { const message = e instanceof Error ? e.message : String(e); throw new Error(message.startsWith(where) ? message : `${where}: ${message}`) } }
+  const operations: ConnectorOperation[] = d.operations.map(raw => at(`operation ${JSON.stringify((raw as { id?: unknown })?.id ?? '?')}`, () => {
+    const op = object(raw, ['id', 'label', 'method', 'effect', 'path', 'query', 'body', 'pagination'], `operation ${JSON.stringify((raw as { id?: unknown })?.id ?? '?')}`)
     if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(String(op.method)) || !['read', 'write'].includes(String(op.effect)) || (op.method === 'GET') !== (op.effect === 'read')) throw new Error('Only GET is read-only; all other methods require write confirmation')
     const p = template(op.path)
     if (!p.startsWith('/') || p.startsWith('//') || /[?#\\]/.test(p) || p.split('/').some(s => s === '.' || s === '..') || /%|\{(?:query|cursor|draft)\}/.test(p)) throw new Error('Use a fixed relative API path, with optional {id} or {parent}')
     if (op.method === 'GET' && op.body !== undefined) throw new Error('GET cannot have a body')
     if (op.pagination !== undefined && (op.method !== 'GET' || !['cursor', 'next-url'].includes(String(op.pagination)))) throw new Error('GET pagination is cursor or next-url')
     return { id: id(op.id), label: text(op.label), method: op.method as ConnectorOperation['method'], effect: op.effect as ConnectorOperation['effect'], path: p, ...(op.query !== undefined && { query: mappings(op.query) }), ...(op.body !== undefined && { body: mappings(op.body) }), ...(op.pagination !== undefined && { pagination: op.pagination as ConnectorOperation['pagination'] }) }
-  })
+  }))
   const opIDs = new Set(operations.map(op => op.id))
   if (opIDs.size !== operations.length) throw new Error('Duplicate operation identifier')
-  const read = (value: unknown) => { const key = id(value); if (!operations.some(op => op.id === key && op.effect === 'read')) throw new Error('Tile reads must reference an approved GET operation'); return key }
-  const recipes: TileRecipe[] = d.recipes.map(raw => {
-    const r = object(raw, ['id', 'label', 'shape', 'view', 'operation', 'searchOperation', 'itemRecipe', 'identity', 'identityScope', 'parentField', 'items', 'idField', 'titleField', 'subtitleField', 'textField', 'messages', 'messageTextField', 'messageKindField', 'messageKinds', 'messageAuthorField', 'messageTimeField', 'timeField', 'nextField', 'fields', 'actions'])
-    if (!['collection', 'item'].includes(String(r.shape)) || !['list', 'table', 'timeline', 'record', 'document', 'conversation', 'diff'].includes(String(r.view)) || (r.shape === 'collection') !== ['list', 'table', 'timeline'].includes(String(r.view))) throw new Error('Collections use list/table/timeline views; individual resources use detail views')
+  const read = (value: unknown) => { const key = id(value); if (!operations.some(op => op.id === key && op.effect === 'read')) throw new Error(`operation ${JSON.stringify(key)} must be a GET operation defined in operations`); return key }
+  const recipes: TileRecipe[] = d.recipes.map(raw => at(`recipe ${JSON.stringify((raw as { id?: unknown })?.id ?? '?')}`, () => {
+    const r = object(raw, ['id', 'label', 'shape', 'view', 'operation', 'searchOperation', 'itemRecipe', 'identity', 'identityScope', 'parentField', 'items', 'idField', 'titleField', 'subtitleField', 'textField', 'messages', 'messageTextField', 'messageKindField', 'messageKinds', 'messageAuthorField', 'messageTimeField', 'timeField', 'nextField', 'fields', 'actions'], `recipe ${JSON.stringify((raw as { id?: unknown })?.id ?? '?')}`)
+    if (!['collection', 'item'].includes(String(r.shape)) || !['list', 'table', 'timeline', 'record', 'document', 'conversation', 'diff'].includes(String(r.view)) || (r.shape === 'collection') !== ['list', 'table', 'timeline'].includes(String(r.view))) throw new Error('collections use view list/table/timeline; items use record/document/conversation/diff')
     const result: TileRecipe = { id: id(r.id), label: text(r.label), shape: r.shape as TileRecipe['shape'], view: r.view as TileRecipe['view'], operation: read(r.operation), idField: path(r.idField), titleField: path(r.titleField) }
     for (const key of ['items', 'parentField', 'subtitleField', 'textField', 'messages', 'messageTextField', 'messageKindField', 'messageAuthorField', 'messageTimeField', 'timeField', 'nextField'] as const) if (r[key] !== undefined) result[key] = path(r[key])
     if (r.messageKinds !== undefined) {
@@ -156,18 +187,18 @@ export function validateConnector(value: unknown): ConnectorDefinition {
     if (r.itemRecipe !== undefined) result.itemRecipe = id(r.itemRecipe)
     if (r.fields !== undefined) {
       if (!Array.isArray(r.fields) || r.fields.length > 30) throw new Error('Too many fields')
-      result.fields = r.fields.map(v => { const f = object(v, ['label', 'path', 'kind']); if (f.kind !== undefined && !['text', 'number', 'date', 'badge'].includes(String(f.kind))) throw new Error('Field kinds: text, number, date, badge'); return { label: text(f.label), path: path(f.path), ...(f.kind !== undefined && { kind: f.kind as 'text' | 'number' | 'date' | 'badge' }) } })
+      result.fields = r.fields.map(v => { const f = object(v, ['label', 'path', 'kind'], `recipe ${JSON.stringify(r.id)} field`); if (f.kind !== undefined && !['text', 'number', 'date', 'badge'].includes(String(f.kind))) throw new Error('Field kinds: text, number, date, badge'); return { label: text(f.label), path: path(f.path), ...(f.kind !== undefined && { kind: f.kind as 'text' | 'number' | 'date' | 'badge' }) } })
     }
     if (r.actions !== undefined) {
       if (!Array.isArray(r.actions) || r.actions.length > 15) throw new Error('Too many actions')
-      result.actions = r.actions.map(v => { const action = object(v, ['label', 'operation']); const key = id(action.operation); if (!opIDs.has(key)) throw new Error('Unknown action operation'); return { label: text(action.label), operation: key } })
+      result.actions = r.actions.map(v => { const action = object(v, ['label', 'operation'], `recipe ${JSON.stringify(r.id)} action`); const key = id(action.operation); if (!opIDs.has(key)) throw new Error('Unknown action operation'); return { label: text(action.label), operation: key } })
     }
     return result
-  })
+  }))
   if (new Set(recipes.map(r => r.id)).size !== recipes.length) throw new Error('Duplicate recipe identifier')
   for (const recipe of recipes) {
-    if (recipe.shape === 'collection' && (!recipe.itemRecipe || !recipes.some(r => r.id === recipe.itemRecipe))) throw new Error('Every collection must say which independent recipe its rows open')
-    if (recipe.shape === 'item' && recipe.itemRecipe) throw new Error('Only collections open row recipes')
+    if (recipe.shape === 'collection' && (!recipe.itemRecipe || !recipes.some(r => r.id === recipe.itemRecipe))) throw new Error(`recipe ${JSON.stringify(recipe.id)}: every collection needs "itemRecipe" naming the item recipe its rows open (one of: ${recipes.filter(r => r.shape === 'item').map(r => r.id).join(', ') || 'none defined yet'})`)
+    if (recipe.shape === 'item' && recipe.itemRecipe) throw new Error(`recipe ${JSON.stringify(recipe.id)}: only collections open row recipes`)
   }
   return { version: 1, id: connectorID, name: text(d.name), baseURL: connectorBaseURL(d.baseURL), auth: { type: a.type as ConnectorDefinition['auth']['type'], ...(a.help !== undefined && { help: text(a.help, 2000) }), ...(oauth && { oauth }) }, operations, recipes }
 }

@@ -1,5 +1,5 @@
 import { createServer, type ServerResponse } from 'node:http'
-import type { MessageInfo, SessionInfo, SessionForm, PermissionRequest } from '../../src/shared/types'
+import type { MessageInfo, SessionInfo, SessionForm, PermissionRequest } from '../../src/shared/sources/opencode/types'
 
 export async function fixtureServer(options?: { requestLimit?: number; createDelay?: number; promptDelay?: number; generate?: (prompt: string) => string }) {
   const directory = process.cwd()
@@ -56,7 +56,8 @@ export async function fixtureServer(options?: { requestLimit?: number; createDel
     if (path === '/api/session') {
       if (request.method === 'POST') {
         if (options?.createDelay) await new Promise(resolve => setTimeout(resolve, options.createDelay))
-        const session: SessionInfo = { ...sessions[0], id: `ses_fixture_${++counter}`, title: 'New session', agent: String(body.agent || 'build'), model: body.model as SessionInfo['model'] || sessions[0].model, time: { created: Date.now(), updated: Date.now() } }
+        const requested = String((body.location as { directory?: string } | undefined)?.directory || directory)
+        const session: SessionInfo = { ...sessions[0], id: `ses_fixture_${++counter}`, title: 'New session', projectID: requested === otherDirectory ? 'project_health' : 'project_fixture', location: { directory: requested }, agent: String(body.agent || 'build'), model: body.model as SessionInfo['model'] || sessions[0].model, time: { created: Date.now(), updated: Date.now() } }
         sessions.unshift(session); emit('session.created', { sessionID: session.id }); return json({ data: session })
       }
       const search = url.searchParams.get('search')?.toLowerCase() || ''
@@ -80,6 +81,8 @@ export async function fixtureServer(options?: { requestLimit?: number; createDel
       if (action === 'prompt') {
         if (options?.promptDelay) await new Promise(resolve => setTimeout(resolve, options.promptDelay))
         const text = String(body.text)
+        // Like OpenCode, a new session takes its title from the first message.
+        if (session.title === 'New session') { session.title = text.slice(0, 48); emit('session.renamed', { sessionID: id, title: session.title }) }
         messages.set(id, [...(messages.get(id) || []),
           { id: `msg_user_${Date.now()}`, type: 'user', text, time: { created: Date.now() } },
           { id: `msg_assistant_${Date.now()}`, type: 'assistant', agent: 'build', model: session.model, content: [{ type: 'text', text: 'Fixture response: your message reached the OpenCode 2 API.' }], time: { created: Date.now() + 1, completed: Date.now() + 2 }, finish: 'stop' },

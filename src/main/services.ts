@@ -35,7 +35,8 @@ export class Services {
   private ready: Promise<void>
   private writes: Promise<void> = Promise.resolve()
   private searcher: ProviderSearch
-  constructor(private directory: string, private secrets: SecretStorage, private fetcher: typeof fetch = fetch, private storage?: Storage) {
+  private writing = new Set<string>()
+  constructor(private directory: string, private secrets: SecretStorage, private fetcher: typeof fetch = fetch, private storage?: Storage, private confirm: (title: string, detail: string) => Promise<boolean> = async () => false) {
     this.ready = this.load()
     this.searcher = new ProviderSearch(id => this.tokens.get(id), fetcher)
   }
@@ -117,6 +118,32 @@ export class Services {
     this.searcher.invalidate(id)
     delete this.saved[id]
     await this.persist()
+  }
+  /** Reply to a Front conversation, or add an internal comment. Always asks first with the exact text; never retried. */
+  async frontWrite(input: { id: string; kind: 'reply' | 'comment'; body: string }): Promise<void> {
+    await this.ready
+    if (!input || typeof input.id !== 'string' || !/^cnv_[a-z0-9]+$/i.test(input.id)) throw new Error('Invalid Front conversation ID')
+    if (input.kind !== 'reply' && input.kind !== 'comment') throw new Error('Unknown Front action')
+    const body = typeof input.body === 'string' ? input.body.trim() : ''
+    if (!body || body.length > 50_000) throw new Error('Write a message first (under 50,000 characters).')
+    const token = this.tokens.get('front')
+    if (!token) throw new Error('Add Front first: Super+K → add front.')
+    if (this.writing.has(input.id)) throw new Error('A Front action for this conversation is already pending.')
+    this.writing.add(input.id)
+    try {
+      const author = this.saved.front?.front?.teammateID
+      const path = input.kind === 'reply' ? 'messages' : 'comments'
+      const url = `https://api2.frontapp.com/conversations/${input.id}/${path}`
+      const payload = JSON.stringify({ body, ...(author && { author_id: author }) })
+      const verb = input.kind === 'reply' ? 'Send this reply to the customer?' : 'Add this internal comment?'
+      if (!await this.confirm(verb, `${input.kind === 'reply' ? 'Visible to the people on this conversation.' : 'Visible to your team only.'}\nPOST ${url}\n\n${body}`)) throw new Error('Cancelled. Nothing was sent; your draft is kept.')
+      let response: Response
+      try { response = await this.fetcher(url, { method: 'POST', headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'Content-Type': 'application/json', 'User-Agent': 'ChatOS/0.2' }, body: payload, redirect: 'error', signal: AbortSignal.timeout(20_000) }) }
+      catch { throw new Error('Front could not be reached, so it is unknown whether this was sent. Check the conversation in Front before trying again.') }
+      if (response.status === 401 || response.status === 403) throw new Error(`Front refused this (HTTP ${response.status}). The token needs ${input.kind === 'reply' ? 'messages:send' : 'comments:write'} access.`)
+      if (!response.ok) throw new Error(`Front answered HTTP ${response.status}. Nothing is retried automatically; check the conversation before trying again.`)
+      this.searcher.invalidate('front')
+    } finally { this.writing.delete(input.id) }
   }
   async validate(id: ServiceID): Promise<{ ok: boolean; account?: string; error?: string }> {
     await this.ready

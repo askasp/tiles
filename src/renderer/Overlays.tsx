@@ -1,15 +1,15 @@
 import { ArrowUpRight, Globe, Keyboard, Plus, RefreshCw, Settings2, X } from 'lucide-react'
 import { useState } from 'react'
-import type { BrowserContext, ConnectionInfo, ServiceInfo, SessionInfo } from '../shared/types'
+import type { BrowserContext } from '../shared/types'
 import type { ModelInfo } from '../shared/model'
-import type { ConnectorInfo } from '../shared/connectors'
-import { sources } from '../shared/sources'
-import { basename, directoryOf, normalizeURL, sessionTitle } from '../shared/workspaces'
+import { sources as catalogue } from '../shared/sources'
+import { normalizeURL } from '../shared/util'
 import { api, friendlyError } from './data'
 import { IconButton, Modal } from './ui'
-import { ServiceCard } from './ServiceSettings'
 import { ModelSetup } from './Setup'
 import { Badge } from './TileOverlays'
+import { registry } from './sources/registry'
+import type { Env } from './sources/types'
 
 
 export function AddressDialog({ initial, submit, close }: { initial?: string; submit: (url: string) => void; close: () => void }) {
@@ -22,37 +22,25 @@ export function AddressDialog({ initial, submit, close }: { initial?: string; su
   </form></Modal>
 }
 
-export function Settings({ model, modelChanged, home, signIn, reconnectWith, connection, reconnect, disconnectOpenCode, services, servicesChanged, connectors, manageConnector, addSource, openURL, openFront, close, platform }: {
-  model?: ModelInfo; modelChanged: (info: ModelInfo) => void; home: string; signIn: (command: string) => void; reconnectWith: (settings?: { url?: string; token?: string }) => Promise<void>;
-  connection: ConnectionInfo; reconnect: () => Promise<void>; disconnectOpenCode: () => Promise<void>;
-  services: ServiceInfo[]; servicesChanged: (list: ServiceInfo[]) => void;
-  connectors: ConnectorInfo[]; manageConnector: (id?: string) => void; addSource: (query: string) => void;
-  openURL: (url: string) => void; openFront: () => void; close: () => void; platform: string;
+export function Settings({ model, modelChanged, env, states, close, platform }: {
+  model?: ModelInfo; modelChanged: (info: ModelInfo) => void; env: Env; states: Map<string, unknown>; close: () => void; platform: string;
 }) {
   const [pending, setPending] = useState(false), [error, setError] = useState(''), [status, setStatus] = useState('')
   const system = platform === 'darwin' ? '⌘' : 'Super / Ctrl+Alt'
   const run = async (action: () => Promise<void>) => { setPending(true); setError(''); try { await action() } catch (e) { setError(friendlyError(e)) } finally { setPending(false) } }
-  const added = services.filter(s => s.configured || s.hasToken)
-  const where = (u?: string) => { try { return new URL(u || '').host } catch { return u || '' } }
   return <Modal title="Settings" close={close} wide><div className="modal-heading"><Settings2 size={18} /><h2>Settings</h2><span className="muted">Super+,</span><IconButton label="Close settings" onClick={close}><X size={16} /></IconButton></div>
     <div className="settings-grid">
-      <section className="settings-section" aria-label="Model"><h3>Model</h3><p className="muted">Powers K: understanding requests, building connectors and mapping tiles.</p><ModelSetup embedded info={model} firstRun={false} opencode={{ connection, reconnect: reconnectWith, home, signIn }} saved={info => { modelChanged(info); setStatus(info.ready ? `Model saved: ${info.model}` : 'Model key forgotten.') }} /></section>
+      <section className="settings-section" aria-label="Model"><h3>Model</h3><p className="muted">Powers K: understanding requests, building connectors and mapping tiles. Independent of every source.</p><ModelSetup embedded info={model} firstRun={false} saved={info => { modelChanged(info); setStatus(info.ready ? `Model saved: ${info.model}` : 'Model key forgotten.') }} /></section>
       <section className="settings-section" aria-label="Sources"><h3>Sources</h3>
         <div className="source-list">
-          {sources.filter(s => s.builtin).map(s => <div className="source-row" key={s.id}><Badge icon={s.id} /><span><strong>{s.name}</strong><small>{s.hint}</small></span><em>built in</em></div>)}
-          {connection.enabled && <div className="source-row" aria-label="OpenCode source"><Badge icon="opencode" /><span><strong>OpenCode</strong><small>{connection.connected ? `${where(connection.url)} · OpenCode ${connection.version || ''}` : connection.error || 'Not connected'}</small></span>
-            <span className={`status-dot ${connection.connected ? 'green' : 'gray'}`} /><button className="text-button" disabled={pending} onClick={() => void run(reconnect)}><RefreshCw size={12} />{connection.connected ? 'Reconnect' : 'Connect'}</button><button className="text-button" disabled={pending} onClick={() => void run(async () => { await disconnectOpenCode(); setStatus('OpenCode removed as a source. Its service and sessions keep running.') })}>Remove</button></div>}
-          {added.map(service => <details className="source-row-details" key={service.id}><summary className="source-row"><Badge icon={service.id} /><span><strong>{service.name}</strong><small>{service.hasToken ? `${service.account || 'token saved'} · ${service.tokenStorage === 'encrypted' ? 'keyring' : 'this run only'}` : 'no API token'}</small></span><em>manage</em></summary>
-            <ServiceCard service={service} openURL={openURL} openFront={service.id === 'front' ? openFront : undefined} update={async () => servicesChanged(await api.services())} />
-            <div className="button-row"><button className="text-button" onClick={() => void run(async () => { await api.removeService(service.id); servicesChanged(await api.services()); setStatus(`${service.name} removed. Browser sign-ins are unchanged.`) })}>Remove {service.name} as a source</button></div>
-          </details>)}
-          {connectors.map(c => <div className="source-row" key={c.definition.id}><Badge icon="connector" /><span><strong>{c.definition.name}</strong><small>{c.definition.baseURL} · v{c.revision} · {c.hasToken ? 'connected' : c.definition.auth.type === 'none' ? 'no auth' : 'needs a token'}</small></span><em>generated</em><button className="text-button" onClick={() => manageConnector(c.definition.id)}>Mapping & auth</button></div>)}
+          {catalogue.filter(s => s.builtin).map(s => <div className="source-row" key={s.id}><Badge icon={s.id} /><span><strong>{s.name}</strong><small>{s.hint}</small></span><em>built in</em></div>)}
+          {registry.map(source => source.Settings && <source.Settings key={source.id} state={states.get(source.id)} env={env} />)}
         </div>
-        <div className="button-row"><button className="pill primary" onClick={() => addSource('add ')}><Plus size={13} />Add a source</button><button className="pill" onClick={() => manageConnector()}>Write a connector by hand</button><button className="text-button" disabled={pending} onClick={() => void run(async () => setStatus(`Backup saved: ${await api.backupStorage()}`))}>Create database backup</button></div>
+        <div className="button-row"><button className="pill primary" onClick={() => env.ask('add ')}><Plus size={13} />Add a source</button><button className="pill" onClick={() => env.editConnector({})}>Write a connector by hand</button><button className="text-button" disabled={pending} onClick={() => void run(async () => setStatus(`Backup saved: ${await api.backupStorage()}`))}>Create database backup</button></div>
         <p className="muted">Sources you add show up in Super+K. Nothing is contacted until it is added.</p>
       </section>
       {error && <div className="inline-error" role="alert">{error}</div>}{status && <p className="muted" role="status">{status}</p>}
-      <section className="settings-section shortcuts-content" aria-label="Keys"><h3><Keyboard size={15} />Keys</h3>{[[`${system}+K · Ctrl+K`, 'Open K: search, ask, or add a source'], ['↵ / ⌃↵ / → / Tab in K', 'Run here / new workspace / other actions / narrow to a source'], [`${system}+T`, 'Terminal in the focused folder'], [`${system}+,`, 'Settings'], [`${system}+0–9`, 'Workspace by number'], [`${system}+Shift+1–9`, 'Move tile and linked previews'], [`${system}+arrows · H/J/L`, 'Focus neighbour'], [`${system}+Shift+arrows`, 'Swap with neighbour'], [`${system}+Enter / F`, 'Promote / fullscreen focused tile'], [`${system}+− / =`, 'Shelf / restore last shelved tile'], [`${system}+Shift+Q`, 'Close tile'], [`${system}+U`, 'Go to waiting session'], [`${system}+Z`, 'Undo what K just arranged'], ['Ctrl+L / Ctrl+T', 'Address / new browser tile'], ['Ctrl+.', 'Selection to a session draft (never sends)']].map(([key, title]) => <div className="shortcut-row" key={key}><kbd>{key}</kbd><span>{title}</span></div>)}<p className="muted">On Linux, use Ctrl+Alt if your window manager captures Super.</p></section>
+      <section className="settings-section shortcuts-content" aria-label="Keys"><h3><Keyboard size={15} />Keys</h3>{[[`${system}+K · Ctrl+Space`, 'Open K: search, ask, or add a source'], ['Ctrl+H/J/K/L · Ctrl+Shift', 'Move between tiles (i3-style) · swap'], ['↵ / ⌃↵ / → / Tab in K', 'Run here / new workspace / other actions / narrow to a source'], ['↑↓ · Ctrl+J / Ctrl+K in K', 'Choose a result'], ['j / k · h / l in lists', 'Down / up · back / open'], [`${system}+T`, 'Terminal in the focused folder'], [`${system}+N`, 'New item in the focused source (e.g. a session)'], [`${system}+,`, 'Settings'], [`${system}+0–9`, 'Workspace by number'], [`${system}+Shift+1–9`, 'Move tile and linked previews'], [`${system}+arrows · H/J/L`, 'Focus neighbour'], [`${system}+Shift+arrows`, 'Swap with neighbour'], [`${system}+Enter / F`, 'Promote / fullscreen focused tile'], [`${system}+− / =`, 'Shelf / restore last shelved tile'], [`${system}+Shift+Q`, 'Close tile'], [`${system}+U`, 'Go to what is waiting on you'], [`${system}+Z`, 'Undo what K just arranged'], ['Alt+D or F6 / Ctrl+T', 'Address / new browser tile'], ['Ctrl+.', 'Selection as context to another tile (never sends)']].map(([key, title]) => <div className="shortcut-row" key={key}><kbd>{key}</kbd><span>{title}</span></div>)}<p className="muted">On Linux, use Ctrl+Alt if your window manager captures Super.</p></section>
     </div>
   </Modal>
 }
@@ -65,8 +53,9 @@ export function RenameDialog({ title, submit, close, label = 'Session name' }: {
   </form></Modal>
 }
 
-export function SendPage({ page, sessions, send, close }: { page: BrowserContext; sessions: SessionInfo[]; send: (session: SessionInfo, note: string) => void; close: () => void }) {
+/** Send a page or selection as context to a tile that takes it, e.g. a coding session's draft. Nothing is sent. */
+export function SendPage({ page, targets, send, close }: { page: BrowserContext; targets: { id: string; title: string; subtitle: string }[]; send: (id: string, note: string) => void; close: () => void }) {
   const [note, setNote] = useState('')
-  const [selected, setSelected] = useState(sessions[0]?.id || '')
-  return <Modal title="Send page to session" close={close}><div className="modal-heading"><Globe size={18} /><h2>Send page to a session</h2><IconButton label="Close send page dialog" onClick={close}><X size={16} /></IconButton></div><div className="send-page-content"><strong className="truncate">{page.title || page.url}</strong><span className="muted truncate">{page.url}</span><label className="form-field">Session<select aria-label="Destination session" value={selected} onChange={event => setSelected(event.target.value)}>{sessions.map(session => <option value={session.id} key={session.id}>{sessionTitle(session)} · {basename(directoryOf(session))}</option>)}</select></label><label className="form-field">Optional note<input aria-label="Page note" value={note} onChange={event => setNote(event.target.value)} placeholder="What should the agent know?" /></label><div className="button-row"><span className="muted">Adds context to its draft. Nothing is sent.<br />This browser stays in its own workspace.</span><button className="pill primary" disabled={!selected} onClick={() => { const session = sessions.find(s => s.id === selected); if (session) { send(session, note); close() } }}>Add to draft</button></div></div></Modal>
+  const [selected, setSelected] = useState(targets[0]?.id || '')
+  return <Modal title="Send page as context" close={close}><div className="modal-heading"><Globe size={18} /><h2>Send page as context</h2><IconButton label="Close send page dialog" onClick={close}><X size={16} /></IconButton></div><div className="send-page-content"><strong className="truncate">{page.title || page.url}</strong><span className="muted truncate">{page.url}</span><label className="form-field">To<select aria-label="Destination" value={selected} onChange={event => setSelected(event.target.value)}>{targets.map(t => <option value={t.id} key={t.id}>{t.title} · {t.subtitle}</option>)}</select></label><label className="form-field">Optional note<input aria-label="Page note" value={note} onChange={event => setNote(event.target.value)} placeholder="What should it know?" /></label><div className="button-row"><span className="muted">Adds context to its draft. Nothing is sent.<br />This page stays in its own tile.</span><button className="pill primary" disabled={!selected} onClick={() => { send(selected, note); close() }}>Add to draft</button></div></div></Modal>
 }

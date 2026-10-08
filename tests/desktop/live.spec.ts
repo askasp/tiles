@@ -17,7 +17,7 @@ test('live OpenCode: one session tile, shelf, and reopen without changing the se
     await expect(page.locator('[data-opencode-setup="connected"]')).toBeVisible({ timeout: 20_000 })
     await page.keyboard.press('Enter')
     await desktopReady(page, { opencode: true })
-    const snapshot = await page.evaluate(() => window.chatos.bootstrap())
+    const snapshot = await page.evaluate(() => window.chatos.opencode.bootstrap())
     expect(snapshot.connection.connected).toBe(true)
     const idle = snapshot.sessions.data.find(session => !snapshot.active.includes(session.id))!
     expect(idle).toBeTruthy()

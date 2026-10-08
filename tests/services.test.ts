@@ -51,4 +51,36 @@ describe('service settings security', () => {
       await auth.disconnect('front'); expect((await auth.list()).find(s => s.id === 'front')?.front).toEqual(identity)
     } finally { await rm(directory, { recursive: true, force: true }) }
   })
+  it('Front replies and comments ask first with the exact text, post once, and never retry', async () => {
+    const directory = await mkdtemp('/tmp/opencode/chatos-front-write-')
+    const codec = { available: () => true, encrypt: (s: string) => Buffer.from(s), decrypt: (b: Buffer) => b.toString() }
+    const calls: { url: string; init?: RequestInit }[] = [], asked: string[] = []
+    let approve = false
+    const fetcher = (async (url: string, init?: RequestInit) => { calls.push({ url, init }); return new Response('{}', { status: 202 }) }) as typeof fetch
+    try {
+      const front = new Services(directory, codec, fetcher, undefined, async (title, detail) => { asked.push(`${title}\n${detail}`); return approve })
+      await front.save({ id: 'front', token: 'front-private-token', front: { email: 'me@example.test', teammateID: 'tea_me', tagID: '' } })
+      await expect(front.frontWrite({ id: 'cnv_1', kind: 'reply', body: 'Thanks, fixed now.' })).rejects.toThrow('Nothing was sent')
+      expect(calls).toEqual([])
+      expect(asked[0]).toContain('Thanks, fixed now.')
+      expect(asked[0]).toContain('https://api2.frontapp.com/conversations/cnv_1/messages')
+      approve = true
+      await front.frontWrite({ id: 'cnv_1', kind: 'comment', body: 'Same as last week?' })
+      expect(calls).toHaveLength(1)
+      expect(calls[0].url).toBe('https://api2.frontapp.com/conversations/cnv_1/comments')
+      expect(calls[0].init?.method).toBe('POST')
+      expect(JSON.parse(String(calls[0].init?.body))).toEqual({ body: 'Same as last week?', author_id: 'tea_me' })
+      expect(new Headers(calls[0].init?.headers).get('authorization')).toBe('Bearer front-private-token')
+      await expect(front.frontWrite({ id: '../evil', kind: 'reply', body: 'x' })).rejects.toThrow('Invalid')
+      await expect(front.frontWrite({ id: 'cnv_1', kind: 'reply', body: '   ' })).rejects.toThrow('Write a message')
+      // A second write while one is pending is refused rather than duplicated.
+      let release!: () => void
+      const slow = new Services(directory, codec, (async () => { await new Promise<void>(r => { release = r }); return new Response('{}', { status: 202 }) }) as typeof fetch, undefined, async () => true)
+      await slow.save({ id: 'front', token: 't' })
+      const first = slow.frontWrite({ id: 'cnv_2', kind: 'reply', body: 'one' })
+      await new Promise(r => setTimeout(r, 20))
+      await expect(slow.frontWrite({ id: 'cnv_2', kind: 'reply', body: 'two' })).rejects.toThrow('already pending')
+      release(); await first
+    } finally { await rm(directory, { recursive: true, force: true }) }
+  })
 })

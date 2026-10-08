@@ -1,10 +1,13 @@
-import type { ContextItem, SessionInfo } from './types'
-import { basename, normalizeURL, restoreState, sessionTitle, uid } from './workspaces'
+import type { ContextItem } from './types'
+import { basename, normalizeURL, uid } from './util'
 import { frontConversationID, frontURL } from './front'
 import { resourceKey, validateRef, type ResourceRef, type TileRecipe } from './connectors'
 
-export type TileKind = 'session' | 'projects' | 'project' | 'recipe' | 'browser' | 'review' | 'details' | 'front-list' | 'front-conversation' | 'folder' | 'file' | 'terminal'
-const tileKinds: TileKind[] = ['session', 'projects', 'project', 'recipe', 'browser', 'review', 'details', 'front-list', 'front-conversation', 'folder', 'file', 'terminal']
+/** Built-in kinds. Sources add their own kinds (e.g. OpenCode's `session`) through `KindRule`s. */
+export type CoreKind = 'recipe' | 'browser' | 'front-list' | 'front-conversation' | 'folder' | 'file' | 'terminal'
+export type TileKind = CoreKind | (string & {})
+/** Restoring a saved tile: rebuild its identity from its fields, or drop it (return false). */
+export interface KindRule { kind: string; restore(tile: Tile): boolean }
 export type OpenMode = 'here' | 'new' | 'move'
 export type Direction = 'left' | 'right' | 'up' | 'down'
 export interface Tile {
@@ -59,9 +62,6 @@ export interface TileDesktop {
 }
 export type TileInput = Pick<Tile, 'key' | 'kind' | 'title'> & Partial<Pick<Tile, 'id' | 'directory' | 'sessionID' | 'url' | 'linkID' | 'draft' | 'context' | 'label' | 'frontQuery' | 'conversationID' | 'path' | 'resource' | 'recipeIdentity' | 'recipeIdentityScope' | 'sourceName'>>
 export const desktopInitial = (directory = ''): TileDesktop => ({ version: 2, activeID: 'home', workspaces: [], tiles: [], clock: 0, folders: [], selectedDirectory: directory, pinned: [], homeDraft: '', history: [] })
-export const sessionTile = (s: SessionInfo): TileInput => ({ id: s.id, key: `session:${s.id}`, kind: 'session', title: sessionTitle(s), sessionID: s.id, directory: s.location.directory || '' })
-export const projectTile = (directory: string, title = basename(directory)): TileInput => ({ key: `project:${directory}`, kind: 'project', title, directory })
-export const projectsTile = (): TileInput => ({ key: 'opencode:projects', kind: 'projects', title: 'OpenCode projects' })
 export const recipeTile = (ref: ResourceRef, title: string, recipe?: Pick<TileRecipe, 'shape' | 'identity' | 'identityScope'>, sourceName?: string): TileInput => ({ key: resourceKey(ref, recipe), kind: 'recipe', title, resource: validateRef(ref), recipeIdentity: recipe?.identity, recipeIdentityScope: recipe?.identityScope, sourceName })
 export const fileTile = (path: string, kind: 'folder' | 'file' = 'folder', title = basename(path)): TileInput => {
   if (typeof path !== 'string' || !path.startsWith('/') || path.includes('\0')) throw new Error('Use an absolute local path')
@@ -105,7 +105,25 @@ function workspace(s: TileDesktop, slot?: number): [TileDesktop, string] {
   const id = `workspace:${number}`
   return [{ ...s, workspaces: [...s.workspaces, { id, slot: number, title: 'Workspace', tileIDs: [], focusedID: null, fullscreenID: null }].sort((a, b) => a.slot - b.slot) }, id]
 }
-function tidy(s: TileDesktop): TileDesktop {
+/** Shelved tiles stay live (a page keeps its scroll and login, a list its state). Beyond this many,
+ * the oldest are closed: their page is released, but identity, name and draft remain and K reopens them. */
+export const SHELF_LIVE = 8
+export const MAX_WORKSPACES = 9
+/** Kinds whose closing would lose work in progress (a shell's running process). Never closed automatically. */
+const keepLive = new Set(['terminal'])
+/** Closed tiles are remembered so K can reopen them where they were, but not forever. */
+export const CLOSED_KEPT = 200
+function trimShelf(s: TileDesktop): TileDesktop {
+  const shelved = s.tiles.filter(t => t.status === 'shelf' && !keepLive.has(t.kind)).sort((a, b) => b.shelvedAt - a.shelvedAt)
+  const close = new Set(shelved.slice(SHELF_LIVE).map(t => t.id))
+  let tiles = close.size ? s.tiles.map(t => close.has(t.id) ? { ...t, status: 'closed' as const } : t) : s.tiles
+  // Forget the oldest closed tiles, except ones holding unsent work.
+  const closed = tiles.filter(t => t.status === 'closed' && !t.draft.trim() && !t.context.length).sort((a, b) => Math.max(b.shelvedAt, b.lastUsed) - Math.max(a.shelvedAt, a.lastUsed))
+  if (closed.length > CLOSED_KEPT) { const forget = new Set(closed.slice(CLOSED_KEPT).map(t => t.id)); tiles = tiles.filter(t => !forget.has(t.id)) }
+  return tiles === s.tiles ? s : { ...s, tiles }
+}
+function tidy(input: TileDesktop): TileDesktop {
+  const s = trimShelf(input)
   const workspaces = s.workspaces.map(w => {
     const ids = w.tileIDs.filter(id => s.tiles.some(t => t.id === id && t.status === 'visible' && t.workspaceID === w.id))
     const titleTile = ids.map(id => s.tiles.find(t => t.id === id)!).find(t => t.directory) || s.tiles.find(t => t.id === ids[0])
@@ -153,7 +171,8 @@ export function openTile(s: TileDesktop, input: TileInput, mode: OpenMode = 'her
   const owner = existing ? s.tiles.find(t => t.id === existing.id)! : undefined
   if (owner?.status === 'visible' && mode !== 'move') return focusTile(s, owner.id)
   let next = checkpoint(s)
-  let target = targetID || (mode !== 'new' ? activeWorkspace(next)?.id : undefined)
+  // Workspaces are reached with Super+1–9; a tenth would be unreachable, so “new” reuses the current one.
+  let target = targetID || (mode !== 'new' || next.workspaces.length >= MAX_WORKSPACES ? activeWorkspace(next)?.id : undefined)
   const linkedRoot = tileRoot(next, existing)
   if (mode === 'here' && existing?.status === 'shelf' && linkedRoot?.status === 'visible') target = linkedRoot.workspaceID || target
   if (!target || !next.workspaces.some(w => w.id === target)) [next, target] = workspace(next)
@@ -254,6 +273,17 @@ export function undoArrangement(s: TileDesktop): TileDesktop {
     return old ? { ...t, ...old } : { ...t, status: 'closed', workspaceID: null }
   }) }
 }
+/** Navigate a tile to another resource in place (Files: into a subfolder or a file). If that
+ * resource already has a tile, go there instead: one resource, one tile. */
+export function replaceTile(s: TileDesktop, id: string, input: TileInput): TileDesktop {
+  const current = s.tiles.find(t => t.id === id)
+  if (!current) return openTile(s, input)
+  const owner = s.tiles.find(t => t.key === input.key && t.id !== id)
+  if (owner) return owner.status === 'visible' ? focusTile(s, owner.id) : openTile(s, owner)
+  const { id: _ignored, ...fields } = input
+  void _ignored
+  return tidy(updateTile(s, id, { label: undefined, directory: undefined, path: undefined, url: undefined, ...fields, lastUsed: s.clock + 1 }))
+}
 export function updateTile(s: TileDesktop, id: string, change: Partial<Tile>): TileDesktop {
   return { ...s, tiles: s.tiles.map(t => t.id === id ? { ...t, ...change, id: t.id, workspaceID: t.workspaceID, status: t.status } : t) }
 }
@@ -261,6 +291,8 @@ export function reconcileBrowser(s: TileDesktop, id: string, url: string, title:
   const current = s.tiles.find(t => t.id === id && t.kind === 'browser')
   if (!current) return s
   const normalized = normalizeURL(url), key = browserTile(normalized).key
+  // Pages report loading and title changes constantly; only real changes touch the desktop.
+  if (current.key === key && current.url === normalized && current.title === title) return s
   const existing = s.tiles.find(t => t.id !== id && t.key === key)
   if (!existing) return updateTile(s, id, { key, url: normalized, title })
   // Redirects and client-side navigation can converge on an existing URL.
@@ -275,43 +307,26 @@ export function reconcileBrowser(s: TileDesktop, id: string, url: string, title:
 export function serializeDesktop(s: TileDesktop): string {
   return JSON.stringify({ ...s, history: [], tiles: s.tiles.map(t => ({ ...t, context: t.context.filter(c => c.kind !== 'image') })) })
 }
-export function restoreDesktop(raw: string | null, directory = ''): TileDesktop {
+export const coreKinds: KindRule[] = [
+  { kind: 'recipe', restore: t => { try { const input = recipeTile(t.resource!, t.title, { shape: t.resource?.resourceID ? 'item' : 'collection', identity: typeof t.recipeIdentity === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(t.recipeIdentity) ? t.recipeIdentity : undefined, identityScope: t.recipeIdentityScope === 'parent' ? 'parent' : undefined }, typeof t.sourceName === 'string' ? t.sourceName.slice(0, 300) : undefined); Object.assign(t, input); return true } catch { return false } } },
+  { kind: 'browser', restore: t => { try { const input = browserTile(t.url!); t.url = input.url; t.key = input.key; return true } catch { return false } } },
+  { kind: 'front-list', restore: t => { if (typeof t.frontQuery !== 'string') return false; try { t.key = frontInboxTile(t.frontQuery).key; return true } catch { return false } } },
+  { kind: 'front-conversation', restore: t => { try { const input = frontConversationTile(t.conversationID!); t.key = input.key; t.url = input.url; return true } catch { return false } } },
+  { kind: 'folder', restore: t => { try { const input = fileTile(t.path!, 'folder'); t.key = input.key; t.directory = input.directory; return true } catch { return false } } },
+  { kind: 'file', restore: t => { try { t.key = fileTile(t.path!, 'file').key; return true } catch { return false } } },
+  { kind: 'terminal', restore: t => { try { const input = terminalTile(t.directory!, t.id); t.key = input.key; t.path = input.path; return true } catch { return false } } },
+]
+/** Restores a saved desktop. Tiles of kinds no registered source knows are dropped. */
+export function restoreDesktop(raw: string | null, directory = '', kinds: KindRule[] = coreKinds): TileDesktop {
   if (!raw) return desktopInitial(directory)
   try {
     const parsed = JSON.parse(raw)
-    if (parsed.version === 1) {
-      const old = restoreState(raw, directory)
-      let s = { ...desktopInitial(old.selectedDirectory), folders: old.folders, pinned: old.pinned, homeDraft: old.homeDraft }
-      for (const w of old.workspaces) {
-        const slot = old.workspaces.indexOf(w) + 1
-        s = goWorkspace(s, slot)
-        const target = s.activeID
-        if (w.sessionID) s = openTile(s, { id: w.sessionID, key: `session:${w.sessionID}`, kind: 'session', title: w.title, sessionID: w.sessionID, directory: w.directory, draft: w.draft, context: w.context })
-        for (const tab of w.tabs) {
-          s = { ...s, activeID: target }
-          const input = tab.kind === 'browser' ? { ...browserTile(tab.url, w.sessionID), id: tab.id, title: tab.title } : { key: `${tab.kind}:${tab.kind === 'review' ? w.directory : w.sessionID}`, kind: tab.kind, title: tab.title, directory: w.directory, sessionID: w.sessionID, linkID: tab.kind === 'details' ? w.sessionID : undefined }
-          if (!s.tiles.some(t => t.key === input.key)) s = openTile(s, input, 'here', target)
-        }
-        if (w.hidden) for (const t of s.tiles.filter(t => t.workspaceID === target)) s = shelfTile(s, t.id)
-      }
-      const oldActive = old.workspaces.find(w => w.id === old.activeID)
-      const focused = s.tiles.find(t => t.sessionID === oldActive?.sessionID && t.kind === 'session')
-      return tidy({ ...s, activeID: focused?.workspaceID || 'home', history: [] })
-    }
     if (parsed.version !== 2 || !Array.isArray(parsed.tiles) || !Array.isArray(parsed.workspaces)) return desktopInitial(directory)
     let s: TileDesktop = { ...desktopInitial(directory), ...parsed, history: [], clock: Number.isFinite(parsed.clock) ? parsed.clock : 0 }
     const keys = new Set<string>(), ids = new Set<string>()
-    s.tiles = s.tiles.filter(t => t && typeof t.id === 'string' && typeof t.key === 'string' && typeof t.title === 'string' && tileKinds.includes(t.kind) && ['visible', 'shelf', 'closed'].includes(t.status) && typeof t.draft === 'string' && Array.isArray(t.context)).filter(t => {
-      if (t.kind === 'projects') t.key = 'opencode:projects'
-      if (t.kind === 'recipe') { try { const input = recipeTile(t.resource!, t.title, { shape: t.resource?.resourceID ? 'item' : 'collection', identity: typeof t.recipeIdentity === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(t.recipeIdentity) ? t.recipeIdentity : undefined, identityScope: t.recipeIdentityScope === 'parent' ? 'parent' : undefined }, typeof t.sourceName === 'string' ? t.sourceName.slice(0, 300) : undefined); Object.assign(t, input) } catch { return false } }
-      if (t.kind === 'session') { if (typeof t.sessionID !== 'string' || !t.sessionID) return false; t.key = `session:${t.sessionID}` }
-      if (t.kind === 'project' || t.kind === 'review') { if (typeof t.directory !== 'string' || !t.directory) return false; t.key = `${t.kind}:${t.directory}` }
-      if (t.kind === 'details') { if (typeof t.sessionID !== 'string' || !t.sessionID) return false; t.key = `details:${t.sessionID}` }
-      if (t.kind === 'browser') { try { const input = browserTile(t.url!); t.url = input.url; t.key = input.key } catch { return false } }
-      if (t.kind === 'front-list') { if (typeof t.frontQuery !== 'string') return false; try { t.key = frontInboxTile(t.frontQuery).key } catch { return false } }
-      if (t.kind === 'front-conversation') { try { const input = frontConversationTile(t.conversationID!); t.key = input.key; t.url = input.url } catch { return false } }
-      if (t.kind === 'folder' || t.kind === 'file') { try { const input = fileTile(t.path!, t.kind); t.key = input.key; t.directory = input.directory } catch { return false } }
-      if (t.kind === 'terminal') { try { const input = terminalTile(t.directory!, t.id); t.key = input.key; t.path = input.path } catch { return false } }
+    const rules = new Map(kinds.map(rule => [rule.kind, rule]))
+    s.tiles = s.tiles.filter(t => t && typeof t.id === 'string' && typeof t.key === 'string' && typeof t.title === 'string' && rules.has(t.kind) && ['visible', 'shelf', 'closed'].includes(t.status) && typeof t.draft === 'string' && Array.isArray(t.context)).filter(t => {
+      if (!rules.get(t.kind)!.restore(t)) return false
       if (ids.has(t.id) || keys.has(t.key)) return false
       ids.add(t.id); keys.add(t.key); return true
     }).map(t => ({ ...t, label: typeof t.label === 'string' ? t.label : undefined,

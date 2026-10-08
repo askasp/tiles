@@ -141,3 +141,19 @@
 .tile-app .tile-toast .icon-button:hover { background: #3a3833; color: #fff; }
 .tile-app .tile-toast.error { background: #fff1ee; color: #9a3028; box-shadow: 0 0 0 1px #f0c8c0, 0 14px 36px -14px #00000040; }
 .tile-app .tile-toast.error .icon-button { color: #9a3028; }
+/* Front reply (D4) */
+.front-reply { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--divider); }
+.front-reply textarea { width: 100%; resize: vertical; min-height: 44px; max-height: 200px; border: 1px solid #e1dfda; border-radius: 12px; padding: 8px 12px; font: inherit; font-size: 13px; }
+.front-reply .button-row { justify-content: flex-end; }
+.front-reply .button-row .muted { margin-right: auto; }
+.tile-app .tile-toast.chord-hint { gap: 12px; }
+.tile-app .tile-toast.chord-hint span { font: 12px var(--mono); color: #e6e4e0; }
+/* Icon buttons that show their key */
+.key-button { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 6px; border-radius: 7px; color: #6f6b64; flex-shrink: 0; }
+.key-button:hover:not(:disabled) { background: #efede9; color: var(--ink); }
+.key-button:disabled { opacity: .35; }
+.key-button kbd { font-size: 10px; color: #a29e96; }
+.tile-header .key-button kbd { display: none; }
+.resource-tile.tile-focused .tile-header .key-button kbd { display: inline; }
+.files-toolbar { gap: 2px; }
+.files-toolbar strong { flex: 1; margin: 0 6px; }

@@ -33,7 +33,7 @@ export function TerminalBody({ tile, visible, focused, focusKey, consumeDraft }:
       void api.terminalInput(tile.id, data).catch(() => {})
     })
     const textarea = terminal.textarea
-    const focusIn = () => { void api.terminalFocus(true).catch(() => {}) }, focusOut = () => { void api.terminalFocus(false).catch(() => {}) }
+    const focusIn = () => { void api.keyMode('terminal', true).catch(() => {}) }, focusOut = () => { void api.keyMode('terminal', false).catch(() => {}) }
     textarea?.addEventListener('focus', focusIn); textarea?.addEventListener('blur', focusOut)
     const resize = terminal.onResize(({ cols, rows }) => { void api.terminalResize(tile.id, cols, rows).catch(() => {}) })
     void api.terminalOpen({ id: tile.id, cwd: tile.directory || '', cols: terminal.cols, rows: terminal.rows }).then(result => {

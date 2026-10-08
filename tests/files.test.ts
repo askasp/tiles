@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { mkdtemp, mkdir, rm, symlink, writeFile, readFile } from 'node:fs/promises'
 import { Files } from '../src/main/files'
-import { desktopInitial, fileTile, openTile, projectTile, restoreDesktop, serializeDesktop } from '../src/shared/tiles'
+import { desktopInitial, fileTile, openTile, serializeDesktop } from '../src/shared/tiles'
+import { projectTile } from '../src/shared/sources/opencode'
+import { restore as restoreDesktop } from '../src/shared/registry'
 
 describe('read-only local Files source', () => {
   it('lists folders and previews executable markup only as text without writing anything', async () => {

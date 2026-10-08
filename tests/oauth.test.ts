@@ -34,7 +34,7 @@ describe('native OAuth PKCE broker', () => {
   it('validates registered client/scopes and refuses arbitrary grant flows or credential-bearing URLs', () => {
     const d = definition(); expect(d.auth.oauth?.scopes).toEqual(['tickets:read'])
     expect(() => validateConnector({ ...d, auth: { type: 'oauth2', oauth: { ...d.auth.oauth, tokenURL: 'http://remote.test/token' } } })).toThrow('HTTPS')
-    expect(() => validateConnector({ ...d, auth: { type: 'oauth2', oauth: { ...d.auth.oauth, grant: 'password' } } })).toThrow('Unsupported')
+    expect(() => validateConnector({ ...d, auth: { type: 'oauth2', oauth: { ...d.auth.oauth, grant: 'password' } } })).toThrow(/unsupported field/i)
     expect(() => validateConnector({ ...d, auth: { type: 'oauth2', oauth: { ...d.auth.oauth, scopes: ['read write'] } } })).toThrow('scopes')
   })
   it('uses state, PKCE and loopback; only encrypted credentials survive a broker restart', async () => {

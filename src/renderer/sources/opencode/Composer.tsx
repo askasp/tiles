@@ -1,7 +1,8 @@
 import { ArrowUp, ChevronDown, Paperclip, Square, X } from 'lucide-react'
 import { useEffect, useRef } from 'react'
-import type { AgentInfo, ContextItem, ModelInfo, ModelRef } from '../shared/types'
-import { IconButton } from './ui'
+import type { ContextItem } from '../../../shared/types'
+import type { AgentInfo, ModelInfo, ModelRef } from '../../../shared/sources/opencode/types'
+import { IconButton } from '../../ui'
 
 interface ComposerProps {
   draft: string
@@ -84,6 +85,6 @@ export function Composer(props: ComposerProps) {
         </div>
       </div>
     </div>
-    <div className="composer-hint">{props.sending ? 'Sending…' : props.running ? '↵ steer · Alt+↵ queue · Esc interrupt' : props.home ? '↵ start session · Shift+↵ new line' : '↵ send · Shift+↵ new line'}<span>Ctrl+K launcher</span></div>
+    <div className="composer-hint">{props.sending ? 'Sending…' : props.running ? '↵ steer · Alt+↵ queue · Esc interrupt' : props.home ? '↵ start session · Shift+↵ new line' : '↵ send · Shift+↵ new line'}<span>Ctrl+Space launcher</span></div>
   </div>
 }

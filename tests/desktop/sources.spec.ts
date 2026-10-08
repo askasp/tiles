@@ -45,7 +45,10 @@ test('universal search separates Files/OpenCode and only explicit actions create
     input = await search(page, 'files chatos'); await input.press('Enter')
     await expect(page.locator('[data-kind="folder"]')).toHaveCount(1)
     input = await search(page, 'start session in no-such-project')
-    await expect(page.locator('.launcher-result')).toHaveCount(0)
+    // An unknown project says so; nothing else (and nothing that creates) is offered.
+    await expect(page.locator('.launcher-result')).toHaveCount(1)
+    await expect(page.locator('.launcher-result')).toContainText('No project named “no-such-project”')
+    await expect(page.locator('.launcher-result')).toBeDisabled()
     await input.fill('start session in chatos')
     await expect(page.locator('.launcher-result').first()).toContainText('Start session in chatos')
     await input.press('Enter')
@@ -87,7 +90,9 @@ test('Files tiles browse and safely read private text resources with canonical i
     await app.close(); app = await launchDesktop(env); page = await app.firstWindow()
     await desktopReady(page)
     await expect(page.locator(`[data-tile-id="${id}"] .file-preview`)).toContainText('PRIVATE-PREVIEW')
-    await expect(page.locator('[data-kind="folder"]')).toHaveCount(1)
+    // Enter navigated the folder tile into the file (in place), so it is one file tile now.
+    await expect(page.locator('[data-kind="folder"]')).toHaveCount(0)
+    await expect(page.locator('[data-kind="file"]')).toHaveCount(1)
     expect(fixture.requests.filter(r => r.method === 'POST')).toEqual([])
   } finally { await app.close(); await fixture.close(); await rm(profile, { recursive: true, force: true }); await rm(root, { recursive: true, force: true }) }
 })

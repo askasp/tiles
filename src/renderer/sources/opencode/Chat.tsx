@@ -2,9 +2,9 @@ import { ChevronDown, ChevronUp, Copy, MessageSquare, ShieldCheck, X } from 'luc
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import type { FormAnswer, MessageInfo, PermissionRequest, SessionDetail, SessionForm, ToolPart } from '../shared/types'
-import { api, friendlyError } from './data'
-import { IconButton, Status } from './ui'
+import type { FormAnswer, MessageInfo, PermissionRequest, SessionDetail, SessionForm, ToolPart } from '../../../shared/sources/opencode/types'
+import { friendlyError, opencode } from './state'
+import { IconButton, Status } from '../../ui'
 
 const json = (value: unknown) => typeof value === 'string' ? value : JSON.stringify(value, null, 2)
 
@@ -48,7 +48,7 @@ function Permission({ request, refresh, reportError }: { request: PermissionRequ
   const [pending, setPending] = useState(false)
   async function reply(decision: 'once' | 'always' | 'reject') {
     setPending(true)
-    try { await api.permissionReply({ sessionID: request.sessionID, requestID: request.id, decision }); refresh() }
+    try { await opencode.permissionReply({ sessionID: request.sessionID, requestID: request.id, decision }); refresh() }
     catch (error) { reportError(friendlyError(error)) }
     finally { setPending(false) }
   }
@@ -70,8 +70,8 @@ function AgentForm({ form, refresh, reportError, openURL }: { form: SessionForm;
   async function reply(skip = false) {
     setPending(true)
     try {
-      if (skip) await api.formCancel({ sessionID: form.sessionID, formID: form.id })
-      else await api.formReply({ sessionID: form.sessionID, formID: form.id, answer: Object.fromEntries(fields.filter(f => f.type !== 'external' && answer[f.key] !== undefined).map(f => [f.key, answer[f.key]])) })
+      if (skip) await opencode.formCancel({ sessionID: form.sessionID, formID: form.id })
+      else await opencode.formReply({ sessionID: form.sessionID, formID: form.id, answer: Object.fromEntries(fields.filter(f => f.type !== 'external' && answer[f.key] !== undefined).map(f => [f.key, answer[f.key]])) })
       refresh()
     } catch (error) { reportError(friendlyError(error)) }
     finally { setPending(false) }

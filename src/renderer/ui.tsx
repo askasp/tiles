@@ -62,3 +62,33 @@ export function Modal({ title, children, close, wide = false }: { title: string;
     </section>
   </div>
 }
+
+const rowSelector = '.session-row, .file-entry, .recipe-list-row, .recipe-timeline-row, .recipe-table tbody tr button, .front-conversation-row, .review-file-name, .overview-tile-row, .k-row'
+/** j/k move through the rows of the focused tile, l opens, h goes back. Never while typing. */
+export function listKeys(event: KeyboardEvent) {
+  if (event.ctrlKey || event.altKey || event.metaKey || !['j', 'k', 'h', 'l'].includes(event.key)) return
+  const target = event.target as HTMLElement | null
+  if (!target || target.closest('input, textarea, select, [contenteditable="true"]')) return
+  const tile = target.closest<HTMLElement>('[data-tile-id]') || document.querySelector<HTMLElement>('.resource-tile.tile-focused')
+  if (!tile) return
+  // Lists that handle arrows themselves (Files, Front) get arrows.
+  const own = target.closest<HTMLElement>('[data-arrow-keys]')
+  if (own) {
+    event.preventDefault()
+    const key = { j: 'ArrowDown', k: 'ArrowUp', l: 'Enter', h: 'Backspace' }[event.key]!
+    own.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+    return
+  }
+  const rows = [...tile.querySelectorAll<HTMLElement>(rowSelector)].filter(row => row.getClientRects().length && !(row as HTMLButtonElement).disabled)
+  if (!rows.length) return
+  event.preventDefault()
+  const at = rows.indexOf(target.closest<HTMLElement>(rowSelector) as HTMLElement)
+  if (event.key === 'j' || event.key === 'k') rows[at < 0 ? 0 : Math.max(0, Math.min(rows.length - 1, at + (event.key === 'j' ? 1 : -1)))].focus()
+  if (event.key === 'l' && at >= 0) rows[at].click()
+  if (event.key === 'h') tile.querySelector<HTMLElement>('[data-back]')?.click()
+}
+
+/** An icon button that shows the key that does the same thing. */
+export function KeyButton({ label, keys, children, className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string; keys?: string; children: ReactNode }) {
+  return <button type="button" className={`key-button ${className}`} aria-label={label} title={keys ? `${label} · ${keys}` : label} {...props}>{children}{keys && <kbd>{keys}</kbd>}</button>
+}

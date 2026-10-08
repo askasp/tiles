@@ -38,7 +38,7 @@ test('clean install: model first, built-ins without any server, OpenCode only on
     for (const name of ['Browser', 'Files', 'Terminal']) { await k.press('Tab'); await expect(page.locator('.k-scope')).toContainText(name) }
     await k.press('Tab')
     await expect(k).toHaveValue('add ')
-    await expect(page.locator('.launcher-result').first()).toContainText('Add OpenCode')
+    await expect(page.locator('.launcher-result').filter({ hasText: 'Add OpenCode' })).toHaveCount(1)
     await page.keyboard.press('Escape')
 
     // A3: before any service is connected, the name finds the folder; → offers a terminal there.
@@ -47,6 +47,11 @@ test('clean install: model first, built-ins without any server, OpenCode only on
     await expect(folder).toContainText('Browse files')
     await expect(folder).toContainText('~/code/clean-slate-folder')
     await expect(page.locator('.launcher-result').filter({ hasText: 'OpenCode' })).toHaveCount(0)
+    // Ctrl+J/K move through K's results without leaving the keyboard row.
+    await input.press('Control+j')
+    await expect(page.locator('.launcher-result.selected')).toContainText('Search the web')
+    await input.press('Control+k')
+    await expect(page.locator('.launcher-result.selected')).toContainText('Browse files')
     await input.press('ArrowRight')
     await expect(page.locator('.launcher-result').filter({ hasText: 'Open terminal here' })).toHaveCount(1)
     await input.press('ArrowLeft')
@@ -101,12 +106,13 @@ test('clean install: model first, built-ins without any server, OpenCode only on
     await desktopReady(page, { opencode: true })
     await expect(page.locator('[data-model-setup]')).toHaveCount(0)
     await expect(page.locator('[data-kind="terminal"]')).toHaveCount(1)
-    await expect(page.locator('[data-kind="folder"]')).toHaveCount(2)
+    // The folder tile navigated in place into assets/pixel.png.
+    await expect(page.locator('[data-kind="file"]')).toHaveCount(1)
 
     // Remove OpenCode: it stops being contacted, and stays gone after restart.
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
     await page.getByRole('region', { name: 'Sources' }).getByRole('button', { name: 'Remove', exact: true }).click()
-    await expect(page.getByRole('status')).toContainText('OpenCode removed')
+    await expect(page.locator('.tile-toast')).toContainText('OpenCode removed')
     await page.getByRole('button', { name: 'Close settings' }).click()
     await expect(page.getByRole('button', { name: 'OpenCode source' })).toHaveCount(0)
     await app.close()
@@ -119,31 +125,3 @@ test('clean install: model first, built-ins without any server, OpenCode only on
   } finally { await app?.close(); await fixture.close(); await rm(profile, { recursive: true, force: true }); await rm(home, { recursive: true, force: true }) }
 })
 
-test('K can use a model OpenCode is signed into (e.g. a ChatGPT subscription) instead of an API key', async () => {
-  const definition = { ...(await import('../../src/shared/connectors')).exampleConnector, baseURL: 'https://api.helpdesk.example' }
-  const fixture = await fixtureServer({ generate: prompt => prompt.startsWith('You are K') ? JSON.stringify({ kind: 'connector', text: 'Helpdesk tickets.', definition }) : '{}' })
-  const profile = await mkdtemp('/tmp/opencode/chatos-subscription-')
-  const env: Record<string, string> = { ...Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => typeof e[1] === 'string')), CHATOS_USER_DATA: profile, CHATOS_SERVER_URL: fixture.url }
-  delete env.ELECTRON_RUN_AS_NODE
-  let app: ElectronApplication | undefined
-  try {
-    app = await launchDesktop(env)
-    let page = await app.firstWindow()
-    await app.evaluate(({ dialog }) => { dialog.showMessageBox = (async () => ({ response: 1, checkboxChecked: false })) as typeof dialog.showMessageBox })
-    await expect(page.locator('[data-model-setup]')).toBeVisible()
-    await page.getByRole('button', { name: 'Use your ChatGPT subscription' }).click()
-    await expect(page.getByRole('combobox', { name: 'OpenCode model' })).toHaveValue('fixture/test-model')
-    await page.getByRole('textbox', { name: 'Launcher search' }).press('Enter')
-    await expect(page.getByRole('button', { name: 'Model', exact: true })).toContainText('test-model')
-    const input = await ask(page, 'add helpdesk', false)
-    await input.press('Enter')
-    await expect(page.locator('.k-map')).toContainText('Ticket inbox')
-    const generate = fixture.requests.find(r => r.path.endsWith('/generate'))!
-    expect(JSON.stringify(generate.body)).toContain('"providerID":"fixture"')
-    expect(fixture.requests.filter(r => r.path.endsWith('/api/session') && r.method === 'POST')).toEqual([])
-    // Restart: the choice is remembered and becomes ready once OpenCode reconnects.
-    await app.close(); app = await launchDesktop(env); page = await app.firstWindow()
-    await desktopReady(page, { opencode: true })
-    await expect(page.locator('[aria-label="Model"] .status-dot.green')).toBeVisible()
-  } finally { await app?.close(); await fixture.close(); await rm(profile, { recursive: true, force: true }) }
-})

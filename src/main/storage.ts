@@ -2,7 +2,8 @@ import { DatabaseSync } from 'node:sqlite'
 import { chmodSync, existsSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
-import { restoreDesktop, serializeDesktop } from '../shared/tiles'
+import { serializeDesktop } from '../shared/tiles'
+import { restore } from '../shared/registry'
 import { validateConnector, type ConnectorDefinition } from '../shared/connectors'
 
 /** Single main-process writer. SQLite handles atomic commits and crash recovery. */
@@ -53,7 +54,7 @@ export class Storage {
     if (typeof raw !== 'string' || Buffer.byteLength(raw) > 8_000_000) throw new Error('Desktop state is too large to save')
     const value = JSON.parse(raw)
     if (![1, 2].includes(value.version) || !Array.isArray(value.workspaces) || (value.version === 2 && !Array.isArray(value.tiles))) throw new Error('Invalid desktop state; previous save kept')
-    return serializeDesktop(restoreDesktop(raw))
+    return serializeDesktop(restore(raw))
   }
   saveDesktop(raw: string) {
     const clean = this.cleanDesktop(raw)

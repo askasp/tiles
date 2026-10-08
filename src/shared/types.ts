@@ -1,167 +1,6 @@
-export interface ModelRef {
-  id: string
-  providerID: string
-  variant?: string
-}
-
-export interface SessionInfo {
-  id: string
-  parentID?: string
-  projectID: string
-  title?: string
-  agent?: string
-  model?: ModelRef
-  cost: number
-  tokens: { input: number; output: number; reasoning?: number; cache?: { read: number; write: number } }
-  location: { directory?: string | null }
-  time: { created: number; updated: number; idle?: number; viewed?: number; archived?: number }
-}
-
-export interface ProjectInfo {
-  id: string
-  canonical: string
-  name?: string
-  vcs?: string
-  sandboxes: string[]
-  time: { created: number; updated: number; initialized?: number }
-}
-
-export interface ModelInfo {
-  id: string
-  modelID: string
-  providerID: string
-  name: string
-  enabled: boolean
-  variants: { id: string; name?: string }[]
-  limit: { context: number; output: number; input?: number }
-}
-
-export interface AgentInfo {
-  id: string
-  name: string
-  description?: string
-  mode: 'primary' | 'subagent' | 'all'
-  hidden: boolean
-}
-
-export interface ToolPart {
-  type: 'tool'
-  id: string
-  name: string
-  state: {
-    status: 'streaming' | 'running' | 'completed' | 'error'
-    input?: Record<string, unknown>
-    content?: ({ type: 'text'; text: string } | { type: 'file'; [key: string]: unknown })[]
-    error?: string
-    metadata?: Record<string, unknown>
-  }
-  time: { created: number; ran?: number; completed?: number }
-}
-
-export interface MessageInfo {
-  id: string
-  type: string
-  text?: string
-  description?: string
-  agent?: string
-  model?: ModelRef
-  content?: ({ type: 'text' | 'reasoning'; text: string } | ToolPart)[]
-  files?: { uri?: string; name?: string; mime?: string }[]
-  time: { created: number; completed?: number }
-  error?: unknown
-  finish?: string
-  [key: string]: unknown
-}
-
-export interface PermissionRequest {
-  id: string
-  sessionID: string
-  action: string
-  resources: string[]
-  save?: string[]
-  message?: string
-}
-
-export interface FormField {
-  key: string
-  title?: string
-  description?: string
-  type: 'string' | 'number' | 'integer' | 'boolean' | 'multiselect' | 'external'
-  required?: boolean
-  hidden?: boolean
-  placeholder?: string
-  default?: string | number | boolean | string[]
-  options?: { value: string; label: string; description?: string }[]
-  custom?: boolean
-  format?: string
-  when?: { key: string; op: 'eq' | 'neq'; value: string | number | boolean }[]
-  url?: string
-  minLength?: number
-  maxLength?: number
-  minItems?: number
-  maxItems?: number
-}
-
-export type FormAnswer = Record<string, string | number | boolean | string[]>
-
-export interface SessionForm {
-  id: string
-  sessionID: string
-  title: string
-  fields: FormField[]
-}
-
-export interface FileDiff {
-  file: string
-  patch: string
-  additions: number
-  deletions: number
-  status: 'added' | 'deleted' | 'modified'
-}
-
-export interface SessionPage {
-  data: SessionInfo[]
-  cursor: { previous?: string | null; next?: string | null }
-}
-
-export interface MessagePage {
-  data: MessageInfo[]
-  cursor: { previous?: string | null; next?: string | null }
-}
-
-export interface SessionDetail {
-  session: SessionInfo
-  messages: MessagePage
-  permissions: PermissionRequest[]
-  forms: SessionForm[]
-  inbox: { id: string; type: string; [key: string]: unknown }[]
-}
-
-export interface ConnectionInfo {
-  connected: boolean
-  url?: string
-  version?: string
-  error?: string
-  automatic: boolean
-  /** OpenCode was added as a source (explicitly, or via CHATOS_SERVER_URL). */
-  enabled?: boolean
-  streaming?: boolean
-}
-export interface OpenCodeProbe { binary?: string; version?: string; running?: string; connection: ConnectionInfo }
-
-export interface Snapshot {
-  connection: ConnectionInfo
-  projects: ProjectInfo[]
-  sessions: SessionPage
-  active: string[]
-  directory: string
-  home: string
-  platform: string
-}
-
 export type DesktopEvent =
-  | { type: 'server'; event: Record<string, unknown> }
-  | { type: 'connection'; connection: ConnectionInfo }
+  /** Live events of an added source, e.g. OpenCode's session stream. */
+  | { type: 'source'; source: string; event: unknown }
   | { type: 'browser'; tab: BrowserState }
   | { type: 'browser-popup'; workspaceID: string; url: string; tileID?: string }
   | { type: 'tile-focus'; tileID: string }
@@ -205,49 +44,21 @@ export type StageTab =
   | { id: string; kind: 'review'; title: string }
   | { id: string; kind: 'details'; title: string }
 
-export interface Workspace {
-  id: string
-  kind: 'session' | 'web'
-  sessionID?: string
-  title: string
-  directory?: string
-  hidden: boolean
-  tabs: StageTab[]
-  panes: [string | null, string | null]
-  tabPane: Record<string, 0 | 1>
-  split: false | 'vertical' | 'horizontal'
-  focusedPane: 0 | 1
-  fullscreen: boolean
-  draft: string
-  context: ContextItem[]
-  closedTabs: StageTab[]
-}
-
-export interface WorkspaceState {
-  version: 1
-  activeID: string
-  workspaces: Workspace[]
-  folders: string[]
-  selectedDirectory: string
-  pinned: string[]
-  homeDraft: string
-}
-
-export interface ChatOSAPI {
+/** Core API. Each added source contributes its own namespace, e.g. `chatos.opencode`. */
+export interface CoreAPI {
   modelInfo(): Promise<import('./model').ModelInfo>
   saveModel(input: import('./model').ModelSettings & { apiKey?: string }): Promise<import('./model').ModelInfo>
   forgetModelKey(): Promise<import('./model').ModelInfo>
   probeModel(input: { baseURL: string; apiKey?: string }): Promise<import('./model').ModelProbe>
   skipModel(): Promise<import('./model').ModelInfo>
   discoverSource(turns: import('./model').DiscoveryTurn[]): Promise<import('./model').DiscoveryResult>
-  opencodeProbe(): Promise<OpenCodeProbe>
-  opencodeStart(): Promise<ConnectionInfo>
-  opencodeDisconnect(): Promise<ConnectionInfo>
   terminalOpen(input: { id: string; cwd: string; cols: number; rows: number }): Promise<{ cwd: string; shell: string; replay: string; alive: boolean }>
   terminalInput(id: string, data: string): Promise<void>
   terminalResize(id: string, cols: number, rows: number): Promise<void>
   terminalClose(id: string): Promise<void>
-  terminalFocus(focused: boolean): Promise<void>
+  /** While a terminal has focus or a dialog is open, plain Ctrl keys go to it instead of tile management. */
+  keyMode(mode: 'terminal' | 'overlay', active: boolean): Promise<void>
+  environment(): Promise<{ home: string; platform: string }>
   findPaths(query: string): Promise<LocalPath[]>
   readImage(path: string): Promise<{ path: string; size: number; dataURL: string }>
   loadDesktop(legacy?: string | null): string | null
@@ -272,27 +83,11 @@ export interface ChatOSAPI {
   searchServices(query: string): Promise<ServiceSearch>
   frontConversations(input: { query: string; cursor?: string }): Promise<FrontPage>
   frontConversation(input: { id: string; cursor?: string }): Promise<FrontDetail>
+  frontWrite(input: { id: string; kind: 'reply' | 'comment'; body: string }): Promise<void>
   saveService(input: { id: ServiceID; url?: string; token?: string; front?: FrontIdentity }): Promise<ServiceInfo>
   validateService(id: ServiceID): Promise<{ ok: boolean; account?: string; error?: string }>
   disconnectService(id: ServiceID): Promise<void>
   removeService(id: ServiceID): Promise<void>
-  bootstrap(): Promise<Snapshot>
-  reconnect(settings?: { url?: string; token?: string }): Promise<ConnectionInfo>
-  sessions(query?: { directory?: string; project?: string; search?: string; cursor?: string }): Promise<SessionPage>
-  activeSessions(): Promise<string[]>
-  session(id: string): Promise<SessionDetail>
-  messages(id: string, cursor?: string): Promise<MessagePage>
-  catalog(directory: string): Promise<{ agents: AgentInfo[]; models: ModelInfo[]; defaultModel?: ModelRef }>
-  createSession(input: { directory: string; agent?: string; model?: ModelRef }): Promise<SessionInfo>
-  prompt(input: { sessionID: string; text: string; files?: { uri: string; name?: string }[]; delivery: 'steer' | 'queue' }): Promise<void>
-  interrupt(id: string): Promise<void>
-  renameSession(id: string, title: string): Promise<SessionInfo>
-  switchAgent(id: string, agent: string): Promise<void>
-  switchModel(id: string, model: ModelRef): Promise<void>
-  permissionReply(input: { sessionID: string; requestID: string; decision: 'once' | 'always' | 'reject' }): Promise<void>
-  formReply(input: { sessionID: string; formID: string; answer: FormAnswer }): Promise<void>
-  formCancel(input: { sessionID: string; formID: string }): Promise<void>
-  diff(input: { directory: string; mode: 'working' | 'branch' | 'committed'; sessionID?: string }): Promise<FileDiff[]>
   chooseFolder(): Promise<string | null>
   chooseFiles(): Promise<{ uri: string; name: string }[]>
   browserLayout(placements: BrowserPlacement[]): Promise<void>
@@ -302,6 +97,7 @@ export interface ChatOSAPI {
   browserScreenshot(id: string): Promise<string>
   onEvent(listener: (event: DesktopEvent) => void): () => void
 }
+export type ChatOSAPI = CoreAPI & import('./registry-api').SourceAPIs
 export interface LocalPath { path: string; kind: 'folder' | 'file'; name: string }
 export interface FolderEntry { path: string; name: string; kind: 'folder' | 'file' | 'link' | 'other' }
 export interface FolderPage { path: string; parent: string; entries: FolderEntry[]; truncated: boolean }

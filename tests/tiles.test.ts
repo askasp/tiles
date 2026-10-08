@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { activeWorkspace, browserTile, desktopInitial, directionTile, focusTile, focusedTile, fullscreenTile, goWorkspace, moveTile, neighbourIndex, openTile, projectTile, promoteTile, reconcileBrowser, restoreDesktop, restoreLast, serializeDesktop, sessionTile, shelfTile, tidyAround, undoArrangement, updateTile, type TileDesktop } from '../src/shared/tiles'
-import type { SessionInfo } from '../src/shared/types'
+import { activeWorkspace, browserTile, desktopInitial, directionTile, focusTile, focusedTile, fullscreenTile, goWorkspace, moveTile, neighbourIndex, openTile, promoteTile, reconcileBrowser, restoreLast, serializeDesktop, shelfTile, tidyAround, undoArrangement, updateTile, type TileDesktop } from '../src/shared/tiles'
+import type { SessionInfo } from '../src/shared/sources/opencode/types'
+import { projectTile, sessionTile } from '../src/shared/sources/opencode'
+import { restore as restoreDesktop } from '../src/shared/registry'
 
 const session = (n: number, project = '/projects/amino'): SessionInfo => ({ id: `session-${n}`, projectID: project, title: `Task ${n}`, cost: 0, tokens: { input: 0, output: 0 }, location: { directory: project }, time: { created: n, updated: n } })
 function valid(s: TileDesktop) {
