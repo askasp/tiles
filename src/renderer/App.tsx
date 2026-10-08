@@ -1,9 +1,9 @@
-import { Expand, LayoutGrid, Link, Pencil, Settings, Undo2, X } from 'lucide-react'
+import { LayoutGrid, Link, Settings, Undo2, X } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { BrowserContext } from '../shared/types'
 import type { ModelInfo } from '../shared/model'
 import type { ConnectorDefinition, ConnectorInfo } from '../shared/connectors'
-import { createShortcutReader, shortcutFor } from '../shared/shortcuts'
+import { createShortcutReader, keyHelp, shortcutFor } from '../shared/shortcuts'
 import { activeWorkspace, browserTile, directionTile, fileTile, focusTile, focusedTile, fullscreenTile, goWorkspace, moveTile, openTile, promoteTile, replaceTile, restoreLast, serializeDesktop, shelfTile, shelfTiles, terminalTile, tidyAround, tileTitle, undoArrangement, updateTile, type Direction, type OpenMode, type Tile, type TileDesktop, type TileInput } from '../shared/tiles'
 import { resourceSource, sources as catalogue, type SourceID } from '../shared/sources'
 import { restore } from '../shared/registry'
@@ -11,13 +11,15 @@ import { uid } from '../shared/util'
 import { AddressDialog, RenameDialog, SendPage, Settings as SettingsDialog } from './Overlays'
 import { Badge, TileLauncher, TileOverview, tileBadge, tileSource } from './TileOverlays'
 import { api, friendlyError } from './data'
-import { IconButton, KeyButton, Status, listKeys, rowSelector } from './ui'
+import { IconButton, Status, listKeys, rowSelector } from './ui'
+import { ActionMenu, KeySheet } from './ActionMenu'
+import { tileActions, useActionsVersion, type TileAction } from './actions'
 import { ConnectorSettings } from './ConnectorSettings'
 import { registry, sourceFor } from './sources/registry'
 import type { Env } from './sources/types'
 
 const STORAGE = 'chatos.desktop.v2'
-type Overlay = 'launcher' | 'address' | 'overview' | 'settings' | 'connectors' | 'rename' | 'send-page' | null
+type Overlay = 'launcher' | 'address' | 'overview' | 'settings' | 'connectors' | 'rename' | 'send-page' | 'actions' | 'keys' | null
 
 const kindChip = (tile: Tile, connectors: ConnectorInfo[]) => {
   const owner = catalogue.find(s => s.id === resourceSource(tile) || `connector:${s.id}` === resourceSource(tile))
@@ -53,6 +55,8 @@ export default function App() {
   const [chord, setChord] = useState(false)
   const chordTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const home = machine.home
+  const system = machine.platform === 'darwin' ? '⌘' : 'Super'
+  useActionsVersion()
   const root = useRef<HTMLDivElement>(null)
   const w = activeWorkspace(desktop), focused = focusedTile(desktop)
   const visible = w?.tileIDs.map(id => desktop.tiles.find(t => t.id === id)!).filter(t => !w.fullscreenID || t.id === w.fullscreenID) || []
@@ -105,6 +109,29 @@ export default function App() {
     try { open({ ...terminalTile(folder), ...(command && { draft: command }) }, mode); notify(`Terminal opened in ${home && folder.startsWith(home) ? `~${folder.slice(home.length)}` : folder}${!directory && tile?.directory ? ', the focused folder' : ''}`, false, 'Super+T') } catch (e) { reportError(friendlyError(e)) }
   }, [home, open, notify, reportError])
   const attachRef = useRef<(id: string, selection?: boolean) => void>(() => {})
+  /** What each tile showed before, for Back/Forward. Snapshots keep drafts, so a half-written
+   * message is still there when you come back to it. Lives as long as the window. */
+  const trails = useRef(new Map<string, { back: TileInput[]; forward: TileInput[] }>())
+  const [, setTrailVersion] = useState(0)
+  const trailOf = (id: string) => { let t = trails.current.get(id); if (!t) { t = { back: [], forward: [] }; trails.current.set(id, t) } return t }
+  const snapshot = (t: Tile): TileInput => { const { id: _id, workspaceID: _w, status: _s, lastUsed: _l, shelvedAt: _h, ...rest } = t; return rest as TileInput }
+  const navigate = useCallback((id: string, input: TileInput, record: 'push' | 'back' | 'forward' = 'push') => {
+    const current = ref.current.tiles.find(t => t.id === id)
+    if (!current || current.key === input.key) return
+    const trail = trailOf(id), owner = ref.current.tiles.find(t => t.key === input.key && t.id !== id)
+    if (!owner) {
+      // Coming back to something this tile showed before restores it as it was.
+      const seen = [...trail.back, ...trail.forward].find(t => t.key === input.key)
+      if (seen && record === 'push') input = { ...seen, ...input, draft: input.draft || seen.draft, context: input.context?.length ? input.context : seen.context }
+      if (record === 'back') trail.forward.push(snapshot(current))
+      else { trail.back.push(snapshot(current)); if (trail.back.length > 50) trail.back.shift() }
+      if (record === 'push') trail.forward = []
+      setTrailVersion(v => v + 1)
+    }
+    update(s => replaceTile(s, id, input)); setFocusKey(k => k + 1)
+  }, [update]) // eslint-disable-line react-hooks/exhaustive-deps
+  const tileBack = useCallback((id: string) => { const previous = trailOf(id).back.pop(); if (previous) navigate(id, previous, 'back'); return !!previous }, [navigate]) // eslint-disable-line react-hooks/exhaustive-deps
+  const tileForward = useCallback((id: string) => { const next = trailOf(id).forward.pop(); if (next) navigate(id, next, 'forward'); return !!next }, [navigate]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Every source's live state. The registry is fixed, so hooks run in the same order every render.
   const statesRef = useRef(new Map<string, unknown>())
@@ -112,12 +139,15 @@ export default function App() {
   const env: Env = useMemo(() => ({
     desktop, home, model, connectors, setConnectors,
     editConnector: target => { setConnectorDraft(target); setOverlay('connectors') },
-    open, focus, changeTile, setDesktop: update, replaceTile: (id, input) => { update(s => replaceTile(s, id, input)); setFocusKey(k => k + 1) }, notify, reportError, ask, openURL, openTerminal,
+    open, focus, changeTile, setDesktop: update, replaceTile: (id, input) => navigate(id, input),
+    openFrom: (id, input, how) => { if (how === 'replace') navigate(id, input); else open(input, how === 'beside' ? 'here' : 'new') },
+    tileBack, tileForward, tileTrail: id => ({ back: trails.current.get(id)?.back.length || 0, forward: trails.current.get(id)?.forward.length || 0 }),
+    notify, reportError, ask, openURL, openTerminal,
     closeOverlay: () => setOverlay(null),
     attach: (id, selection) => attachRef.current(id, selection),
     address: () => setOverlay('address'),
     othersFor: input => registry.flatMap(s => s.others?.(input, statesRef.current.get(s.id), envRef.current) || []),
-  }), [desktop, home, model, connectors, open, focus, changeTile, update, notify, reportError, ask, openURL, openTerminal])
+  }), [desktop, home, model, connectors, open, focus, changeTile, update, notify, reportError, ask, openURL, openTerminal, navigate, tileBack, tileForward])
   envRef.current = env
   const states = new Map<string, unknown>()
   for (const source of registry) states.set(source.id, source.use(env)) // eslint-disable-line react-hooks/rules-of-hooks
@@ -168,6 +198,8 @@ export default function App() {
     if (action === 'launcher') { if (overlay === 'launcher') { if (!firstRun) setOverlay(null) } else ask(); return }
     if (action === 'overview') { setOverlay(o => o === 'overview' ? null : 'overview'); return }
     if (action === 'settings') { setOverlay(o => o === 'settings' ? null : 'settings'); return }
+    if (action === 'actions') { if (!firstRun) setOverlay(o => o === 'actions' ? null : focusedTile(ref.current) ? 'actions' : o); return }
+    if (action === 'keys') { if (!firstRun) setOverlay(o => o === 'keys' ? null : 'keys'); return }
     if (overlay) return
     const tile = focusedTile(ref.current), ws = activeWorkspace(ref.current)
     if (action.startsWith('workspace:')) { go(Number(action.split(':')[1])); return }
@@ -203,6 +235,12 @@ export default function App() {
     if (!tile) return
     if (action === 'close-tile' || action === 'shelf-tile') { hide(tile.id, action === 'close-tile'); return }
     if (action === 'rename') { setRenameID(tile.id); setOverlay('rename'); return }
+    if (action === 'tile-back' || action === 'tile-forward') {
+      const moved = action === 'tile-back' ? tileBack(tile.id) : tileForward(tile.id)
+      // A web page with nowhere to go in the tile uses its own history.
+      if (!moved && tile.kind === 'browser') void api.browserAction({ id: tile.id, action: action === 'tile-back' ? 'back' : 'forward' }).catch(() => {})
+      return
+    }
     if (action === 'fullscreen') update(fullscreenTile)
     if (action === 'promote') update(promoteTile)
     if (action.startsWith('focus:') || action.startsWith('swap:')) { update(s => directionTile(s, action.split(':')[1] as Direction, action.startsWith('swap:'))); setFocusKey(k => k + 1) }
@@ -227,7 +265,7 @@ export default function App() {
       if (action) { handler.current(action); return }
       if (event.key === 'Escape') { setOverlay(o => o && !(o === 'launcher' && firstRunRef.current) ? null : o); return }
       // j/k/h/l inside lists; never while typing.
-      if (!inTerminal && !document.querySelector('[role="dialog"]')) listKeys(event)
+      if (!inTerminal && !document.querySelector('[role="dialog"]')) listKeys(event, { menu: () => handler.current('actions'), keys: () => handler.current('keys') })
     }
     document.addEventListener('keydown', keys)
     return () => { unsubscribe(); document.removeEventListener('keydown', keys) }
@@ -257,7 +295,8 @@ export default function App() {
     const target = () => {
       const last = lastFocus.current.get(tile.id)
       if (last?.isConnected && root.contains(last)) return last
-      for (const selector of ['.composer-input', '[tabindex="0"]', '.tile-body textarea, .tile-body input', rowSelector]) { const found = root.querySelector<HTMLElement>(selector); if (found) return found }
+      // A filter field is never picked: it would swallow the tile's letter keys (/ gets there).
+      for (const selector of ['.composer-input', rowSelector, '[tabindex="0"]', '.tile-body textarea, .tile-body input:not([data-filter])']) { const found = root.querySelector<HTMLElement>(selector); if (found) return found }
     }
     const found = target()
     if (found) { found.focus({ preventScroll: true }); return }
@@ -273,6 +312,16 @@ export default function App() {
     return () => { observer.disconnect(); clearTimeout(timer) }
   }, [desktop.activeID, w?.focusedID, overlay])
 
+  /** What every tile can do, in the action menu after the tile's own. Letters follow the Ctrl+W chord. */
+  const genericActions = (tile: Tile): TileAction[] => [
+    { id: 'back', label: 'Back', keyLabel: `Ctrl+O · ${system}+[`, disabled: !env.tileTrail(tile.id).back, run: () => { env.tileBack(tile.id) } },
+    { id: 'forward', label: 'Forward', keyLabel: `Ctrl+I · ${system}+]`, disabled: !env.tileTrail(tile.id).forward, run: () => { env.tileForward(tile.id) } },
+    { id: 'rename', label: 'Rename', keyLabel: 'F2', run: () => { setRenameID(tile.id); setOverlay('rename') } },
+    { id: 'fullscreen', label: w?.fullscreenID ? 'Leave fullscreen' : 'Fullscreen', key: 'o', run: () => update(fullscreenTile) },
+    { id: 'promote', label: 'Make it the main tile', key: 'x', disabled: visible[0]?.id === tile.id, run: () => update(promoteTile) },
+    { id: 'shelf', label: 'Shelf (stays live)', key: '-', run: () => hide(tile.id) },
+    { id: 'close', label: 'Close for good', key: 'q', run: () => hide(tile.id, true) },
+  ]
   const shelf = shelfTiles(desktop)
   const sourceStatus = [
     ...(model?.configured ? [{ key: 'model', name: model.model.split('/').pop()!, ok: model.ready, label: 'Model' }] : []),
@@ -305,8 +354,7 @@ export default function App() {
             <header className="tile-header"><Badge icon={tileBadge(tile)} /><strong className="tile-title truncate" title={tileTitle(tile)}>{tileTitle(tile)}</strong><span className="tile-source truncate" title={tile.url || tile.directory}>{tile.kind === 'terminal' ? '' : tileSource(tile)}{tile.directory && tile.kind !== 'session' ? `${tile.kind === 'terminal' ? '' : ' · '}${home && tile.directory.startsWith(home) ? `~${tile.directory.slice(home.length)}` : tile.directory}` : tile.url ? ` · ${(() => { try { return new URL(tile.url).pathname } catch { return '' } })()}` : ''}</span>{tile.linkID && <span title="Linked to the tile that opened it"><Link size={12} /></span>}{status && <Status running={status.running} waiting={status.waiting} />}
               {registry.map(s => s.headerActions && <span key={s.id} className="tile-header-action">{s.headerActions(tile, stateOf(s.id), env)}</span>)}
               <span className={`tile-type ${chip.generated ? 'generated' : ''}`}>{chip.text}</span>
-              <KeyButton className="tile-key" label={`Rename ${tileTitle(tile)}`} keys="F2" onClick={() => { setRenameID(tile.id); setOverlay('rename') }}><Pencil size={12} /></KeyButton>
-              <KeyButton className="tile-key" label={`Fullscreen ${tileTitle(tile)}`} keys="⌃W o" onClick={() => { focus(tile.id); update(fullscreenTile) }}><Expand size={13} /></KeyButton><KeyButton className="tile-key" label={`Shelf ${tileTitle(tile)}`} keys="⌃W -" onClick={() => hide(tile.id)}><X size={14} /></KeyButton>
+              <button type="button" className="tile-menu-button" aria-label={`Actions for ${tileTitle(tile)}`} title={`Actions · ␣ or ${system}+.`} onClick={() => { focus(tile.id); setOverlay('actions') }}><kbd>␣</kbd><span>actions</span></button>
             </header><div className="tile-body">
               {owner?.Tile ? <owner.Tile tile={tile} state={stateOf(owner.id)} env={env} visible={isVisible} focused={focused?.id === tile.id} focusKey={focusKey} /> : <div className="empty-list">No source in this version shows “{tile.kind}” tiles. The tile is kept.</div>}
             </div>
@@ -323,7 +371,9 @@ export default function App() {
     {overlay === 'connectors' && <ConnectorSettings connectors={connectors} changed={setConnectors} open={open} close={() => { setOverlay(null); setConnectorDraft({}) }} initialID={connectorDraft.id || focused?.resource?.connectorID} initialDefinition={connectorDraft.definition} modelReady={!!model?.ready} />}
     {overlay === 'rename' && renameID && <RenameDialog title={tileTitle(desktop.tiles.find(t => t.id === renameID) || { title: '' })} label={desktop.tiles.find(t => t.id === renameID)?.kind === 'session' ? 'Session name' : 'Tile name'} submit={async title => { try { const tile = ref.current.tiles.find(t => t.id === renameID); if (!tile) throw new Error('This tile is no longer available.'); const owner = sourceFor(tile.kind); if (!await owner?.rename?.(tile, title, stateOf(owner.id))) changeTile(tile.id, { label: title.trim() }); setOverlay(null) } catch (e) { reportError(friendlyError(e)) } }} close={() => setOverlay(null)} />}
     {overlay === 'send-page' && pageContext && <SendPage page={pageContext} targets={contextTargets} send={(id, note) => { const target = contextTargets.find(t => t.id === id); if (!target) return; update(s => { let next = s; let tile = next.tiles.find(t => t.key === target.input.key); if (!tile) { next = openTile(next, target.input); tile = next.tiles.find(t => t.key === target.input.key)! } return updateTile(next, tile.id, { draft: note ? `${tile.draft}${tile.draft ? '\n' : ''}${note}` : tile.draft, context: [...tile.context, { id: uid(), kind: 'page', name: pageContext.title || pageContext.url, text: `URL: ${pageContext.url}\n\n${pageContext.text}` }] }) }); notify(`Page added to ${target.title}’s draft. Nothing sent.`) }} close={() => setOverlay(null)} />}
-    {chord && <div className="tile-toast chord-hint" role="status"><kbd>Ctrl+W</kbd><span>h j k l move · H J K L swap · w next · o fullscreen · x promote · − shelf · q close</span></div>}
+    {overlay === 'actions' && focused && <ActionMenu title={tileTitle(focused)} own={tileActions(focused.id)} tile={genericActions(focused)} move={slot => move(focused.id, slot)} close={() => setOverlay(null)} />}
+    {overlay === 'keys' && <KeySheet groups={keyHelp(system)} tileTitle={focused && tileTitle(focused)} own={focused ? tileActions(focused.id) : []} close={() => setOverlay(null)} />}
+    {chord && <div className="tile-toast chord-hint" role="status"><kbd>Ctrl+W</kbd><span>{keyHelp(system).find(g => g.title.startsWith('Ctrl+W'))!.rows.map(r => `${r.keys} ${r.label.toLowerCase()}`).join(' · ')}</span></div>}
     {toast && <div className={`tile-toast ${toast.error ? 'error' : ''}`} role={toast.error ? 'alert' : 'status'}><span>{toast.text}</span>{toast.key && <kbd>{toast.key}</kbd>}<IconButton label="Dismiss notification" onClick={() => setToast(null)}><X size={13} /></IconButton></div>}
   </div>
 }

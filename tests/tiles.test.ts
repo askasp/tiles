@@ -240,3 +240,20 @@ describe('entire workday simulation', () => {
     expect(s.history.length).toBeLessThanOrEqual(25)
   })
 })
+
+describe('replacing a tile in place', () => {
+  it('a session opened from its list takes the tile; nothing of the list carries over, and an open session is reused', async () => {
+    const { replaceTile } = await import('../src/shared/tiles')
+    let s = openTile(desktopInitial(), projectTile('/projects/amino'))
+    const id = s.tiles[0].id
+    s = { ...s, tiles: s.tiles.map(t => ({ ...t, draft: 'list draft', label: 'Amino' })) }
+    s = replaceTile(s, id, sessionTile(session(1)))
+    expect(s.tiles).toHaveLength(1)
+    expect(s.tiles[0]).toMatchObject({ id, kind: 'session', sessionID: 'session-1', key: 'session:session-1', draft: '', label: undefined })
+    s = openTile(s, sessionTile(session(2)))
+    const before = s.tiles.length
+    s = replaceTile(s, id, sessionTile(session(2)))
+    expect(s.tiles).toHaveLength(before)
+    expect(s.tiles.find(t => t.id === id)?.sessionID).toBe('session-1')
+  })
+})

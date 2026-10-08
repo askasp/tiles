@@ -1,6 +1,7 @@
 import { LoaderCircle } from 'lucide-react'
 import type { ButtonHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
 import { useEffect, useRef } from 'react'
+import { actionForKey } from './actions'
 
 export function IconButton({ label, children, className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string; children: ReactNode }) {
   return <button type="button" className={`icon-button ${className}`} aria-label={label} title={label} {...props}>{children}</button>
@@ -37,18 +38,24 @@ export function dayLabel(time: number) {
   return days === 0 ? 'Today' : days === 1 ? 'Yesterday' : date.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })
 }
 
+/** A dialog starts on what you came for: a field, else the first row, else a button — never the Close button. */
+function firstFocus(element: HTMLElement) {
+  for (const selector of ['[autofocus]', 'input:not(:disabled), textarea:not(:disabled), select:not(:disabled)', `${rowSelector}, .action-row`, '[tabindex="0"]', 'button:not(:disabled)']) {
+    const found = [...element.querySelectorAll<HTMLElement>(selector)].find(e => !e.closest('.modal-heading') && (e as HTMLButtonElement).disabled !== true)
+    if (found) return found
+  }
+  return element
+}
+
 export function Modal({ title, children, close, wide = false }: { title: string; children: ReactNode; close: () => void; wide?: boolean }) {
   const dialog = useRef<HTMLElement>(null)
   const previous = useRef(document.activeElement as HTMLElement | null)
   useEffect(() => {
     const element = dialog.current
-    if (element && !element.contains(document.activeElement)) {
-      const first = element.querySelector<HTMLElement>('input:not(:disabled), textarea:not(:disabled), select:not(:disabled), button:not(:disabled), [tabindex="0"]')
-      ;(first || element).focus()
-    }
+    if (element && !element.contains(document.activeElement)) firstFocus(element).focus()
     // When the window gets the keyboard back (e.g. from a web page), Chromium restores the last
     // focused element, which may be outside this dialog. The dialog takes it back.
-    const reclaim = () => { const e = dialog.current; if (e && !e.contains(document.activeElement)) (e.querySelector<HTMLElement>('input:not(:disabled), textarea:not(:disabled), select:not(:disabled), button:not(:disabled), [tabindex="0"]') || e).focus() }
+    const reclaim = () => { const e = dialog.current; if (e && !e.contains(document.activeElement)) firstFocus(e).focus() }
     window.addEventListener('focus', reclaim)
     return () => { window.removeEventListener('focus', reclaim); const back = previous.current; if (back?.isConnected && !back.closest('.resource-tile:not(.tile-focused)')) back.focus() }
   }, [])
@@ -68,22 +75,24 @@ export function Modal({ title, children, close, wide = false }: { title: string;
 }
 
 export const rowSelector = '.session-row, .file-entry, .recipe-list-row, .recipe-timeline-row, .recipe-table tbody tr button, .review-file-name, .overview-tile-row, .k-row'
-/** j/k move through the rows of the focused tile, l opens, h goes back, / filters,
- * and a button marked data-key runs on its key. Never while typing. */
-export function listKeys(event: KeyboardEvent) {
+/** Keys of the focused tile, never while typing: ␣ action menu, ? key sheet, / filter,
+ * the tile's own action letters, j/k through rows, l opens, h goes back. */
+export function listKeys(event: KeyboardEvent, open: { menu(): void; keys(): void }) {
   if (event.ctrlKey || event.altKey || event.metaKey || event.key.length !== 1) return
   const target = event.target as HTMLElement | null
   if (!target || target.closest('input, textarea, select, [contenteditable="true"]')) return
+  if (event.key === '?') { event.preventDefault(); open.keys(); return }
   // The focused tile wins over stale DOM focus left in the tile focus came from.
   const tile = document.querySelector<HTMLElement>('.resource-tile.tile-focused') || target.closest<HTMLElement>('[data-tile-id]')
   if (!tile) return
+  if (event.key === ' ') { event.preventDefault(); open.menu(); return }
   if (event.key === '/') {
     const filter = tile.querySelector<HTMLInputElement>('[data-filter]')
     if (filter) { event.preventDefault(); filter.focus(); filter.select() }
     return
   }
-  const button = tile.querySelector<HTMLButtonElement>(`[data-key="${CSS.escape(event.key)}"]:not(:disabled)`)
-  if (button) { event.preventDefault(); button.click(); return }
+  const action = actionForKey(tile.dataset.tileId!, event.key)
+  if (action) { event.preventDefault(); void action.run(); return }
   if (!['j', 'k', 'h', 'l'].includes(event.key)) return
   const inside = tile.contains(target)
   // Lists that handle arrows themselves (Files) get arrows.

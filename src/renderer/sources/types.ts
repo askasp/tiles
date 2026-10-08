@@ -12,8 +12,14 @@ export interface Env {
   setConnectors(list: ConnectorInfo[]): void
   editConnector(target: { id?: string; definition?: ConnectorDefinition }): void
   open(input: TileInput, mode?: OpenMode): void
-  /** Navigate this tile to another resource in place. */
+  /** Navigate this tile to another resource in place. Back (Ctrl+O, ⌘[) returns, draft intact. */
   replaceTile(id: string, input: TileInput): void
+  /** Open from a list: ↵ in place of the list, Ctrl/⌘+↵ beside it, Ctrl/⌘+Shift+↵ in a new workspace. */
+  openFrom(tileID: string, input: TileInput, how: ListOpen): void
+  /** Back/forward through what this tile showed. False when there's nowhere to go. */
+  tileBack(id: string): boolean
+  tileForward(id: string): boolean
+  tileTrail(id: string): { back: number; forward: number }
   focus(id: string): void
   changeTile(id: string, patch: Partial<Tile>): void
   setDesktop(update: (s: TileDesktop) => TileDesktop): void
@@ -31,6 +37,10 @@ export interface Env {
   /** → actions every source offers on this resource. */
   othersFor(input: TileInput): Other[]
 }
+
+export type ListOpen = 'replace' | 'beside' | 'workspace'
+/** How a key or click on a list row opens it. */
+export const listOpen = (e: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }): ListOpen => e.ctrlKey || e.metaKey ? e.shiftKey ? 'workspace' : 'beside' : 'replace'
 
 /** A K query, already split into source scope and words. */
 export interface Query {

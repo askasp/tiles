@@ -170,3 +170,21 @@
 .resource-tile:not(.tile-focused) :is(.project-actions .pill, .filter-row) kbd { display: none; }
 
 .recipe-presets { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px 0; }
+/* Action menu (␣ / Super+.) and key sheet (?): the keyboard path to everything. */
+.tile-menu-button { display: flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 6px; font-size: 10.5px; color: var(--faint); }
+.tile-menu-button:hover { background: var(--canvas); color: var(--ink-3); }
+.tile-menu-button kbd { font-size: 10px; }
+.resource-tile:not(.tile-focused) .tile-menu-button span { display: none; }
+.action-menu .large-input { margin: 0 16px 8px; width: calc(100% - 32px); }
+.action-list { padding: 0 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.action-list section { display: flex; flex-direction: column; gap: 1px; padding-top: 6px; }
+.action-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 12px; border-radius: 9px; text-align: left; font-size: 13px; color: var(--ink); border: 1px solid transparent; }
+.action-row:hover, .action-row:focus-visible, .action-row:focus { background: var(--blue-soft); border-color: var(--blue-line); outline: none; }
+.action-row span { flex: 1; }
+.action-row kbd { min-width: 22px; text-align: center; padding: 1px 6px; border-radius: 5px; background: var(--canvas); color: var(--ink-3); font-size: 11px; }
+.action-row kbd:empty { display: none; }
+.action-row.urgent { color: var(--warn); background: var(--warn-soft); font-weight: 500; }
+.action-row:disabled { opacity: .45; }
+.key-sheet-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 4px 28px; padding: 4px 20px 20px; }
+.key-sheet-groups h3, .shortcuts-content h4 { margin: 12px 0 4px; font-size: 12px; font-weight: 500; color: var(--ink); }
+.key-sheet .shortcut-row kbd { width: 190px; }

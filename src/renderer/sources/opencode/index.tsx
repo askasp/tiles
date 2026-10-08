@@ -1,4 +1,3 @@
-import { FolderOpen, GitCompare, Plus, SquareTerminal } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { fileTile, openTile, updateTile, type OpenMode, type Tile } from '../../../shared/tiles'
 import { basename, uid } from '../../../shared/util'
@@ -6,7 +5,8 @@ import { directoryOf, projectTile, projectsTile, reviewTile, sessionIntent, sess
 import { api } from '../../data'
 import { registerBadge } from '../../Setup'
 import { Status, filterField } from '../../ui'
-import { source, type Candidate, type Env, type Other, type Row } from '../types'
+import { useTileActions } from '../../actions'
+import { listOpen, source, type Candidate, type Env, type Other, type Row } from '../types'
 import { Chat } from './Chat'
 import { Composer } from './Composer'
 import { Review } from './Review'
@@ -112,10 +112,18 @@ function ProjectBody({ tile, state, env }: { tile: Tile; state: OpenCodeState; e
   const list = useSessionList(project ? { project: project.id } : { directory: tile.directory }, data.connection.connected, data.ingest)
   const [filter, setFilter] = useState('')
   const placed = (id: string) => { const t = desktop.tiles.find(t => t.sessionID === id && t.kind === 'session'); return t?.status === 'visible' ? t.workspaceID === tile.workspaceID ? 'tiled here' : `open on ${desktop.workspaces.find(w => w.id === t.workspaceID)?.slot}` : t?.status === 'shelf' ? 'on shelf' : '' }
-  return <div className="project-tile-body"><div className="project-actions"><button className="pill primary" data-key="s" onClick={() => env.ask(`start session in ${tile.title}: `)}><Plus size={13} />Start session<kbd aria-hidden>s</kbd></button><button className="pill" data-key="d" onClick={() => env.open(reviewTile(tile.directory!))}><GitCompare size={13} />Review changes<kbd aria-hidden>d</kbd></button><button className="pill" data-key="f" onClick={() => { void api.inspectPath(tile.directory!).then(path => env.open(fileTile(path.path, path.kind))).catch(e => env.reportError(friendlyError(e))) }}><FolderOpen size={13} />Browse files<kbd aria-hidden>f</kbd></button><button className="pill" data-key="t" onClick={() => env.openTerminal(tile.directory)}><SquareTerminal size={13} />Terminal<kbd aria-hidden>t</kbd></button></div>
+  useTileActions(tile.id, 'opencode-project', [
+    { id: 'start', label: 'Start session', key: 's', run: () => env.ask(`start session in ${tile.title}: `) },
+    { id: 'review', label: 'Review changes', key: 'd', run: () => env.open(reviewTile(tile.directory!)) },
+    { id: 'files', label: 'Browse files', key: 'f', run: () => { void api.inspectPath(tile.directory!).then(path => env.open(fileTile(path.path, path.kind))).catch(e => env.reportError(friendlyError(e))) } },
+    { id: 'terminal', label: 'Terminal here', key: 't', run: () => env.openTerminal(tile.directory) },
+    { id: 'refresh', label: 'Refresh sessions', key: 'r', run: () => void list.refresh() },
+    ...(list.page.cursor.next ? [{ id: 'more', label: 'Load more sessions', key: 'm', run: () => void list.refresh(list.page.cursor.next!) }] : []),
+  ])
+  return <div className="project-tile-body">
     <div className="project-tile-toolbar filter-row"><input {...filterField} aria-label={`Search sessions in ${tile.title}`} placeholder="Filter sessions…" value={filter} onChange={e => setFilter(e.target.value)} /><kbd aria-hidden>/</kbd></div>
     <span className="k-head">Sessions</span>
-    {list.page.data.filter(s => sessionTitle(s).toLowerCase().includes(filter.toLowerCase())).map(s => <button className="session-row" key={s.id} onClick={() => { data.ingest([s]); env.open(sessionTile(s)) }}><Status running={data.active.includes(s.id)} waiting={data.waiting.includes(s.id)} /><span className="truncate">{sessionTitle(s)}</span>{placed(s.id) && <span className="placed-badge">{placed(s.id)}</span>}</button>)}
+    {list.page.data.filter(s => sessionTitle(s).toLowerCase().includes(filter.toLowerCase())).map(s => <button className="session-row" key={s.id} onClick={e => { data.ingest([s]); env.openFrom(tile.id, sessionTile(s), listOpen(e)) }} onKeyDown={e => { if (e.key !== 'Enter') return; e.preventDefault(); data.ingest([s]); env.openFrom(tile.id, sessionTile(s), listOpen(e)) }}><Status running={data.active.includes(s.id)} waiting={data.waiting.includes(s.id)} /><span className="truncate">{sessionTitle(s)}</span>{placed(s.id) && <span className="placed-badge">{placed(s.id)}</span>}</button>)}
     {list.loading && <div className="list-loading">Loading sessions…</div>}{list.error && <div className="inline-error">{list.error}<button className="text-button" onClick={() => void list.refresh()}>Retry</button></div>}
     {data.connection.connected && !list.loading && !list.page.data.length && <div className="empty-list">No sessions here yet.</div>}
     {list.page.cursor.next && <button className="pill load-more" onClick={() => void list.refresh(list.page.cursor.next!)}>More sessions</button>}
@@ -179,7 +187,7 @@ export const opencodeSource = source<OpenCodeState>({
     const body = tile.kind === 'session' ? <SessionBody tile={tile} state={state} env={env} focused={focused} visible={visible} focusKey={focusKey} />
       : tile.kind === 'project' ? <ProjectBody tile={tile} state={state} env={env} />
       : tile.kind === 'projects' ? <div className="recipe-body"><div className="recipe-toolbar">OpenCode · Projects · rows open independent session-list tiles</div><div className="recipe-content">{state.projects.map(project => <button className="recipe-list-row" key={project.directory} onClick={() => env.open(projectTile(project.directory, project.name))}><strong>{project.name}</strong><small>{project.directory}</small></button>)}</div></div>
-      : tile.kind === 'review' ? state.connection.connected && <Review directory={tile.directory || ''} reportError={env.reportError} />
+      : tile.kind === 'review' ? state.connection.connected && <Review tileID={tile.id} directory={tile.directory || ''} />
       : <div className="session-details"><h2>{tile.title}</h2><p>{tile.directory}</p><p className="mono">{tile.sessionID}</p></div>
     return <>{notice}{body}</>
   },

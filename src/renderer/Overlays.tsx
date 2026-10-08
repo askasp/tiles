@@ -4,6 +4,7 @@ import type { BrowserContext } from '../shared/types'
 import type { ModelInfo } from '../shared/model'
 import { sources as catalogue } from '../shared/sources'
 import { normalizeURL } from '../shared/util'
+import { keyHelp } from '../shared/shortcuts'
 import { api, friendlyError } from './data'
 import { IconButton, Modal } from './ui'
 import { ModelSetup } from './Setup'
@@ -32,9 +33,9 @@ export function Settings({ model, modelChanged, env, states, close, platform }: 
   model?: ModelInfo; modelChanged: (info: ModelInfo) => void; env: Env; states: Map<string, unknown>; close: () => void; platform: string;
 }) {
   const [pending, setPending] = useState(false), [error, setError] = useState(''), [status, setStatus] = useState('')
-  const system = platform === 'darwin' ? '⌘' : 'Super / Ctrl+Alt'
+  const system = platform === 'darwin' ? '⌘' : 'Super'
   const run = async (action: () => Promise<void>) => { setPending(true); setError(''); try { await action() } catch (e) { setError(friendlyError(e)) } finally { setPending(false) } }
-  return <Modal title="Settings" close={close} wide><div className="modal-heading"><Settings2 size={18} /><h2>Settings</h2><span className="muted">Super+,</span><IconButton label="Close settings" onClick={close}><X size={16} /></IconButton></div>
+  return <Modal title="Settings" close={close} wide><div className="modal-heading"><Settings2 size={18} /><h2>Settings</h2><span className="muted">{system}+,</span><IconButton label="Close settings" onClick={close}><X size={16} /></IconButton></div>
     <div className="settings-grid">
       <section className="settings-section" aria-label="Appearance"><h3>Appearance</h3><Appearance /></section>
       <section className="settings-section" aria-label="Model"><h3>Model</h3><p className="muted">Powers K: understanding requests, building connectors and mapping tiles. Independent of every source.</p><ModelSetup embedded info={model} firstRun={false} saved={info => { modelChanged(info); setStatus(info.ready ? `Model saved: ${info.model}` : 'Model key forgotten.') }} /></section>
@@ -47,7 +48,7 @@ export function Settings({ model, modelChanged, env, states, close, platform }: 
         <p className="muted">Sources you add show up in Super+K. Nothing is contacted until it is added.</p>
       </section>
       {error && <div className="inline-error" role="alert">{error}</div>}{status && <p className="muted" role="status">{status}</p>}
-      <section className="settings-section shortcuts-content" aria-label="Keys"><h3><Keyboard size={15} />Keys</h3>{[[`Ctrl+K · ${system}+K`, 'Open K: search, ask, or add a source'], ['↵ · ⌃↵ or ⌘↵ · ⇧↵ in K', 'Open here · new workspace · move here'], ['↑↓ · Ctrl+J / Ctrl+K in K', 'Choose a result'], ['→ · Tab in K', 'Other actions · narrow to a source, then Add source'], ['Ctrl+W, then h j k l', 'Move between tiles (vim)'], ['Ctrl+W, then H J K L', 'Swap with neighbour'], ['Ctrl+W, then w · o · x · − · q', 'Next tile · fullscreen · promote · shelf · close'], [`${system}+W`, 'Close tile'], ['j / k · l / h in lists', 'Down / up · open / back'], ['↵ · Ctrl+↵ · ⌫ · - in Files', 'Open here · beside · back · up'], [`${system}+T`, 'Terminal in the focused folder (home if none)'], [`${system}+N`, 'New item like the focused tile'], [`${system}+,`, 'Settings'], ['F2', 'Rename focused tile'], [`${system}+0–9`, 'Workspace by number'], [`${system}+Shift+1–9`, 'Move tile to a workspace'], [`${system}+− / =`, 'Shelf / restore last shelved tile'], [`${system}+U`, 'Go to what is waiting on you'], [`${system}+Z`, 'Undo what K just arranged'], ['Ctrl+L or Alt+D / Ctrl+T', 'Address / new browser tile'], ['Ctrl+.', 'Selection as context to another tile (never sends)']].map(([key, title]) => <div className="shortcut-row" key={key}><kbd>{key}</kbd><span>{title}</span></div>)}<p className="muted">On Linux, use Ctrl+Alt if your window manager captures Super.</p></section>
+      <section className="settings-section shortcuts-content" aria-label="Keys"><h3><Keyboard size={15} />Keys</h3><p className="muted">Also anywhere with {system}+/ or ?. {platform === 'darwin' ? '' : 'On Linux, Ctrl+Alt works wherever Super is taken by your window manager.'}</p>{keyHelp(system).map(group => <div key={group.title}><h4>{group.title}</h4>{group.rows.map(row => <div className="shortcut-row" key={row.keys + row.label}><kbd>{row.keys}</kbd><span>{row.label}</span></div>)}</div>)}</section>
     </div>
   </Modal>
 }

@@ -261,8 +261,9 @@ export function undoArrangement(s: TileDesktop): TileDesktop {
     return old ? { ...t, ...old } : { ...t, status: 'closed', workspaceID: null }
   }) }
 }
-/** Navigate a tile to another resource in place (Files: into a subfolder or a file). If that
- * resource already has a tile, go there instead: one resource, one tile. */
+/** Navigate a tile to another resource in place (Files: into a subfolder; a session list: into a
+ * session). If that resource already has a tile, go there instead: one resource, one tile.
+ * Nothing of the old resource carries over: draft and context come from `input`. */
 export function replaceTile(s: TileDesktop, id: string, input: TileInput): TileDesktop {
   const current = s.tiles.find(t => t.id === id)
   if (!current) return openTile(s, input)
@@ -270,7 +271,8 @@ export function replaceTile(s: TileDesktop, id: string, input: TileInput): TileD
   if (owner) return owner.status === 'visible' ? focusTile(s, owner.id) : openTile(s, owner)
   const { id: _ignored, ...fields } = input
   void _ignored
-  return tidy(updateTile(s, id, { label: undefined, directory: undefined, path: undefined, url: undefined, ...fields, lastUsed: s.clock + 1 }))
+  const reset: Partial<Tile> = { label: undefined, directory: undefined, path: undefined, url: undefined, sessionID: undefined, linkID: undefined, resource: undefined, recipeIdentity: undefined, recipeIdentityScope: undefined, sourceName: undefined, draft: '', context: [] }
+  return tidy(updateTile(s, id, { ...reset, ...fields, lastUsed: s.clock + 1 }))
 }
 export function updateTile(s: TileDesktop, id: string, change: Partial<Tile>): TileDesktop {
   return { ...s, tiles: s.tiles.map(t => t.id === id ? { ...t, ...change, id: t.id, workspaceID: t.workspaceID, status: t.status } : t) }
