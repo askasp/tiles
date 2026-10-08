@@ -1,10 +1,13 @@
-import { ArrowUp, ChevronDown, Paperclip, Square, X } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import type { ContextItem } from '../../../shared/types'
 import type { AgentInfo, ModelInfo, ModelRef } from '../../../shared/sources/opencode/types'
-import { IconButton } from '../../ui'
+import { systemKey } from '../../ui'
+import { useTileActions } from '../../actions'
 
 interface ComposerProps {
+  /** Without one (no tile), the composer registers no actions. */
+  tileID?: string
   draft: string
   setDraft: (text: string) => void
   context: ContextItem[]
@@ -35,14 +38,29 @@ export function Composer(props: ComposerProps) {
     input.current.style.height = `${Math.min(168, Math.max(56, input.current.scrollHeight))}px`
   }, [props.draft, props.focusKey])
   useEffect(() => { if (props.focusKey) input.current?.focus() }, [props.focusKey])
+  const root = useRef<HTMLDivElement>(null)
+  const pick = (label: string) => { const select = root.current?.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`); if (!select) return; select.focus(); try { select.showPicker() } catch { /* focused is enough */ } }
+  const empty = !props.draft.trim() && !props.context.length
+  useTileActions(props.tileID || '', 'opencode-composer', props.tileID ? [
+    { id: 'write', label: 'Write a message', key: 'i', run: () => input.current?.focus() },
+    { id: 'send', label: props.home ? 'Start the session' : props.running ? 'Steer with the message' : 'Send the message', keyLabel: '↵', disabled: props.disabled || props.sending || empty, run: () => props.send('steer') },
+    ...(props.running ? [
+      { id: 'queue', label: 'Queue the message for after this turn', keyLabel: 'Alt+↵', disabled: props.disabled || empty, run: () => props.send('queue') },
+      { id: 'interrupt', label: 'Interrupt the agent', key: 'c', keyLabel: 'Esc', run: () => props.interrupt?.() },
+    ] : []),
+    { id: 'attach', label: 'Attach files', key: 'f', disabled: props.disabled, run: props.attach },
+    { id: 'agent', label: 'Choose the agent', key: 'g', disabled: props.disabled, run: () => pick('Agent') },
+    { id: 'model', label: 'Choose the model', key: 'm', disabled: props.disabled, run: () => pick('Model') },
+    ...(model?.variants.length ? [{ id: 'variant', label: 'Choose the model variant', key: 'v', disabled: props.disabled, run: () => pick('Model variant') }] : []),
+    ...props.context.map(context => ({ id: `remove-${context.id}`, label: `Remove context · ${context.name}`, run: () => props.removeContext(context.id) })),
+  ] : [])
 
-  return <div className="composer-wrap">
+  return <div className="composer-wrap" ref={root}>
     <div className="composer">
       {props.folderControl}
       {!!props.context.length && <div className="context-chips">{props.context.map(context => <span className="context-chip" key={context.id} title={context.text || context.uri}>
         {context.kind === 'image' && <img src={context.uri} alt="" />}
         <span className="context-kind">{context.kind}</span><span className="truncate">{context.name}</span>
-        <IconButton label={`Remove ${context.name}`} onClick={() => props.removeContext(context.id)}><X size={11} /></IconButton>
       </span>)}</div>}
       <textarea
         ref={input} className="composer-input" aria-label={props.home ? 'New session prompt' : 'Message'}
@@ -55,10 +73,11 @@ export function Composer(props: ComposerProps) {
             if (!props.disabled && !props.sending && (props.draft.trim() || props.context.length)) props.send(event.altKey ? 'queue' : 'steer')
           }
           if (event.key === 'Escape' && props.running) { event.preventDefault(); props.interrupt?.() }
+          // Esc leaves the message box for the tile, where letters are actions again (like vim's normal mode).
+          else if (event.key === 'Escape' && props.tileID) { event.preventDefault(); event.currentTarget.closest<HTMLElement>('[data-tile-id]')?.focus() }
         }}
       />
       <div className="composer-controls">
-        <IconButton label="Attach files" onClick={props.attach} disabled={props.disabled}><Paperclip size={16} /></IconButton>
         <label className="select-control" title="Agent">
           <select aria-label="Agent" value={props.agent || ''} onChange={event => props.setAgent(event.target.value)} disabled={props.disabled}>
             <option value="">Default agent</option>
@@ -78,13 +97,8 @@ export function Composer(props: ComposerProps) {
             <option value="">default</option>{model.variants.map(variant => <option key={variant.id} value={variant.id}>{variant.id}</option>)}
           </select><ChevronDown size={10} />
         </label>}
-        <div className="composer-action">
-          {props.running && !props.draft.trim() && !props.context.length
-            ? <IconButton label="Interrupt session" className="stop-button" onClick={props.interrupt}><Square size={12} fill="currentColor" /></IconButton>
-            : <IconButton label={props.home ? 'Start session' : props.running ? 'Steer session' : 'Send message'} className="send-button" onClick={() => props.send('steer')} disabled={props.disabled || props.sending || (!props.draft.trim() && !props.context.length)}><ArrowUp size={17} /></IconButton>}
-        </div>
       </div>
     </div>
-    <div className="composer-hint">{props.sending ? 'Sending…' : props.running ? '↵ steer · Alt+↵ queue · Esc interrupt' : props.home ? '↵ start session · Shift+↵ new line' : '↵ send · Shift+↵ new line'}<span>Ctrl+Space launcher</span></div>
+    <div className="composer-hint">{props.sending ? 'Sending…' : props.running ? '↵ steer · Alt+↵ queue · Esc interrupt' : props.home ? '↵ start session · Shift+↵ new line' : '↵ send · Shift+↵ new line'}<span>{props.running ? '' : 'Esc leaves · '}{systemKey}+. actions</span></div>
   </div>
 }

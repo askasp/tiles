@@ -1,7 +1,7 @@
 import { test, expect, type ElectronApplication } from '@playwright/test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { fixtureServer } from './fixture'
-import { desktopReady, launchDesktop, startSession } from './launch'
+import { desktopReady, launchDesktop, startSession, tileAction } from './launch'
 
 test('V3 messages, permissions, questions, unique browser, linked move, and restart', async () => {
   const fixture = await fixtureServer()
@@ -21,7 +21,12 @@ test('V3 messages, permissions, questions, unique browser, linked move, and rest
     const id = fixture.sessions[0].id
     expect(fixture.requests.find(r => r.path.endsWith('/prompt'))?.body.text).toBe('Test the API round trip')
     fixture.askPermission(id)
-    await page.getByRole('button', { name: 'Allow once', exact: true }).click()
+    // From the message box: Super+. (Ctrl+Alt+. here) opens the menu on the permission, y allows once.
+    await expect(page.locator('.permission-card')).toBeVisible()
+    await page.keyboard.press('Control+Alt+.')
+    await expect(page.getByRole('dialog', { name: /^Actions · / }).locator('.action-row').first()).toBeFocused()
+    await expect(page.getByRole('dialog', { name: /^Actions · / }).locator('.action-row').first()).toContainText('Allow once')
+    await page.keyboard.press('y')
     await expect(page.locator('.permission-card')).toHaveCount(0)
     fixture.askQuestion(id)
     await page.locator('.question-card select').selectOption('device')
@@ -39,7 +44,7 @@ test('V3 messages, permissions, questions, unique browser, linked move, and rest
       await c.executeJavaScript("localStorage.setItem('move-marker','keep-this-page')")
     })
     const browserID = await page.locator('[data-kind="browser"]').getAttribute('data-tile-id')
-    await page.getByRole('button', { name: 'Attach page', exact: true }).click()
+    await tileAction(page, page.locator(`[data-tile-id="${browserID}"]`), 'Attach the page as context')
     await expect(page.locator('.context-chip')).toContainText('Local preview')
     // Moving the session also moves its preview, without reconstructing Chromium.
     await page.locator(`[data-tile-id="${id}"] textarea`).click()
@@ -53,13 +58,13 @@ test('V3 messages, permissions, questions, unique browser, linked move, and rest
     await page.getByRole('textbox', { name: 'Launcher search' }).press('Enter')
     await expect(page.locator('.resource-tile:visible')).toHaveCount(2)
     expect(await app.evaluate(({ webContents }) => webContents.getAllWebContents().filter(c => c.getURL().endsWith('/preview')).length)).toBe(1)
-    await page.getByRole('button', { name: 'Shelf Test the API round trip', exact: true }).click()
+    await tileAction(page, page.locator(`[data-tile-id="${id}"]`), 'Shelf (stays live)')
     await expect(page.locator('.resource-tile:visible')).toHaveCount(0)
     fixture.askPermission(id)
     await expect(page.getByRole('button', { name: 'Go to waiting session' })).toContainText('1 waiting')
     await page.getByRole('button', { name: 'Go to waiting session' }).click()
     await expect(page.locator('.resource-tile:visible')).toHaveCount(2)
-    await page.getByRole('button', { name: 'Allow once', exact: true }).click()
+    await tileAction(page, page.locator(`[data-tile-id="${id}"]`), /^Allow once/)
     await expect(page.getByRole('button', { name: 'Go to waiting session' })).toHaveCount(0)
     await page.screenshot({ path: 'test-results/workflow-v3.png' })
     expect(errors).toEqual([])

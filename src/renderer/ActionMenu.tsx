@@ -43,7 +43,7 @@ export function ActionMenu({ title, own, tile, move, close }: { title: string; o
     <div className="action-list" ref={list}>
       {groups.map(group => <section key={group.title} aria-label={group.title}><span className="k-head">{group.title}</span>
         {group.actions.map(action => <button type="button" key={action.id} className={`action-row ${action.urgent ? 'urgent' : ''}`} disabled={action.disabled} onClick={() => run(action)}>
-          <span className="truncate">{action.label}</span><kbd>{action.key || action.keyLabel || ''}</kbd>
+          <span className="truncate">{action.label}</span><kbd aria-hidden>{[action.key, action.keyLabel].filter(Boolean).join(' · ')}</kbd>
         </button>)}
       </section>)}
       {!groups.length && <p className="empty-list">No action matches “{filter}”.</p>}
@@ -53,7 +53,7 @@ export function ActionMenu({ title, own, tile, move, close }: { title: string; o
 
 /** ? / Super+/: every key, from the same table the shortcuts use, plus the focused tile's own. */
 export function KeySheet({ groups, tileTitle, own, close }: { groups: KeyGroup[]; tileTitle?: string; own: TileAction[]; close: () => void }) {
-  const tileRows = own.filter(a => a.key || a.keyLabel).map(a => ({ keys: a.key || a.keyLabel!, label: a.label }))
+  const tileRows = own.filter(a => a.key || a.keyLabel).map(a => ({ keys: [a.key, a.keyLabel].filter(Boolean).join(' · '), label: a.label }))
   const all = [...(tileTitle && tileRows.length ? [{ title: `This tile · ${tileTitle}`, rows: tileRows }] : []), ...groups]
   return <Modal title="Keys" close={close} wide><div className="key-sheet">
     <div className="modal-heading"><Keyboard size={17} /><h2>Keys</h2><span className="muted">Esc closes</span><IconButton label="Close keys" onClick={close}><X size={16} /></IconButton></div>

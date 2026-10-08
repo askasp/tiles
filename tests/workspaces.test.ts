@@ -77,7 +77,9 @@ describe('i3-style app shortcuts', () => {
     expect(shortcutFor({ ...input, key: 'q', shift: true })).toBeUndefined()
     expect(shortcutFor({ ...input, key: '-' })).toBe('shelf-tile')
     expect(shortcutFor({ ...input, key: 't', alt: false, shift: true })).toBe('restore-closed')
-    expect(shortcutFor({ ...input, key: 'enter' })).toBe('promote')
+    // System+Enter is left to lists (open beside); Ctrl+W x promotes.
+    expect(shortcutFor({ ...input, key: 'enter' })).toBeUndefined()
+    expect(shortcutFor({ ...input, key: '[' })).toBe('tile-back')
     expect(shortcutFor({ ...input, key: '2', shift: true })).toBe('move-workspace:2')
     expect(shortcutFor({ ...input, key: '@', code: 'Digit2', shift: true })).toBe('move-workspace:2')
     expect(shortcutFor({ ...input, control: false, alt: false })).toBeUndefined()

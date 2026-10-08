@@ -128,6 +128,11 @@ export function keyHelp(system: string): KeyGroup[] {
       { keys: '/', label: 'Filter; Esc or ↓ goes back to the list' },
       { keys: 'a letter', label: 'The tile’s own actions (see ␣)' },
     ] },
+    { title: 'In a web page', rows: [
+      { keys: 'Alt+← · Alt+→', label: 'Back · forward in the page' },
+      { keys: 'Ctrl+R · F5', label: 'Reload' },
+      { keys: `${S}+.`, label: 'The page’s actions: attach, screenshot, devtools…' },
+    ] },
     { title: 'In K', rows: [
       { keys: '↑↓ · Ctrl+J K · Ctrl+N P', label: 'Choose a result' },
       { keys: '↵ · Ctrl+↵ · Shift+↵', label: 'Open here · in a new workspace · move here' },

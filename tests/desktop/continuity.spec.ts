@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { desktopReady, launchDesktop } from './launch'
+import { desktopReady, launchDesktop, tileAction } from './launch'
 import { fixtureServer } from './fixture'
 
 async function open(page: Page, query: string, mode = 'Enter') {
@@ -31,7 +31,7 @@ test('reading position and partial agent answers survive workspace/empty desktop
     await open(page, 'Consent reload')
     await expect(session.locator('.question-card select')).toHaveValue('device')
     await expect.poll(() => scroll.evaluate(e => e.scrollTop)).toBe(220)
-    await page.getByRole('button', { name: 'Shelf Consent reload', exact: true }).click()
+    await tileAction(page, page.locator('.resource-tile:visible'), 'Shelf (stays live)')
     await open(page, 'Consent reload')
     await expect(session.locator('.question-card select')).toHaveValue('device')
     await expect.poll(() => scroll.evaluate(e => e.scrollTop)).toBe(220)
@@ -65,12 +65,12 @@ test('browser popup reuses URL owner and native browser shortcuts open the launc
     await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children.filter(v => v.getVisible() && 'webContents' in v && (v as Electron.WebContentsView).webContents.getURL().includes('/preview/')).length)).toBe(0)
     await page.getByRole('button', { name: 'Close launcher' }).click()
     await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children.filter(v => v.getVisible() && 'webContents' in v && (v as Electron.WebContentsView).webContents.getURL().includes('/preview/')).length)).toBe(1)
-    await page.getByRole('button', { name: 'Rename dm carl', exact: true }).click()
+    await tileAction(page, page.locator('.resource-tile:visible'), 'Rename')
     await page.getByRole('textbox', { name: 'Tile name' }).fill('DM Carl · important')
     await page.getByRole('button', { name: 'Save name', exact: true }).click()
     await app.evaluate(async ({ webContents }) => { await webContents.getAllWebContents().find(c => c.getURL().endsWith('/dm-carl'))!.executeJavaScript("document.title = 'Generic Slack page'") })
     await expect(page.locator('.resource-tile:visible .tile-title')).toHaveText('DM Carl · important')
-    await page.getByRole('button', { name: 'Shelf DM Carl · important', exact: true }).click()
+    await tileAction(page, page.locator('.resource-tile:visible'), 'Shelf (stays live)')
     await open(page, 'DM Carl · important')
     await expect(page.locator('.resource-tile:visible .tile-title')).toHaveText('DM Carl · important')
     const browserID = await page.locator('.resource-tile:visible').getAttribute('data-tile-id')

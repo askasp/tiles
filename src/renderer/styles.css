@@ -282,3 +282,4 @@ input[type='checkbox'] { accent-color: var(--blue); }
 ::-webkit-scrollbar-track { background: transparent; }
 @media (max-width: 1200px) { .clock { display: none; } .workspace-group-label { display: none; } .header-path { display: none; } .project-meta { width: 75px; } .home-stage-footer > span:first-child { font-size: 10px; } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+.review-mode { font-size: 12px; font-weight: 500; color: var(--ink); padding: 0 4px; }

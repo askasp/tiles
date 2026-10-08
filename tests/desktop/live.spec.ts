@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { ask, desktopReady, launchDesktop } from './launch'
+import { ask, desktopReady, launchDesktop, tileAction } from './launch'
 
 test('live OpenCode: one session tile, shelf, and reopen without changing the session', async () => {
   const profile = await mkdtemp('/tmp/opencode/chatos-desktop-')
@@ -30,7 +30,7 @@ test('live OpenCode: one session tile, shelf, and reopen without changing the se
     await openSession()
     await expect(page.locator('.resource-tile:visible')).toHaveCount(1)
     await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Unsent desktop smoke-test draft')
-    await page.getByRole('button', { name: `Shelf ${title}`, exact: true }).click()
+    await tileAction(page, page.locator('.resource-tile:visible'), 'Shelf (stays live)')
     await expect(page.locator('.resource-tile:visible')).toHaveCount(0)
     await expect(page.locator('.shelf-chip')).toContainText(title)
     await openSession()

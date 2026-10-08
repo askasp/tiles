@@ -86,3 +86,7 @@
 .inbox-items > div > span:first-child { flex-shrink: 0; }
 .inline-error { font-size: 12px; background: var(--danger-soft); border: 1px solid var(--danger-line); padding: 10px 12px; border-radius: 9px; color: var(--danger); white-space: pre-wrap; overflow-wrap: anywhere; }
 .error-text { color: var(--danger); font-size: 12px; }
+.permission-keys { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 12px; }
+.permission-keys kbd { padding: 1px 6px; border-radius: 5px; background: var(--surface); border: 1px solid var(--warn-line); color: var(--warn); font-weight: 600; }
+.permission-keys .muted { font-size: 11px; }
+.load-older kbd, .jump-bottom kbd { padding: 0 5px; border-radius: 4px; background: var(--canvas); }

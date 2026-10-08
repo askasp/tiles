@@ -1,4 +1,4 @@
-import { _electron as electron, expect, type ElectronApplication, type Page } from '@playwright/test'
+import { _electron as electron, expect, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { createRequire } from 'node:module'
 
 export function launchDesktop(env: Record<string, string>) {
@@ -60,4 +60,11 @@ export const approvals = (app: ElectronApplication) => app.evaluate(() => (globa
 /** Add a built-in connector and connect a fake token, without going through K. */
 export async function addConnector(page: Page, id: string) {
   await page.evaluate(async id => { await window.chatos.addBuiltinConnector(id); await window.chatos.connectorToken(id, `fake-${id}-token`) }, id)
+}
+
+/** Runs one of a tile's actions from its action menu (what ␣ / Super+. open). */
+export async function tileAction(page: Page, tile: Locator, label: string | RegExp) {
+  await tile.locator('.tile-menu-button').click()
+  await page.getByRole('dialog', { name: /^Actions · / }).getByRole('button', { name: label, exact: typeof label === 'string' }).click()
+  await expect(page.getByRole('dialog', { name: /^Actions · / })).toHaveCount(0)
 }

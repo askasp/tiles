@@ -81,7 +81,15 @@ export class Browsers {
     contents.on('before-input-event', (event, input) => {
       const { action, swallow } = readShortcut(input)
       if (swallow) event.preventDefault()
-      if (action) this.emit({ type: 'shortcut', action })
+      // The address field lives in ChatOS: take the keyboard back from the page first.
+      if (action === 'address') this.window.webContents.focus()
+      if (action) { this.emit({ type: 'shortcut', action }); return }
+      // A browser's own page keys: Alt+← / Alt+→ back and forward, Ctrl+R or F5 reload.
+      if (input.type !== 'keyDown' || input.meta || input.shift) return
+      const history = contents.navigationHistory
+      if (input.alt && !input.control && input.key === 'ArrowLeft') { event.preventDefault(); if (history.canGoBack()) history.goBack() }
+      else if (input.alt && !input.control && input.key === 'ArrowRight') { event.preventDefault(); if (history.canGoForward()) history.goForward() }
+      else if ((input.control && !input.alt && input.key.toLowerCase() === 'r') || (!input.control && !input.alt && input.key === 'F5')) { event.preventDefault(); contents.reload() }
     })
     contents.on('render-process-gone', () => { record.error = 'The page stopped. Reload to reopen it.'; this.changed(placement.id) })
     void contents.loadURL(record.url).catch(() => { /* did-fail-load updates the UI. */ })

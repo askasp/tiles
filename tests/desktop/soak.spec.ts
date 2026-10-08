@@ -1,7 +1,7 @@
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtemp, rm, mkdir, appendFile } from 'node:fs/promises'
 import { fixtureServer } from './fixture'
-import { desktopReady, launchDesktop } from './launch'
+import { desktopReady, launchDesktop, tileAction } from './launch'
 import type { TileDesktop } from '../../src/shared/tiles'
 
 const hours = Number(process.env.CHATOS_SOAK_HOURS || '0')
@@ -48,7 +48,7 @@ test('extended sandboxed workflow soak with continuous UI actions and periodic r
         fixture.askPermission('ses_fixture_1')
         await expect(page!.getByRole('button', { name: 'Go to waiting session' })).toContainText('1 waiting')
         await page!.getByRole('button', { name: 'Go to waiting session' }).click()
-        await page!.locator('[data-tile-id="ses_fixture_1"]').getByRole('button', { name: 'Allow once' }).click()
+        await tileAction(page!, page!.locator('[data-tile-id="ses_fixture_1"]'), /^Allow once/)
       }
       const info = await page!.evaluate(() => JSON.parse(window.chatos.loadDesktop() || '{}')) as TileDesktop
       if (info.tiles) {

@@ -136,8 +136,9 @@ test('OpenCode project collection, session collection and session are peer tiles
   try {
     await desktopReady(page, { opencode: true })
     await ask(page, 'opencode projects')
-    await page.locator('[data-kind="projects"] .recipe-list-row').filter({ has: page.locator('strong', { hasText: /^chatos$/ }) }).click()
-    await page.locator('[data-kind="project"] .session-row').filter({ hasText: 'Consent reload' }).click()
+    // Ctrl+click (Ctrl+↵) opens beside; a plain click or ↵ would open in place of the list.
+    await page.locator('[data-kind="projects"] .recipe-list-row').filter({ has: page.locator('strong', { hasText: /^chatos$/ }) }).click({ modifiers: ['Control'] })
+    await page.locator('[data-kind="project"] .session-row').filter({ hasText: 'Consent reload' }).click({ modifiers: ['Control'] })
     await expect(page.locator('[data-kind="projects"]:visible')).toHaveCount(1)
     await expect(page.locator('[data-kind="project"]:visible')).toHaveCount(1)
     await expect(page.locator('[data-kind="session"]:visible')).toHaveCount(1)

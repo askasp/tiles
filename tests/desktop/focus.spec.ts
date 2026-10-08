@@ -13,6 +13,8 @@ test('Focus: a new tile takes keyboard focus, and j/k follow the focused tile', 
   const a = `${profile}/alpha`, b = `${profile}/beta`
   for (const dir of [a, b]) { await mkdir(dir); for (const name of ['1.txt', '2.txt', '3.txt']) await writeFile(`${dir}/${name}`, name) }
   const app = await launchDesktop(env), page = await app.firstWindow()
+  const keyErrors: string[] = []
+  page.on('console', message => { if (message.type() === 'error' && message.text().includes('Tile action key')) keyErrors.push(message.text()) })
   try {
     await desktopReady(page)
     await ask(page, `files ${a}`, false).then(input => input.press('Enter'))
@@ -49,6 +51,33 @@ test('Focus: a new tile takes keyboard focus, and j/k follow the focused tile', 
     await expect(folderTile(page, b).locator('.file-entry')).toHaveCount(1)
     await expect(folderTile(page, b).locator('.file-entry').first()).toBeFocused()
     await expect(selected(page, b)).toContainText('3.txt')
+
+    // ? shows every key; Esc closes it.
+    await page.keyboard.press('?')
+    await expect(page.getByRole('dialog', { name: 'Keys' })).toBeVisible()
+    await expect(page.getByRole('dialog', { name: 'Keys' })).toContainText('Parent folder')
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+
+    // Space opens the tile's action menu; its letter runs the action. Ctrl+O comes back.
+    await page.keyboard.press(' ')
+    const menu = page.getByRole('dialog', { name: 'Actions · beta' })
+    await expect(menu).toBeVisible()
+    await expect(menu.locator('.action-row').first()).toBeFocused()
+    await expect(menu.getByRole('button', { name: /Parent folder/ })).toBeVisible()
+    await page.keyboard.press('-')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(folderTile(page, profile)).toHaveClass(/tile-focused/)
+    await page.keyboard.press('Control+o')
+    await expect(folderTile(page, b)).toHaveClass(/tile-focused/)
+
+    // Super+. (Ctrl+Alt+. on Linux) opens it from anywhere; a digit moves the tile to that workspace.
+    await page.keyboard.press('Control+Alt+.')
+    await expect(page.getByRole('dialog', { name: 'Actions · beta' })).toBeVisible()
+    await page.keyboard.press('2')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(page.locator('.workspace-button.selected')).toContainText('2')
+    expect(keyErrors).toEqual([])
   } finally {
     await app.close()
     await rm(profile, { recursive: true, force: true })

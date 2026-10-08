@@ -3,6 +3,9 @@ import type { ButtonHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, ReactNo
 import { useEffect, useRef } from 'react'
 import { actionForKey } from './actions'
 
+/** The system modifier as people read it: ⌘ on macOS, Super elsewhere (Ctrl+Alt also works on Linux). */
+export const systemKey = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘' : 'Super'
+
 export function IconButton({ label, children, className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string; children: ReactNode }) {
   return <button type="button" className={`icon-button ${className}`} aria-label={label} title={label} {...props}>{children}</button>
 }

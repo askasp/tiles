@@ -1,9 +1,10 @@
-import { ArrowLeft, ArrowRight, Camera, ExternalLink, Globe, RefreshCw, Send } from 'lucide-react'
+import { Globe } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { BrowserState, StageTab } from '../shared/types'
 import { normalizeURL } from '../shared/util'
 import { api, friendlyError } from './data'
-import { IconButton, Status } from './ui'
+import { Status } from './ui'
+import { useTileActions } from './actions'
 
 export function BrowserPane({ tab, state, openAddress, attachPage, screenshot, standalone, reportError, navigate }: {
   tab: Extract<StageTab, { kind: 'browser' }>; state?: BrowserState; openAddress: (id: string) => void;
@@ -17,19 +18,23 @@ export function BrowserPane({ tab, state, openAddress, attachPage, screenshot, s
     try { if (action === 'navigate' && navigate) navigate(normalizeURL(address)); else await api.browserAction({ id: tab.id, action, ...(action === 'navigate' && { url: normalizeURL(address) }) }) }
     catch (error) { reportError(friendlyError(error)) }
   }
+  const focusAddress = () => { input.current?.focus(); input.current?.select() }
+  useTileActions(tab.id, 'browser', [
+    { id: 'page-back', label: 'Back in the page', key: 'b', keyLabel: 'Alt+←', disabled: !state?.canGoBack, run: () => void action('back') },
+    { id: 'page-forward', label: 'Forward in the page', key: 'n', keyLabel: 'Alt+→', disabled: !state?.canGoForward, run: () => void action('forward') },
+    { id: 'reload', label: 'Reload the page', key: 'r', keyLabel: 'Ctrl+R', run: () => void action('reload') },
+    { id: 'address', label: 'Go to another address', key: 'g', keyLabel: 'Ctrl+L', run: focusAddress },
+    { id: 'attach', label: 'Attach the page as context', key: 'a', run: () => attachPage(tab.id) },
+    ...(!standalone ? [{ id: 'screenshot', label: 'Attach a screenshot', key: 's', run: () => screenshot(tab.id) }] : []),
+    { id: 'devtools', label: 'Page developer tools', key: 'd', run: () => void action('devtools') },
+  ])
   return <div className="browser-pane">
     <div className="browser-toolbar">
-      <IconButton label="Back" disabled={!state?.canGoBack} onClick={() => void action('back')}><ArrowLeft size={15} /></IconButton>
-      <IconButton label="Forward" disabled={!state?.canGoForward} onClick={() => void action('forward')}><ArrowRight size={15} /></IconButton>
-      <IconButton label="Reload page" onClick={() => void action('reload')}>{state?.loading ? <Status running /> : <RefreshCw size={14} />}</IconButton>
-      <form className="address-bar" onSubmit={event => { event.preventDefault(); void action('navigate'); input.current?.blur() }}><Globe size={12} /><input ref={input} data-address-for={tab.id} aria-label="Browser address" value={address} onChange={event => setAddress(event.target.value)} onFocus={event => event.target.select()} /></form>
-      <IconButton label="Attach page" onClick={() => attachPage(tab.id)}><Send size={14} /></IconButton>
-      {!standalone && <IconButton label="Attach screenshot" onClick={() => screenshot(tab.id)}><Camera size={15} /></IconButton>}
-      <IconButton label="Page developer tools" onClick={() => void action('devtools')}><ExternalLink size={14} /></IconButton>
+      <form className="address-bar" onSubmit={event => { event.preventDefault(); void action('navigate'); input.current?.blur() }}>{state?.loading ? <Status running /> : <Globe size={12} />}<input ref={input} data-address-for={tab.id} aria-label="Browser address" value={address} onChange={event => setAddress(event.target.value)} onFocus={event => event.target.select()} /></form>
     </div>
     <div className="browser-surface" data-browser-id={tab.id} data-browser-url={tab.url}>
       <span className="browser-loading">{state?.error ? `Could not load page: ${state.error}` : 'Opening browser…'}</span>
     </div>
-    {state?.error && <div className="browser-error">{state.error}<button className="text-button" onClick={() => void action('reload')}>Retry</button><button className="text-button" onClick={() => openAddress(tab.id)}>Change URL</button></div>}
+    {state?.error && <div className="browser-error">{state.error}<span className="muted"><kbd>Ctrl+R</kbd> retry · <kbd>Ctrl+L</kbd> change the address</span></div>}
   </div>
 }

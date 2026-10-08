@@ -94,8 +94,8 @@ function SessionBody({ tile, state, env, focused, visible, focusKey }: { tile: T
   }, [tile.directory, data.connection.connected]) // eslint-disable-line react-hooks/exhaustive-deps
   const refresh = () => data.refreshSession(tile.sessionID!)
   const change = (patch: Partial<Tile>) => env.changeTile(tile.id, patch)
-  return <><Chat visible={visible} detail={detail} running={running} loading={!detail && data.connection.connected} older={() => data.olderMessages(tile.sessionID!)} refresh={() => void refresh()} reportError={env.reportError} openURL={url => env.openURL(url, tile.id)} />
-    <Composer draft={tile.draft} setDraft={draft => change({ draft })} context={tile.context} removeContext={id => change({ context: tile.context.filter(c => c.id !== id) })}
+  return <><Chat tileID={tile.id} visible={visible} detail={detail} running={running} loading={!detail && data.connection.connected} older={() => data.olderMessages(tile.sessionID!)} refresh={() => void refresh()} reportError={env.reportError} openURL={url => env.openURL(url, tile.id)} />
+    <Composer tileID={tile.id} draft={tile.draft} setDraft={draft => change({ draft })} context={tile.context} removeContext={id => change({ context: tile.context.filter(c => c.id !== id) })}
       attach={() => { void api.chooseFiles().then(files => change({ context: [...tile.context, ...files.map(file => ({ id: uid(), kind: 'file' as const, ...file }))] })).catch(e => env.reportError(friendlyError(e))) }}
       agents={catalog?.agents || []} models={catalog?.models || []} agent={session?.agent} model={session?.model || catalog?.defaultModel}
       setAgent={agent => { if (agent) void opencode.switchAgent(tile.sessionID!, agent).then(refresh).catch(e => env.reportError(friendlyError(e))) }}
@@ -186,7 +186,7 @@ export const opencodeSource = source<OpenCodeState>({
     const notice = !state.connection.connected && <div className="inline-error">{state.connection.enabled ? state.connection.error || 'OpenCode is not connected.' : 'OpenCode isn’t a source right now.'} Your tile and draft are kept.<button className="text-button" onClick={() => { if (state.connection.enabled) void state.reconnect().catch(e => env.reportError(friendlyError(e))); else env.ask('add opencode') }}>{state.connection.enabled ? 'Reconnect' : 'Add OpenCode'}</button></div>
     const body = tile.kind === 'session' ? <SessionBody tile={tile} state={state} env={env} focused={focused} visible={visible} focusKey={focusKey} />
       : tile.kind === 'project' ? <ProjectBody tile={tile} state={state} env={env} />
-      : tile.kind === 'projects' ? <div className="recipe-body"><div className="recipe-toolbar">OpenCode · Projects · rows open independent session-list tiles</div><div className="recipe-content">{state.projects.map(project => <button className="recipe-list-row" key={project.directory} onClick={() => env.open(projectTile(project.directory, project.name))}><strong>{project.name}</strong><small>{project.directory}</small></button>)}</div></div>
+      : tile.kind === 'projects' ? <div className="recipe-body"><div className="recipe-toolbar">OpenCode · Projects · ↵ opens in place · Ctrl+↵ beside · Ctrl+O back</div><div className="recipe-content">{state.projects.map(project => <button className="recipe-list-row" key={project.directory} onClick={e => env.openFrom(tile.id, projectTile(project.directory, project.name), listOpen(e))} onKeyDown={e => { if (e.key !== 'Enter') return; e.preventDefault(); env.openFrom(tile.id, projectTile(project.directory, project.name), listOpen(e)) }}><strong>{project.name}</strong><small>{project.directory}</small></button>)}</div></div>
       : tile.kind === 'review' ? state.connection.connected && <Review tileID={tile.id} directory={tile.directory || ''} />
       : <div className="session-details"><h2>{tile.title}</h2><p>{tile.directory}</p><p className="mono">{tile.sessionID}</p></div>
     return <>{notice}{body}</>
