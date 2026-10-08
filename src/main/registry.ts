@@ -1,6 +1,6 @@
 /** Main-process side of optional sources. One line per source. */
 import type { SourceAPIs } from '../shared/registry-api'
-import type { SecretStorage } from './services'
+import type { SecretStorage } from './secrets'
 import type { Storage } from './storage'
 import { createOpenCodeSource } from './sources/opencode'
 

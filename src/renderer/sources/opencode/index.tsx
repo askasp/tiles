@@ -5,7 +5,7 @@ import { basename, uid } from '../../../shared/util'
 import { directoryOf, projectTile, projectsTile, reviewTile, sessionIntent, sessionsIntent, sessionTile, sessionTitle, type ConnectionInfo, type SessionInfo } from '../../../shared/sources/opencode'
 import { api } from '../../data'
 import { registerBadge } from '../../Setup'
-import { Status } from '../../ui'
+import { Status, filterField } from '../../ui'
 import { source, type Candidate, type Env, type Other, type Row } from '../types'
 import { Chat } from './Chat'
 import { Composer } from './Composer'
@@ -112,8 +112,8 @@ function ProjectBody({ tile, state, env }: { tile: Tile; state: OpenCodeState; e
   const list = useSessionList(project ? { project: project.id } : { directory: tile.directory }, data.connection.connected, data.ingest)
   const [filter, setFilter] = useState('')
   const placed = (id: string) => { const t = desktop.tiles.find(t => t.sessionID === id && t.kind === 'session'); return t?.status === 'visible' ? t.workspaceID === tile.workspaceID ? 'tiled here' : `open on ${desktop.workspaces.find(w => w.id === t.workspaceID)?.slot}` : t?.status === 'shelf' ? 'on shelf' : '' }
-  return <div className="project-tile-body"><div className="project-actions"><button className="pill primary" onClick={() => env.ask(`start session in ${tile.title}: `)}><Plus size={13} />Start session</button><button className="pill" onClick={() => env.open(reviewTile(tile.directory!))}><GitCompare size={13} />Review changes</button><button className="pill" onClick={() => { void api.inspectPath(tile.directory!).then(path => env.open(fileTile(path.path, path.kind))).catch(e => env.reportError(friendlyError(e))) }}><FolderOpen size={13} />Browse files</button><button className="pill" onClick={() => env.openTerminal(tile.directory)}><SquareTerminal size={13} />Terminal</button></div>
-    <div className="project-tile-toolbar"><input aria-label={`Search sessions in ${tile.title}`} placeholder="Filter sessions…" value={filter} onChange={e => setFilter(e.target.value)} /></div>
+  return <div className="project-tile-body"><div className="project-actions"><button className="pill primary" data-key="s" onClick={() => env.ask(`start session in ${tile.title}: `)}><Plus size={13} />Start session<kbd aria-hidden>s</kbd></button><button className="pill" data-key="d" onClick={() => env.open(reviewTile(tile.directory!))}><GitCompare size={13} />Review changes<kbd aria-hidden>d</kbd></button><button className="pill" data-key="f" onClick={() => { void api.inspectPath(tile.directory!).then(path => env.open(fileTile(path.path, path.kind))).catch(e => env.reportError(friendlyError(e))) }}><FolderOpen size={13} />Browse files<kbd aria-hidden>f</kbd></button><button className="pill" data-key="t" onClick={() => env.openTerminal(tile.directory)}><SquareTerminal size={13} />Terminal<kbd aria-hidden>t</kbd></button></div>
+    <div className="project-tile-toolbar filter-row"><input {...filterField} aria-label={`Search sessions in ${tile.title}`} placeholder="Filter sessions…" value={filter} onChange={e => setFilter(e.target.value)} /><kbd aria-hidden>/</kbd></div>
     <span className="k-head">Sessions</span>
     {list.page.data.filter(s => sessionTitle(s).toLowerCase().includes(filter.toLowerCase())).map(s => <button className="session-row" key={s.id} onClick={() => { data.ingest([s]); env.open(sessionTile(s)) }}><Status running={data.active.includes(s.id)} waiting={data.waiting.includes(s.id)} /><span className="truncate">{sessionTitle(s)}</span>{placed(s.id) && <span className="placed-badge">{placed(s.id)}</span>}</button>)}
     {list.loading && <div className="list-loading">Loading sessions…</div>}{list.error && <div className="inline-error">{list.error}<button className="text-button" onClick={() => void list.refresh()}>Retry</button></div>}

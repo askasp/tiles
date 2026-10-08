@@ -7,7 +7,6 @@ import { mainSources, type MainContext, type MainSource } from './registry'
 import { Browsers } from './browser'
 import { shortcutFor } from '../shared/shortcuts'
 import { readShortcut } from './keys'
-import { Services } from './services'
 import { Files } from './files'
 import { Storage } from './storage'
 import { Connectors } from './connectors'
@@ -18,7 +17,6 @@ const here = dirname(fileURLToPath(import.meta.url))
 let window: BrowserWindow | undefined
 let sources: MainSource[] = []
 let browsers: Browsers | undefined
-let services: Services | undefined
 let storage: Storage | undefined
 let connectors: Connectors | undefined
 let model: ModelBroker | undefined
@@ -53,7 +51,6 @@ function registerIPC() {
   // Each added source exposes its own namespace: `chatos:opencode.sessions`, …
   for (const source of sources) for (const [method, fn] of Object.entries(source.api as unknown as Record<string, (...args: never[]) => unknown>)) channel(`${source.id}.${method}`, fn)
   const browser = () => { if (!browsers) throw new Error('Not ready'); return browsers }
-  const integrations = () => { if (!services) throw new Error('Not ready'); return services }
   const database = () => { if (!storage) throw new Error('Storage is unavailable'); return storage }
   const recipes = () => { if (!connectors) throw new Error('Connectors are unavailable'); return connectors }
   const ai = () => { if (!model) throw new Error('AI model is unavailable'); return model }
@@ -104,6 +101,10 @@ function registerIPC() {
   handle('connectorToken', (id, token) => recipes().setToken(id, token))
   handle('connectorOAuth', (id, secret) => recipes().connectOAuth(id, secret))
   handle('disconnectConnector', id => recipes().disconnect(id))
+  handle('builtinConnector', id => recipes().builtin(id))
+  handle('addBuiltinConnector', id => recipes().addBuiltin(id))
+  handle('removeConnector', id => recipes().remove(id))
+  handle('connectorSettings', (id, values) => recipes().saveSettings(id, values))
   handle('proposeConnector', input => recipes().propose(input))
   handle('searchConnectors', (query, id) => recipes().search(query, id))
   handle('planConnectorSearch', query => recipes().planSearch(query))
@@ -112,15 +113,6 @@ function registerIPC() {
   handle('inspectPath', path => files.inspect(path))
   handle('listFolder', path => files.list(path))
   handle('readTextFile', path => files.read(path))
-  handle('services', () => integrations().list())
-  handle('searchServices', query => integrations().search(query))
-  handle('frontConversations', input => integrations().frontList(input))
-  handle('frontConversation', input => integrations().frontDetail(input))
-  handle('frontWrite', input => integrations().frontWrite(input))
-  handle('saveService', input => integrations().save(input))
-  handle('validateService', id => integrations().validate(id))
-  handle('disconnectService', id => integrations().disconnect(id))
-  handle('removeService', id => integrations().remove(id))
   handle('chooseFolder', async () => {
     const result = await dialog.showOpenDialog(window!, { properties: ['openDirectory'], title: 'Open a project folder' })
     return result.canceled ? null : result.filePaths[0]
@@ -166,7 +158,6 @@ async function createWindow() {
     if (!window) return false
     return (await dialog.showMessageBox(window, { type: 'question', title, message: title, detail, buttons: ['Cancel', 'Approve'], defaultId: 0, cancelId: 0, noLink: true })).response === 1
   }
-  services ||= new Services(app.getPath('userData'), secrets, fetch, storage, confirm)
   model ||= new ModelBroker(storage, secrets, confirm)
   connectors ||= new Connectors(storage, secrets, confirm, prompt => model!.generate(prompt), undefined, undefined, url => shell.openExternal(url))
   registerIPC()

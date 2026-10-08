@@ -1,10 +1,9 @@
 import type { ContextItem } from './types'
 import { basename, normalizeURL, uid } from './util'
-import { frontConversationID, frontURL } from './front'
 import { resourceKey, validateRef, type ResourceRef, type TileRecipe } from './connectors'
 
 /** Built-in kinds. Sources add their own kinds (e.g. OpenCode's `session`) through `KindRule`s. */
-export type CoreKind = 'recipe' | 'browser' | 'front-list' | 'front-conversation' | 'folder' | 'file' | 'terminal'
+export type CoreKind = 'recipe' | 'browser' | 'folder' | 'file' | 'terminal'
 export type TileKind = CoreKind | (string & {})
 /** Restoring a saved tile: rebuild its identity from its fields, or drop it (return false). */
 export interface KindRule { kind: string; restore(tile: Tile): boolean }
@@ -20,6 +19,7 @@ export interface Tile {
   sessionID?: string
   url?: string
   linkID?: string
+  /** Saved by older versions' Front tiles; read once when restoring. */
   frontQuery?: string
   conversationID?: string
   path?: string
@@ -60,7 +60,7 @@ export interface TileDesktop {
   homeDraft: string
   history: Arrangement[]
 }
-export type TileInput = Pick<Tile, 'key' | 'kind' | 'title'> & Partial<Pick<Tile, 'id' | 'directory' | 'sessionID' | 'url' | 'linkID' | 'draft' | 'context' | 'label' | 'frontQuery' | 'conversationID' | 'path' | 'resource' | 'recipeIdentity' | 'recipeIdentityScope' | 'sourceName'>>
+export type TileInput = Pick<Tile, 'key' | 'kind' | 'title'> & Partial<Pick<Tile, 'id' | 'directory' | 'sessionID' | 'url' | 'linkID' | 'draft' | 'context' | 'label' | 'path' | 'resource' | 'recipeIdentity' | 'recipeIdentityScope' | 'sourceName'>>
 export const desktopInitial = (directory = ''): TileDesktop => ({ version: 2, activeID: 'home', workspaces: [], tiles: [], clock: 0, folders: [], selectedDirectory: directory, pinned: [], homeDraft: '', history: [] })
 export const recipeTile = (ref: ResourceRef, title: string, recipe?: Pick<TileRecipe, 'shape' | 'identity' | 'identityScope'>, sourceName?: string): TileInput => ({ key: resourceKey(ref, recipe), kind: 'recipe', title, resource: validateRef(ref), recipeIdentity: recipe?.identity, recipeIdentityScope: recipe?.identityScope, sourceName })
 export const fileTile = (path: string, kind: 'folder' | 'file' = 'folder', title = basename(path)): TileInput => {
@@ -75,15 +75,8 @@ export const terminalTile = (directory: string, id: string = uid()): TileInput =
 }
 export const browserTile = (url: string, linkID?: string): TileInput => {
   const normalized = normalizeURL(url)
-  const id = frontConversationID(normalized)
-  return { key: id ? `front:${id}` : `browser:${normalized}`, kind: 'browser', title: new URL(normalized).hostname, url: normalized, linkID }
+  return { key: `browser:${normalized}`, kind: 'browser', title: new URL(normalized).hostname, url: normalized, linkID }
 }
-export const frontInboxTile = (query = 'is:open', title?: string): TileInput => {
-  const clean = query.trim()
-  if (clean.length > 300) throw new Error('Keep Front filters under 300 characters')
-  return { key: `front-list:${clean}`, kind: 'front-list', title: title || `Front · ${clean || 'All conversations'}`, frontQuery: clean }
-}
-export const frontConversationTile = (id: string, title = 'Front conversation'): TileInput => ({ key: `front:${id}`, kind: 'front-conversation', title, conversationID: id, url: frontURL(id) })
 export const activeWorkspace = (s: TileDesktop) => s.workspaces.find(w => w.id === s.activeID)
 export const focusedTile = (s: TileDesktop) => s.tiles.find(t => t.id === activeWorkspace(s)?.focusedID)
 export const shelfTiles = (s: TileDesktop) => s.tiles.filter(t => t.status === 'shelf').sort((a, b) => b.shelvedAt - a.shelvedAt)
@@ -163,11 +156,6 @@ export function openTile(s: TileDesktop, input: TileInput, mode: OpenMode = 'her
   if (input.kind === 'browser') input = { ...input, ...browserTile(input.url!, input.linkID), title: input.title }
   if (input.kind === 'recipe') input = { ...input, ...recipeTile(input.resource!, input.title, { shape: input.resource?.resourceID ? 'item' : 'collection', identity: input.recipeIdentity, identityScope: input.recipeIdentityScope }, input.sourceName) }
   const existing = s.tiles.find(t => t.key === input.key)
-  // A Front web view and API reader are presentations of the same resource.
-  // An explicit API open upgrades the existing tile in place, not a copy.
-  if (input.kind === 'front-conversation' && existing?.kind === 'browser') {
-    s = updateTile(s, existing.id, { kind: input.kind, conversationID: input.conversationID, url: input.url, title: input.title })
-  }
   const owner = existing ? s.tiles.find(t => t.id === existing.id)! : undefined
   if (owner?.status === 'visible' && mode !== 'move') return focusTile(s, owner.id)
   let next = checkpoint(s)
@@ -307,11 +295,20 @@ export function reconcileBrowser(s: TileDesktop, id: string, url: string, title:
 export function serializeDesktop(s: TileDesktop): string {
   return JSON.stringify({ ...s, history: [], tiles: s.tiles.map(t => ({ ...t, context: t.context.filter(c => c.kind !== 'image') })) })
 }
+function legacyFront(t: Tile, ref: ResourceRef, shape: 'collection' | 'item') {
+  try {
+    const input = recipeTile(ref, t.title, { shape }, 'Front')
+    Object.assign(t, { kind: 'recipe', key: input.key, resource: input.resource, sourceName: 'Front' })
+    delete t.frontQuery; delete t.conversationID; delete t.url
+    return true
+  } catch { return false }
+}
 export const coreKinds: KindRule[] = [
   { kind: 'recipe', restore: t => { try { const input = recipeTile(t.resource!, t.title, { shape: t.resource?.resourceID ? 'item' : 'collection', identity: typeof t.recipeIdentity === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(t.recipeIdentity) ? t.recipeIdentity : undefined, identityScope: t.recipeIdentityScope === 'parent' ? 'parent' : undefined }, typeof t.sourceName === 'string' ? t.sourceName.slice(0, 300) : undefined); Object.assign(t, input); return true } catch { return false } } },
   { kind: 'browser', restore: t => { try { const input = browserTile(t.url!); t.url = input.url; t.key = input.key; return true } catch { return false } } },
-  { kind: 'front-list', restore: t => { if (typeof t.frontQuery !== 'string') return false; try { t.key = frontInboxTile(t.frontQuery).key; return true } catch { return false } } },
-  { kind: 'front-conversation', restore: t => { try { const input = frontConversationTile(t.conversationID!); t.key = input.key; t.url = input.url; return true } catch { return false } } },
+  // Older versions had their own Front tiles; they are the Front connector's tiles now.
+  { kind: 'front-list', restore: t => legacyFront(t, { connectorID: 'front', recipeID: 'inbox', ...(typeof t.frontQuery === 'string' && t.frontQuery.trim() && { query: t.frontQuery }) }, 'collection') },
+  { kind: 'front-conversation', restore: t => legacyFront(t, { connectorID: 'front', recipeID: 'conversation', resourceID: String(t.conversationID) }, 'item') },
   { kind: 'folder', restore: t => { try { const input = fileTile(t.path!, 'folder'); t.key = input.key; t.directory = input.directory; return true } catch { return false } } },
   { kind: 'file', restore: t => { try { t.key = fileTile(t.path!, 'file').key; return true } catch { return false } } },
   { kind: 'terminal', restore: t => { try { const input = terminalTile(t.directory!, t.id); t.key = input.key; t.path = input.path; return true } catch { return false } } },

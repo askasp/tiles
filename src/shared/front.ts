@@ -1,16 +1,7 @@
 import type { FrontIdentity } from './types'
 
-export function frontConversationID(url: string): string | undefined {
-  try {
-    const parsed = new URL(url)
-    if (parsed.protocol !== 'https:' || parsed.hostname !== 'app.frontapp.com' || parsed.port || parsed.username || parsed.password) return
-    return parsed.pathname.match(/^\/open\/(cnv_[a-z0-9]+)\/?$/i)?.[1]
-  } catch { return }
-}
-export const frontURL = (id: string) => {
-  if (!/^cnv_[a-z0-9]+$/i.test(id)) throw new Error('Invalid Front conversation ID')
-  return `https://app.frontapp.com/open/${id}`
-}
+/** Personal filters for the Front connector. */
+
 export function frontIdentity(value?: FrontIdentity): FrontIdentity {
   const email = value?.email?.trim() || '', teammateID = value?.teammateID?.trim() || '', tagID = value?.tagID?.trim() || ''
   if (email && (email.length > 320 || !/^[^\s:"<>@]+@[^\s:"<>@]+\.[^\s:"<>@]+$/.test(email))) throw new Error('Enter a normal email address for Front filters')

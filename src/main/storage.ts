@@ -91,6 +91,8 @@ export class Storage {
       return revision
     })
   }
+  /** Revisions stay, so a removed connector can be restored. */
+  deleteConnector(id: string) { this.transaction(() => { this.db.prepare('DELETE FROM connectors WHERE id=?').run(id); this.saveSecret(`connector:${id}`); this.saveSecret(`oauth:${id}`) }) }
   revisions(id: string): { revision: number; definition: ConnectorDefinition }[] {
     return this.db.prepare('SELECT revision, definition FROM connector_revisions WHERE connector_id=? ORDER BY revision DESC').all(id).map(row => ({ revision: Number(row.revision), definition: validateConnector(JSON.parse(String(row.definition))) }))
   }

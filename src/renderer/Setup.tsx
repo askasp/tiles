@@ -105,8 +105,8 @@ export function ModelRowKeys({ count, move }: { count: number; move: (delta: num
   return null
 }
 
-const recipeRows = (d: ConnectorDefinition) => d.recipes.filter(r => r.shape === 'collection' || !d.recipes.some(c => c.itemRecipe === r.id)).concat(d.recipes.filter(r => r.shape === 'item' && d.recipes.some(c => c.itemRecipe === r.id)))
-  .map(r => ({ resource: r.label, tile: { list: 'List', table: 'Table', timeline: 'Timeline', record: 'Record', document: 'Document', conversation: 'Conversation', diff: 'Diff document' }[r.view] + (r.shape === 'collection' ? ` of ${r.label.toLowerCase()}` : ''), kind: 'generated' as const, actions: [...(r.actions || []).map(a => { const op = d.operations.find(o => o.id === a.operation); return op?.effect === 'write' ? `${a.label} (asks)` : a.label }), ...(r.searchOperation ? ['Search'] : [])].join(' · ') || (r.shape === 'collection' ? 'Browse' : 'Read') }))
+const recipeRows = (d: ConnectorDefinition, kind: 'built-in' | 'generated' = 'generated') => d.recipes.filter(r => r.shape === 'collection' || !d.recipes.some(c => c.itemRecipe === r.id)).concat(d.recipes.filter(r => r.shape === 'item' && d.recipes.some(c => c.itemRecipe === r.id)))
+  .map(r => ({ resource: r.label, tile: { list: 'List', table: 'Table', timeline: 'Timeline', record: 'Record', document: 'Document', conversation: 'Conversation', diff: 'Diff document' }[r.view] + (r.shape === 'collection' ? ` of ${r.label.toLowerCase()}` : '') + (r.urlField && !r.itemRecipe ? ' · open as web pages' : ''), kind, actions: [...(r.actions || []).map(a => { const op = d.operations.find(o => o.id === a.operation); return op?.effect === 'write' ? `${a.label} (asks)` : a.label }), ...(r.searchOperation ? ['Search'] : [])].join(' · ') || (r.shape === 'collection' ? 'Browse' : 'Read') }))
 
 /** Any other service: K reads its API (from what it knows, or docs you link) and proposes a connector. */
 export function ConnectorSetup({ name, model, connectors, changed, open, adjust, setupModel, done, enter }: { name: string; model?: ModelInfo; connectors: ConnectorInfo[]; changed: (list: ConnectorInfo[]) => void; open: (input: TileInput) => void; adjust: (definition: ConnectorDefinition) => void; setupModel: () => void; done: () => void; enter?: EnterRef }) {
@@ -114,7 +114,6 @@ export function ConnectorSetup({ name, model, connectors, changed, open, adjust,
   const [result, setResult] = useState<DiscoveryResult>()
   const [reply, setReply] = useState('')
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [status, setStatus] = useState('')
-  const [token, setToken] = useState('')
   const [kept, setKept] = useState<string>()
   const asked = useRef('')
   const ask = async (next: DiscoveryTurn[]) => {
@@ -133,7 +132,6 @@ export function ConnectorSetup({ name, model, connectors, changed, open, adjust,
     catch (e) { setError(friendlyError(e)) } finally { setBusy(false) }
   }
   const send = () => { const text = reply.trim(); if (!text || busy) return; setReply(''); void ask([...turns, { role: 'user', text }]) }
-  const collections = useMemo(() => keptInfo ? keptInfo.definition.recipes.filter(r => r.shape === 'collection' && !keptInfo.definition.operations.find(op => op.id === r.operation)?.path.includes('{parent}')) : [], [keptInfo])
   if (!model?.ready) {
     if (enter) enter.current = setupModel
     return <div className="k-panel"><KReply tone="warn">I build connectors with your AI model, and none is connected yet.</KReply><div className="k-rows"><KRow icon="ai" title="Connect a model" source="Model" subtitle="any OpenAI-compatible endpoint, or a local model" action="Set up" hint="↵" selected onClick={setupModel} /></div></div>
@@ -148,15 +146,57 @@ export function ConnectorSetup({ name, model, connectors, changed, open, adjust,
       <p className="k-note">API destination {definition.baseURL} · {({ bearer: 'token', none: 'no sign-in needed', 'oauth-required': 'needs an OAuth app', oauth2: 'OAuth sign-in' } as Record<string, string>)[definition.auth.type]}{definition.auth.help ? ` · ${definition.auth.help}` : ''}. Reads run straight away; writes always ask first.</p>
       {!kept && <div className="button-row k-buttons"><button className="pill primary" disabled={busy} onClick={() => void keep()}>Keep<kbd>↵</kbd></button><button className="pill" onClick={() => adjust(definition)}>Adjust</button><span className="muted">Keep asks for approval of the destination and any write actions.</span></div>}
     </>}
-    {keptInfo && <div className="k-fields">
-      {keptInfo.definition.auth.type === 'bearer' && <form onSubmit={e => { e.preventDefault(); if (!token.trim()) return; setBusy(true); void api.connectorToken(keptInfo.definition.id, token).then(list => { changed(list); setToken(''); setStatus('Token connected. Open a collection to check the mapping.') }).catch(e => setError(friendlyError(e))).finally(() => setBusy(false)) }}>
-        <label className="k-field"><span>API token</span><span className="k-input"><input aria-label="Connector token" type="password" autoComplete="off" value={token} onChange={e => setToken(e.target.value)} placeholder={keptInfo.hasToken ? 'Saved · paste to replace' : 'Paste a token'} /><em className="good">{keptInfo.hasToken ? '✓ saved' : ''}</em></span></label>
-      </form>}
-      {keptInfo.definition.auth.type === 'oauth2' && <p className="k-note">Sign in from Super+, → Sources → {keptInfo.definition.name}.</p>}
-      <div className="button-row k-buttons">{collections.map(r => <button className="pill" key={r.id} onClick={() => { open(recipeTile({ connectorID: keptInfo.definition.id, recipeID: r.id }, r.label, r, keptInfo.definition.name)); done() }}>Open {r.label}</button>)}<button className="pill primary" onClick={done}>Done</button></div>
-    </div>}
+    {keptInfo && <KeptConnector info={keptInfo} changed={changed} open={open} done={done} status={setStatus} error={setError} />}
     {status && <p className="k-note" role="status">{status}</p>}
     {error && <p className="k-error" role="alert">{error}</p>}
     {!kept && <form className="k-followup" onSubmit={e => { e.preventDefault(); send() }}><input aria-label="Reply to K" placeholder={definition ? 'Ask for changes, e.g. “also show projects”' : 'Reply, or paste a link to the API documentation…'} value={reply} disabled={busy} onChange={e => setReply(e.target.value)} /><button className="pill" disabled={busy || !reply.trim()} type="submit">Send</button></form>}
+  </div>
+}
+
+/** After a connector is kept: its token, then open a collection to check it. */
+function KeptConnector({ info, changed, open, done, status, error }: { info: ConnectorInfo; changed: (list: ConnectorInfo[]) => void; open: (input: TileInput) => void; done: () => void; status: (text: string) => void; error: (text: string) => void }) {
+  const [token, setToken] = useState(''), [busy, setBusy] = useState(false)
+  const collections = useMemo(() => info.definition.recipes.filter(r => r.shape === 'collection' && !info.definition.operations.find(op => op.id === r.operation)?.path.includes('{parent}')), [info])
+  const connect = () => {
+    if (!token.trim() || busy) return
+    setBusy(true); error('')
+    void api.connectorToken(info.definition.id, token).then(list => {
+      changed(list); setToken('')
+      const account = list.find(c => c.definition.id === info.definition.id)?.account
+      status(account ? `Connected as ${account}. Open a list to check it.` : 'Token connected. Open a collection to check the mapping.')
+    }).catch(e => error(friendlyError(e))).finally(() => setBusy(false))
+  }
+  return <div className="k-fields">
+    {info.definition.auth.type === 'bearer' && <form onSubmit={e => { e.preventDefault(); connect() }}>
+      <label className="k-field"><span>API token</span><span className="k-input"><input aria-label="Connector token" type="password" autoComplete="off" spellCheck={false} autoFocus={!info.hasToken} value={token} onChange={e => setToken(e.target.value)} placeholder={info.hasToken ? 'Saved · paste to replace' : 'Paste a token'} /><em className="good">{busy ? 'checking…' : info.hasToken ? `✓ ${info.account || 'saved'}` : ''}</em></span></label>
+    </form>}
+    {info.definition.auth.type === 'oauth2' && <p className="k-note">Sign in from Super+, → Sources → {info.definition.name}.</p>}
+    <div className="button-row k-buttons">{collections.map(r => <button className="pill" key={r.id} onClick={() => { open(recipeTile({ connectorID: info.definition.id, recipeID: r.id }, `${info.definition.name} · ${r.label}`, r, info.definition.name)); done() }}>Open {r.label}</button>)}<button className="pill primary" onClick={done}>Done</button></div>
+  </div>
+}
+
+/** Front, Slack, GitHub: they ship with ChatOS, so nothing is generated and no model is needed. */
+export function BuiltinSetup({ id, connectors, changed, open, done, enter }: { id: string; connectors: ConnectorInfo[]; changed: (list: ConnectorInfo[]) => void; open: (input: TileInput) => void; done: () => void; enter?: EnterRef }) {
+  const [builtin, setBuiltin] = useState<{ definition: ConnectorDefinition; hint: string; settings: { key: string; label: string }[] }>()
+  const [busy, setBusy] = useState(false), [error, setError] = useState(''), [status, setStatus] = useState('')
+  useEffect(() => { void api.builtinConnector(id).then(setBuiltin).catch(e => setError(friendlyError(e))) }, [id])
+  const info = connectors.find(c => c.definition.id === id)
+  const keep = async () => {
+    if (busy) return
+    setBusy(true); setError('')
+    try { changed(await api.addBuiltinConnector(id)); setStatus(builtin?.definition.auth.type === 'bearer' ? 'Added. Paste an API token to connect it.' : 'Added.') }
+    catch (e) { setError(friendlyError(e)) } finally { setBusy(false) }
+  }
+  if (!builtin) return <div className="k-panel">{error ? <p className="k-error" role="alert">{error}</p> : <KReply tone="busy">Loading…</KReply>}</div>
+  const d = builtin.definition
+  if (enter) enter.current = info ? done : () => void keep()
+  return <div className="k-panel" data-connector-setup={id}>
+    <KReply>{info ? `${d.name} is added${info.hasToken ? `, connected as ${info.account || 'your token'}` : ''}.` : `${d.name} ships with ChatOS: ${builtin.hint.toLowerCase()}. This is how it shows up:`}</KReply>
+    <KMap rows={recipeRows(d, 'built-in')} />
+    <p className="k-note">API destination {d.baseURL}{d.auth.help ? ` · ${d.auth.help}` : ''} Reads run straight away; writes always ask first.{builtin.settings.length ? ` Optional in Super+, → Sources: ${builtin.settings.map(s => s.label.toLowerCase()).join(', ')}.` : ''}</p>
+    {!info && <div className="button-row k-buttons"><button className="pill primary" disabled={busy} onClick={() => void keep()}>Add {d.name}<kbd>↵</kbd></button></div>}
+    {info && <KeptConnector info={info} changed={changed} open={open} done={done} status={setStatus} error={setError} />}
+    {status && <p className="k-note" role="status">{status}</p>}
+    {error && <p className="k-error" role="alert">{error}</p>}
   </div>
 }

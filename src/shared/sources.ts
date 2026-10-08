@@ -3,6 +3,8 @@ import { catalogue } from './registry'
 export type { CatalogueEntry } from './catalogue'
 
 export const sources = catalogue
+/** Front, Slack, GitHub… are connectors: their tiles, scope and search say `connector:<id>`. */
+const sourceID = (entry: { id: string; connector?: boolean }) => entry.connector ? `connector:${entry.id}` : entry.id
 export const builtinSources = catalogue.filter(s => s.builtin).map(s => s.id)
 export type SourceID = string
 
@@ -25,13 +27,13 @@ export function resourceSource(tile: TileInput): SourceID {
   try {
     const host = new URL(tile.url!).hostname
     const provider = catalogue.find(s => s.hosts.some(domain => host === domain || host.endsWith(`.${domain}`)))
-    if (provider) return provider.id
+    if (provider) return sourceID(provider)
   } catch { /* Invalid browser addresses have no provider identity. */ }
   return 'web'
 }
 export function resourceAction(tile: TileInput) {
   if (tile.kind === 'recipe') return `${tile.sourceName || tile.resource?.connectorID || 'Connector'} · ${tile.resource?.resourceID ? 'Resource · Open detail' : 'Collection · Browse items'}`
-  const owner = entryFor(tile), source = catalogue.find(s => s.id === resourceSource(tile))?.name || 'Browser'
+  const owner = entryFor(tile), source = catalogue.find(s => sourceID(s) === resourceSource(tile))?.name || 'Browser'
   const kind = owner?.kinds[tile.kind]
   return `${source} · ${kind?.kind || tile.kind} · ${kind?.action || 'Open'}`
 }
@@ -44,7 +46,7 @@ export function launcherIntent(value: string, selected?: SourceID) {
   let query = value.trim(), source = selected
   const prefix = query.match(/^([a-z]+)(?:\s+|:\s*)(.*)$/i)
   const owner = prefix && catalogue.find(s => s.prefixes.includes(prefix[1].toLowerCase()))
-  if (prefix && owner) { source = owner.id; query = prefix[2] }
+  if (prefix && owner) { source = sourceID(owner); query = prefix[2] }
   const browse = query.match(/^(?:browse|show|open)(?: the)? (.+?) files\.?$/i) || query.match(/^(?:browse files(?: in)?|browse folder|browse)\s+(.+)$/i)
   if (browse) { source = 'files'; query = browse[1] }
   query = query.replace(/^(open|find|go to)\s+/i, '')

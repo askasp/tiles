@@ -29,7 +29,7 @@ On Linux, `npm run doctor` checks the installed Electron sandbox helper. If it r
 
 ## The tile model
 
-- Sessions, OpenCode project lists/session lists, local folders/files, Front inboxes/conversations, browsers, repository review and custom connector resources use the same tile header.
+- Sessions, OpenCode project lists/session lists, local folders/files, connector lists and items (Front mail too), browsers, repository review and custom connector resources use the same tile header.
 - **Collection → independent item tile** is the connector contract. Lists do not contain nested tile tabs. Once OpenCode is added, `opencode projects` in K opens the project collection; each project opens its session collection, and each session opens its own conversation. Opening any of these does not create a session.
 - One visible tile fills the workspace; two split it; three use a big slot and two stacked slots; four form a grid.
 - Promote moves the focused tile to the first/big slot. In a four-tile grid, promotion temporarily enlarges it fullscreen rather than making the neighbours too small; promote again or use fullscreen to return.
@@ -95,7 +95,7 @@ K finds files and folders by name (Spotlight on macOS, falling back to an index 
 
 ### How sources plug in
 
-Every source (Browser, Files, Terminal, generated connectors, Front, Slack, GitHub, OpenCode) implements one renderer interface, `Source` in `src/renderer/sources/types.ts`: search results, slower async search, commands such as “start session in …”, → actions it offers on any resource, its tiles, status chips, attention, shortcuts, context targets, its `add …` setup panel and its Settings row. The core desktop, K and Settings know no source by name.
+Every source (Browser, Files, Terminal, connectors — built-in Front/Slack/GitHub and generated ones — and OpenCode) implements one renderer interface, `Source` in `src/renderer/sources/types.ts`: search results, slower async search, commands such as “start session in …”, → actions it offers on any resource, its tiles, status chips, attention, shortcuts, context targets, its `add …` setup panel and its Settings row. The core desktop, K and Settings know no source by name.
 
 Optional sources are listed in exactly three registries: `src/shared/registry.ts` (+ `registry-api.ts` for its API namespace), `src/main/registry.ts` and `src/renderer/sources/registry.ts`. OpenCode lives entirely in `src/shared/sources/opencode/`, `src/main/sources/opencode.ts` and `src/renderer/sources/opencode/`; deleting those and its one line in each registry still builds. Its API is namespaced (`window.chatos.opencode.*`, IPC `chatos:opencode.*`) and its live events arrive as `{ type: 'source', source: 'opencode' }`.
 
@@ -180,38 +180,24 @@ Terminal tiles run your login shell in a real pseudo-terminal via `@lydell/node-
 
 Local file access is read-only, through the main process. Symlink targets resolve to canonical identities before opening. Directory listings are bounded at 1,000 entries; text previews at 256 KiB. Binary/non-UTF-8 files and system pseudo-files are not previewed. HTML/scripts are displayed as inert text, not executed. File content is not stored in desktop persistence; paths and tile ownership survive restart, then contents reload. **Files are local to the desktop machine**; an OpenCode server's remote-only path may not exist locally. This is a navigator/text reader, not a file editor or recursive indexed filesystem search.
 
-## Accounts and authentication
+## Front, Slack and GitHub
 
-Click **Settings** (gear) for OpenCode connection settings, Slack, Front and GitHub accounts, and shortcut help.
+These three ship with ChatOS as **built-in connectors**: ordinary connectors (same tiles, setup, token storage, write confirmations, search and Settings as anything K builds), plus a little code where a mapping can't reach. `add front`, `add slack` or `add github` shows what you get straight away — no model is needed — and asks once to approve the API destination. Paste a token; it is checked against the service and only kept if it works ("Connected as …"). Anything else with an API still goes through `add <name>` and the model.
 
-- **Browser sign-in:** save your HTTPS workspace/home URL and open it as a unique tile. Use the service’s normal login or SSO. Some identity providers may restrict embedded Chromium sign-in; API tokens do not log you into a browser page.
-- **API-token fallback:** paste a scoped token, save it, then explicitly Verify. Verification only reads account identity; it sends no messages, changes no PRs and reads no inboxes.
-- Tokens live in Electron’s main process. With a working OS secret store they are encrypted on disk. Without one—including Linux `basic_text`—they stay only in memory for this run. No plaintext tokens are saved or returned by the status API; password inputs clear after saving.
-- Remove token deletes the API credential. It does not log out a web browser; use the provider’s own Sign out control for that.
-- Built-in Slack/Front/GitHub provider app OAuth is **not configured yet**. Custom JSON connectors can use the PKCE/refresh broker above when you supply a compatible registered client. No real provider credentials/client registrations have been supplied.
+| Source | Opens as | Token |
+|---|---|---|
+| Front | Inbox list (Front search syntax) → conversation tiles: mail as messages, internal comments as notes. **Reply** and **Comment** | Front → Settings → Developers → API tokens. `conversations:read`, `messages:read`; `messages:send` to reply, `comments:write` to comment |
+| Slack | Existing DMs, and message search (`mentions` = your mentions). Rows open Slack's own page in a Browser tile | User token (`xoxp-…`): `users:read` + `im:read` for DMs, `search:read` for messages |
+| GitHub | Pull requests: review requested (default), or any search like `is:open author:@me`. Rows open on github.com | Fine-grained token with Pull requests: read |
 
-Front supports **API-native inbox and conversation tiles**. Slack/GitHub bodies are still browser-backed, with read-only API discovery in the launcher when you supply tokens:
+- **K:** `mail tag:tag_me`, `front …` → the Front inbox with that filter; `dm carl`, `slack …` → Slack; `pr …`, `github …` → pull requests. Built-ins are searched only when K is narrowed to them (prefix or Tab), never on every keystroke. Before a source is added, its prefix offers **Add …** and loads nothing.
+- **Saved filters:** Front's personal filters (**Addressed to me, Assigned to me, Mentions, Tagged, Replies to my mail**) appear as buttons on its lists and as K results once you set your email, teammate ID (`tea_…`) and a tag ID (`tag_…`) in **Settings → Sources → Front**. Slack has **Mentions**; GitHub **Review requested** and **My open PRs**.
+- **Writes:** Front Reply/Comment show a native confirmation with the exact URL and JSON body, are sent once as you (your teammate ID), never retried, and an empty draft is refused. Slack and GitHub are read-only; reply in their pages.
+- **Mail safety:** HTML is turned into text in the main process: no scripts, iframes, remote images or attachment URLs (attachments show by name). Reading never marks mail read.
+- **Tokens** live in the main process: encrypted with the OS keyring, or memory-only for the run without one. Never in prompts, recipes or the renderer. **Settings → Sources** has the account, the token, Front's values, **Forget token** and **Remove … as a source**.
+- **Upgrading:** tokens, Front filter values and old Front tiles (inbox lists, conversations, drafts) from the earlier separate "services" move across once.
 
-- `dm Carl` discovers an **existing** Slack DM by display/real name. It never creates a DM. A workspace-scoped **user** token needs `users:read` + `im:read`.
-- `slack mentions` and `slack search terms` use message search with `search:read`.
-- `mail from:address@example.com`, `mail subject words` or `front ...` open a native Front list using its documented conversation-search syntax and `conversations:read`. Select a conversation to read its messages directly; that also needs `messages:read`.
-- `pr reviews` finds open PRs requesting your review; `pr repo:owner/repo words` supports GitHub search qualifiers. Your token must have access to those repositories.
-
-Requests use fixed HTTPS provider endpoints with bearer tokens in headers only, redirect rejection, bounded results, short-lived caches and rate-limit backoff. Missing tokens/scopes are visible. Search never sends messages, opens a new DM, marks mail read or changes a PR. Results use the same unique tile registry; labels survive generic page-title updates. Front native reading needs only the token, not a browser login. Browser cookies are independent and only needed for web fallback.
-
-### Native Front workflow
-
-1. In K, type `add front`, paste your scoped API token and press Enter. It is checked, and Front becomes a source. `front` / `mail` in K open the inbox; **Settings → Sources → Front** has the token, filters and **Open Front API inbox**.
-2. Optionally save **your email, Front teammate ID and tag ID** under Personal mail filters. The native inbox then provides **Addressed to me**, **Assigned to me**, **Mentions**, **Tagged**, and **Replies to my mail** buttons. Front needs `tea_…` and `tag_…` IDs rather than names.
-3. Select a conversation with the mouse, or use ↑/↓ and Enter in the list. Its native message tile shows sender/recipients, message text, status, tags and attachment names. No Front web view is loaded.
-4. Each query is its own unique, persistable tile. Reopen `mail to:you@example.com`, `mail mention:tea_YOUR_ID`, `mail tag:tag_TAG_ID` or `mail author:tea_YOUR_ID is:unreplied` to go to that list. Use the shared pencil to give it a short name, e.g. **Mail · replies**.
-5. Use **Refresh**, **More conversations**, or **Older messages** to fetch more data. Hidden Front tiles do not poll the service. Loaded content stays in memory, not desktop localStorage; restart reloads through the API.
-
-“Replies to my mail” means conversations you authored whose latest message is inbound—not a precise “new replies since last seen” feed. The API token must have access to the inboxes you want; private inboxes may need an administrator to allow API access.
-
-Email HTML is converted to plain text in the main process before rendering. Scripts, iframes, remote images/tracking pixels and automatic attachment downloads are excluded. Reading uses only GET requests and never marks mail read, archives or assigns. **Open in Front / reply** switches the same conversation tile to its web presentation; **Use Front API** switches back without creating another copy. **Comment** (internal, team only) and **Reply** (to the people on the conversation) are native: each opens a native confirmation showing the exact text and the Front API URL, posts once, and is never retried automatically. Your teammate ID from the Front settings is sent as the author. The draft lives on the tile, so it survives moves and restarts. Attachment downloads still use the web fallback. Merged-conversation redirects are not followed with credentials; the error points you to web fallback.
-
-Front archive/assign actions and continuous provider notifications are not implemented. API reads and discovery have been verified with mocked responses and sandboxed desktop fixtures, **not real account credentials**. Slack DM directory scans are bounded to 2,000 users/conversations; launcher source results are limited to 20. Front native lists/messages fetch 25 items per page with explicit pagination. You can always open full URLs manually. The workday fixture uses private resources, not your accounts.
+Adding a known service is one file in `src/main/code-connectors/` — a connector definition with optional `read`, `validate`, `body`, `settings` and `filters` hooks — and one line in its `index.ts` (plus a catalogue line for its K prefixes). Verified with fake APIs (`CHATOS_CONNECTOR_URLS`, loopback only) and stubbed web pages; **not with real accounts**. Not implemented: Front archive/assign, attachment downloads, notifications, provider OAuth apps.
 
 Select text in a browser and use **Ctrl+.** to add only that selection to its linked session’s draft, or choose a destination session for an unlinked tile. Password fields are excluded. Nothing is sent until you explicitly send the session draft. The page toolbar’s Attach action adds page context instead of just the selection.
 
@@ -247,6 +233,6 @@ The soak continuously opens/focuses/moves private fixture resources, verifies dr
 
 ## Remaining scope
 
-Integrated terminal/editor, specialized native Slack/GitHub bodies, built-in Front write actions/comments/downloads, agent control of browser tiles, broader AI-backed launcher commands, background provider sync, real provider-account verification and macOS packaging validation remain follow-up work. Custom recipe actions and OAuth are available as described above; they do not imply the built-in Front adapter has gained those capabilities. Review is read-only against the repository’s default base. `npm run pack` / `npm run dist` provide packaging entrypoints; build macOS packages on macOS.
+An integrated editor, native Slack/GitHub message bodies, Front archive/assign and downloads, agent control of browser tiles, broader AI-backed launcher commands, background provider sync, real provider-account verification and macOS packaging validation remain follow-up work. Custom recipe actions and OAuth are available as described above; they do not imply the built-in Front adapter has gained those capabilities. Review is read-only against the repository’s default base. `npm run pack` / `npm run dist` provide packaging entrypoints; build macOS packages on macOS.
 
 Work is tracked by `tk` in `.tickets/`, with V3 epic `cha-85ms` and execution-loop task `cha-6nlg`. No Git repository or commits have been created automatically.

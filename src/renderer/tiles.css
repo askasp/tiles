@@ -11,6 +11,7 @@
 .tile-grid[hidden], .resource-tile[hidden] { display: none; }
 .tile-grid.count-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
 .resource-tile { min-height: 0; min-width: 0; display: flex; flex-direction: column; border-radius: 12px; }
+.resource-tile:focus { outline: none; }
 .resource-tile.tile-focused { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue); }
 .tile-header { display: flex; align-items: center; gap: 8px; height: 42px; min-height: 42px; padding: 0 10px 0 14px; border-bottom: 1px solid var(--divider); color: var(--ink-3); font-size: 12px; }
 .tile-title { color: var(--ink); font-weight: 500; flex: 1; }
@@ -60,48 +61,6 @@
 .tile-toast { position: fixed; top: 6px; left: 50%; transform: translateX(-50%); max-width: 65vw; z-index: 200; display: flex; align-items: center; gap: 10px; padding: 5px 8px 5px 14px; background: var(--surface); border: 1px solid var(--line); box-shadow: 0 3px 18px #00000020; border-radius: 9px; font-size: 11px; }
 .tile-toast.error { background: var(--danger-soft); color: var(--danger); }
 .tile-toast span { max-height: 34px; overflow: auto; }
-.service-settings { border-top: 1px solid var(--divider); padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
-.service-settings > h3 { display: flex; align-items: center; gap: 8px; color: var(--ink); font-weight: 500; }
-.service-card { display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
-.service-card-heading { display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
-.service-card-heading span { font-size: 10px; color: var(--muted); }
-.auth-scope-note, .auth-warning { font-size: 11px; color: var(--warn); line-height: 1.6; }
-.auth-scope-note { color: var(--muted); }
-.auth-status { font-size: 12px; color: var(--blue-ink); }
-.front-inbox, .front-conversation { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.front-toolbar { display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-bottom: 1px solid var(--divider); font-size: 12px; }
-.front-toolbar strong { margin-right: auto; font-weight: 500; }
-.front-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 15px; padding: 24px; flex: 1; text-align: center; color: var(--muted); }
-.front-empty p { max-width: 500px; line-height: 1.6; font-size: 12px; }
-.front-search { display: flex; align-items: center; gap: 8px; padding: 12px 14px 8px; }
-.front-search input { padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; flex: 1; min-width: 0; font-size: 12px; }
-.front-presets { display: flex; flex-wrap: wrap; gap: 5px; padding: 0 14px 8px; }
-.front-presets .pill { font-size: 10px; padding: 4px 7px; }
-.front-filter-note { padding: 0 14px 8px; color: var(--muted); font-size: 10px; line-height: 1.6; overflow-wrap: anywhere; }
-.front-results, .front-message-scroll { flex: 1; min-height: 0; overflow: auto; padding: 8px 12px; outline-offset: -2px; }
-.front-conversation-row { display: flex; flex-direction: column; gap: 5px; width: 100%; text-align: left; padding: 13px; border: 1px solid transparent; border-bottom-color: var(--divider); border-radius: 8px; }
-.front-conversation-row.selected { border-color: var(--blue-line); background: var(--blue-soft); }
-.front-row-heading { display: flex; gap: 12px; align-items: baseline; width: 100%; }
-.front-row-heading strong { font-size: 13px; font-weight: 500; flex: 1; overflow-wrap: anywhere; }
-.front-row-heading small, .front-row-sender { font-size: 10px; color: var(--muted); }
-.front-row-preview { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
-.front-tags { display: flex; flex-wrap: wrap; gap: 5px; }
-.front-tags span { color: var(--ink-3); font-size: 9px; background: var(--hover); padding: 2px 5px; border-radius: 5px; }
-.front-footer { font-size: 10px; color: var(--muted); padding: 8px 14px; border-top: 1px solid var(--divider); }
-.front-thread-summary { padding: 12px 14px 18px; }
-.front-thread-summary h2 { font-size: 19px; font-weight: 500; margin-bottom: 8px; }
-.front-thread-summary p { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
-.front-message { padding: 18px; margin-bottom: 14px; border: 1px solid var(--line); border-radius: 10px; }
-.front-message header { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
-.front-message time { font-size: 10px; color: var(--muted); }
-.front-message dl { padding: 10px 0; font-size: 10px; color: var(--muted); }
-.front-message dl div { display: flex; gap: 8px; overflow-wrap: anywhere; }
-.front-message dt { width: 45px; flex-shrink: 0; text-transform: capitalize; }
-.front-message-text { font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
-.front-attachments { display: flex; flex-direction: column; gap: 5px; margin-top: 16px; color: var(--muted); font-size: 11px; }
-.front-attachments span { display: flex; gap: 5px; align-items: center; }
-.front-identity { border-top: 1px solid var(--line); padding-top: 12px; display: flex; flex-direction: column; gap: 9px; }
-.front-identity h4 { font-size: 12px; font-weight: 500; }
 .launcher-sources { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 16px; border-bottom: 1px solid var(--divider); }
 .launcher-sources .pill { font-size: 11px; }
 .tile-app .workspace-content { position: relative; }

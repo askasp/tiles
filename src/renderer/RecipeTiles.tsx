@@ -48,9 +48,11 @@ export function RecipeBody({ tile, connectors, visible, open, change, settings }
     finally { actionLock.current = false; setBusy(false) }
   }
   if (!recipe) return <div className="recipe-body"><p>This connector or recipe is unavailable. Your tile and draft are kept.</p><button className="pill" onClick={settings}>Manage connectors</button></div>
-  const openItem = (item: { id: string; title: string; parentID?: string }) => {
-    const child = info!.definition.recipes.find(r => r.id === recipe.itemRecipe)!
+  const openItem = (item: { id: string; title: string; parentID?: string; url?: string }) => {
+    const child = info!.definition.recipes.find(r => r.id === recipe.itemRecipe)
     try {
+      // Rows that are web pages (a Slack message, a pull request) open in a Browser tile.
+      if (item.url || !child) { if (item.url) open({ ...browserTile(item.url), title: item.title, label: item.title }); return }
       open(recipeTile({ connectorID: tile.resource!.connectorID, recipeID: child.id, ...(child.shape === 'collection' ? { parentID: item.id } : { resourceID: item.id, ...((item.parentID || tile.resource!.parentID) && { parentID: item.parentID || tile.resource!.parentID }) }) }, item.title, child, info!.definition.name))
     } catch (e) { setError(friendlyError(e)) }
   }
@@ -71,6 +73,7 @@ export function RecipeBody({ tile, connectors, visible, open, change, settings }
     if (e.key === 'Enter' && sortedItems[selectedRow]) { e.preventDefault(); openItem(sortedItems[selectedRow]) }
   }}>
     <div className="recipe-toolbar"><span>{info?.definition.name} · {recipe.view} · recipe v{info?.revision}</span><button className="pill" disabled={busy} onClick={() => void load()}>Refresh</button><button className="text-button" onClick={settings}>Mapping</button></div>
+    {recipe.shape === 'collection' && !!info?.filters?.some(f => f.recipeID === recipe.id) && <div className="recipe-presets">{info.filters.filter(f => f.recipeID === recipe.id).map(f => <button className={`pill ${(tile.resource?.query || '') === f.query ? 'primary' : ''}`} key={f.title} disabled={!f.ready} title={f.ready ? f.query || 'default' : `Set this up in Super+, → Sources → ${info.definition.name}`} onClick={() => open(recipeTile({ connectorID: info.definition.id, recipeID: recipe.id, ...(f.query && { query: f.query }) }, `${info.definition.name} · ${f.title}`, recipe, info.definition.name))}>{f.title}</button>)}</div>}
     {recipe.shape === 'collection' && <form className="recipe-filter" onSubmit={e => { e.preventDefault(); open(recipeTile({ ...tile.resource!, query: query.trim() }, `${recipe.label}${query.trim() ? ` · ${query.trim()}` : ''}`, recipe, info?.definition.name)) }}><input aria-label="Collection filter" placeholder="API search / filter…" value={query} maxLength={300} onChange={e => setQuery(e.target.value)} /><button className="pill" type="submit">Open filtered list</button></form>}
     {error && <div className="inline-error" role="alert">{error}<button className="text-button" onClick={settings}>Connections</button></div>}
     {status && <div role="status">{status}</div>}

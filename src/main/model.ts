@@ -2,7 +2,7 @@ import { convert } from 'html-to-text'
 import { modelSettings, discoveryPlan, isLoopbackURL, type ModelInfo, type ModelProbe, type ModelSettings, type DiscoveryResult, type DiscoveryTurn } from '../shared/model'
 import { connectorBaseURL, connectorRules, exampleConnector, normalizeConnectorDraft } from '../shared/connectors'
 import { connectorFetch, checkDestination } from './connector-network'
-import type { SecretStorage } from './services'
+import type { SecretStorage } from './secrets'
 import type { Storage } from './storage'
 import type { Confirm } from './connectors'
 

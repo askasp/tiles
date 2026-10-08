@@ -22,11 +22,12 @@ describe('source/resource/action launcher semantics', () => {
   it('keeps mail filter syntax intact and separates URLs by provider rather than title', () => {
     expect(launcherScope('PR cleanup')).toBeUndefined()
     expect(launcherScope('DM Carl · important')).toBeUndefined()
-    expect(launcherScope('github reviews')).toBe('github')
-    expect(launcherScope('PR cleanup', 'github')).toBe('github')
-    expect(launcherIntent('mail from:carl@example.test')).toMatchObject({ source: 'front', query: 'from:carl@example.test' })
-    expect(launcherIntent('dm Carl')).toMatchObject({ source: 'slack', query: 'Carl' })
-    expect(resourceSource(browserTile('https://github.com/example/repo'))).toBe('github')
+    expect(launcherScope('github reviews')).toBe('connector:github')
+    expect(launcherScope('PR cleanup', 'connector:github')).toBe('connector:github')
+    expect(launcherIntent('mail from:carl@example.test')).toMatchObject({ source: 'connector:front', query: 'from:carl@example.test' })
+    expect(launcherIntent('dm Carl')).toMatchObject({ source: 'connector:slack', query: 'Carl' })
+    // Front, Slack and GitHub are connectors, so their pages belong to the connector.
+    expect(resourceSource(browserTile('https://github.com/example/repo'))).toBe('connector:github')
     expect(resourceSource({ ...browserTile('https://example.test'), title: 'GitHub Slack' })).toBe('web')
   })
   it('explains different actions for the same path', () => {

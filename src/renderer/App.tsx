@@ -11,7 +11,7 @@ import { uid } from '../shared/util'
 import { AddressDialog, RenameDialog, SendPage, Settings as SettingsDialog } from './Overlays'
 import { Badge, TileLauncher, TileOverview, tileBadge, tileSource } from './TileOverlays'
 import { api, friendlyError } from './data'
-import { IconButton, KeyButton, Status, listKeys } from './ui'
+import { IconButton, KeyButton, Status, listKeys, rowSelector } from './ui'
 import { ConnectorSettings } from './ConnectorSettings'
 import { registry, sourceFor } from './sources/registry'
 import type { Env } from './sources/types'
@@ -19,11 +19,12 @@ import type { Env } from './sources/types'
 const STORAGE = 'chatos.desktop.v2'
 type Overlay = 'launcher' | 'address' | 'overview' | 'settings' | 'connectors' | 'rename' | 'send-page' | null
 
-const kindChip = (tile: Tile) => {
-  const owner = catalogue.find(s => s.id === resourceSource(tile))
-  const kind = ({ browser: 'page', folder: 'folder', file: 'file', terminal: 'shell', 'front-list': 'list', 'front-conversation': 'conversation', recipe: tile.resource?.resourceID ? 'item' : 'list' } as Record<string, string>)[tile.kind] || tile.kind
-  const generated = tile.kind === 'recipe'
-  return { text: `${(generated ? tile.sourceName || 'connector' : owner?.name || 'browser').toLowerCase()} · ${kind} · ${generated ? 'generated' : 'built-in'}`, generated }
+const kindChip = (tile: Tile, connectors: ConnectorInfo[]) => {
+  const owner = catalogue.find(s => s.id === resourceSource(tile) || `connector:${s.id}` === resourceSource(tile))
+  const kind = ({ browser: 'page', folder: 'folder', file: 'file', terminal: 'shell', recipe: tile.resource?.resourceID ? 'item' : 'list' } as Record<string, string>)[tile.kind] || tile.kind
+  // Front, Slack and GitHub connectors ship with ChatOS; the rest K generated.
+  const generated = tile.kind === 'recipe' && !connectors.find(c => c.definition.id === tile.resource?.connectorID)?.builtin
+  return { text: `${(tile.kind === 'recipe' ? tile.sourceName || 'connector' : owner?.name || 'browser').toLowerCase()} · ${kind} · ${generated ? 'generated' : 'built-in'}`, generated }
 }
 
 export default function App() {
@@ -243,12 +244,33 @@ export default function App() {
     window.addEventListener('resize', position)
     return () => { cancelAnimationFrame(frame); observer.disconnect(); window.removeEventListener('resize', position) }
   }, [desktop.activeID, w?.tileIDs.join('|'), visible.map(t => t.kind).join('|'), w?.fullscreenID, overlay, reportError])
+  /** Where keyboard focus was in each tile, so coming back lands on the same row. */
+  const lastFocus = useRef(new Map<string, HTMLElement>())
   useEffect(() => {
     if (overlay) return
     const tile = focusedTile(ref.current)
-    if (tile?.kind === 'browser') void api.browserAction({ id: tile.id, action: 'focus' }).catch(() => {})
+    if (tile?.kind === 'browser') { void api.browserAction({ id: tile.id, action: 'focus' }).catch(() => {}); return }
+    if (!tile || tile.kind === 'terminal') return
+    const root = document.querySelector<HTMLElement>(`[data-tile-id="${tile.id}"]`)
+    if (!root) return
     // In priority order (querySelector alone would pick the first in document order and scroll a list).
-    else if (tile && tile.kind !== 'terminal') for (const selector of ['.composer-input', '[tabindex="0"]', '.tile-body textarea, .tile-body input']) { const target = document.querySelector<HTMLElement>(`[data-tile-id="${tile.id}"] ${selector}`); if (target) { target.focus({ preventScroll: true }); break } }
+    const target = () => {
+      const last = lastFocus.current.get(tile.id)
+      if (last?.isConnected && root.contains(last)) return last
+      for (const selector of ['.composer-input', '[tabindex="0"]', '.tile-body textarea, .tile-body input', rowSelector]) { const found = root.querySelector<HTMLElement>(selector); if (found) return found }
+    }
+    const found = target()
+    if (found) { found.focus({ preventScroll: true }); return }
+    // A new tile renders its content later: hold focus on the tile (so j/k leave the old one) and land on the content when it appears.
+    root.focus({ preventScroll: true })
+    const observer = new MutationObserver(() => {
+      if (document.activeElement !== root) { observer.disconnect(); return }
+      const late = target()
+      if (late) { observer.disconnect(); late.focus({ preventScroll: true }) }
+    })
+    observer.observe(root, { childList: true, subtree: true })
+    const timer = setTimeout(() => observer.disconnect(), 5000)
+    return () => { observer.disconnect(); clearTimeout(timer) }
   }, [desktop.activeID, w?.focusedID, overlay])
 
   const shelf = shelfTiles(desktop)
@@ -278,8 +300,8 @@ export default function App() {
       </section>}
       <div className={`tile-grid count-${visible.length} ${w?.fullscreenID ? 'tile-fullscreen' : ''}`} hidden={desktop.activeID === 'home' || !visible.length}>
         {desktop.tiles.filter(t => t.status !== 'closed').map(tile => {
-          const chip = kindChip(tile), owner = sourceFor(tile.kind), status = tileStatus(tile), isVisible = visible.some(t => t.id === tile.id)
-          return <section hidden={!isVisible} style={{ order: visible.findIndex(t => t.id === tile.id) }} className={`resource-tile panel ${visible[0]?.id === tile.id ? 'primary-tile' : ''} ${w?.focusedID === tile.id ? 'tile-focused' : ''}`} data-tile-id={tile.id} data-resource-key={tile.key} data-kind={tile.kind} key={tile.id} onPointerDownCapture={() => { if (focusedTile(ref.current)?.id !== tile.id) focus(tile.id) }} onFocusCapture={() => { if (focusedTile(ref.current)?.id !== tile.id) update(s => focusTile(s, tile.id)) }}>
+          const chip = kindChip(tile, connectors), owner = sourceFor(tile.kind), status = tileStatus(tile), isVisible = visible.some(t => t.id === tile.id)
+          return <section hidden={!isVisible} style={{ order: visible.findIndex(t => t.id === tile.id) }} className={`resource-tile panel ${visible[0]?.id === tile.id ? 'primary-tile' : ''} ${w?.focusedID === tile.id ? 'tile-focused' : ''}`} data-tile-id={tile.id} data-resource-key={tile.key} data-kind={tile.kind} key={tile.id} onPointerDownCapture={() => { if (focusedTile(ref.current)?.id !== tile.id) focus(tile.id) }} tabIndex={-1} onFocusCapture={e => { const at = e.target as HTMLElement; if (at !== e.currentTarget && !at.closest('.tile-header')) lastFocus.current.set(tile.id, at); if (focusedTile(ref.current)?.id !== tile.id) update(s => focusTile(s, tile.id)) }}>
             <header className="tile-header"><Badge icon={tileBadge(tile)} /><strong className="tile-title truncate" title={tileTitle(tile)}>{tileTitle(tile)}</strong><span className="tile-source truncate" title={tile.url || tile.directory}>{tile.kind === 'terminal' ? '' : tileSource(tile)}{tile.directory && tile.kind !== 'session' ? `${tile.kind === 'terminal' ? '' : ' · '}${home && tile.directory.startsWith(home) ? `~${tile.directory.slice(home.length)}` : tile.directory}` : tile.url ? ` · ${(() => { try { return new URL(tile.url).pathname } catch { return '' } })()}` : ''}</span>{tile.linkID && <span title="Linked to the tile that opened it"><Link size={12} /></span>}{status && <Status running={status.running} waiting={status.waiting} />}
               {registry.map(s => s.headerActions && <span key={s.id} className="tile-header-action">{s.headerActions(tile, stateOf(s.id), env)}</span>)}
               <span className={`tile-type ${chip.generated ? 'generated' : ''}`}>{chip.text}</span>

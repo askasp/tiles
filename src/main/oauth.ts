@@ -2,7 +2,7 @@ import { createServer } from 'node:http'
 import { createHash, randomBytes } from 'node:crypto'
 import type { ConnectorDefinition, OAuthConfiguration } from '../shared/connectors'
 import type { Storage } from './storage'
-import type { SecretStorage } from './services'
+import type { SecretStorage } from './secrets'
 import { connectorFetch, checkDestination } from './connector-network'
 import type { Confirm } from './connectors'
 

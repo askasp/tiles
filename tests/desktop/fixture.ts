@@ -17,6 +17,15 @@ export async function fixtureServer(options?: { requestLimit?: number; createDel
   const subscribers = new Set<ServerResponse>()
   const requests: { method: string; path: string; body: Record<string, unknown> }[] = []
   let counter = 5
+  const people = ['Carl', 'Anna', 'Bob']
+  const conversation = (id: string, subject: string, handle: string, blurb: string, status = 'open') => ({ id, subject, status, recipient: { handle }, last_message: { blurb, created_at: Math.floor(Date.now() / 1000) }, tags: [{ name: 'me' }] })
+  const conversations = [
+    conversation('cnv_101', 'Duplikate rekvisisjoner igjen', 'ingrid@furst.test', 'Det skjedde igjen i natt', 'assigned'),
+    conversation('cnv_102', 'Login loop on staging', 'ops@example.test', 'Users bounce back to login'),
+    conversation('cnv_103', 'Invoice question', 'billing@example.test', 'Can you check March?'),
+    conversation('cnv_123', 'Lab reply', 'carl@example.test', 'Your lab results are ready', 'assigned'),
+  ]
+  const frontWrites: { id: string; kind: string; body: string }[] = []
   const model = { id: 'test-model', modelID: 'test-model', providerID: 'fixture', name: 'Test model', enabled: true, variants: [{ id: 'high' }], limit: { context: 100_000, output: 4_000 } }
   const emit = (type: string, data: Record<string, unknown>) => {
     for (const subscriber of subscribers) subscriber.write(`data: ${JSON.stringify({ id: `evt_${Date.now()}`, created: Date.now(), type, data })}\n\n`)
@@ -49,6 +58,31 @@ export async function fixtureServer(options?: { requestLimit?: number; createDel
       const messages = body.messages as { content: string }[]
       return json({ choices: [{ message: { role: 'assistant', content: options.generate(messages[0].content) } }] })
     }
+    // Fake Front, Slack and GitHub APIs for the built-in connectors (CHATOS_CONNECTOR_URLS). No real accounts.
+    if (path.startsWith('/front/')) {
+      const route = path.slice('/front'.length)
+      if (route === '/me') return json({ email: 'me@example.test' })
+      if (route === '/conversations') return json({ _results: [conversations[3]] })
+      const search = route.match(/^\/conversations\/search\/(.+)$/)
+      if (search) { const q = decodeURIComponent(search[1]); return json({ _results: q.includes('tag:') ? conversations.slice(0, 3) : q.includes('to:') ? [conversations[3]] : [] }) }
+      const one = route.match(/^\/conversations\/(cnv_\w+)(?:\/(messages|comments))?$/)
+      const c = one && conversations.find(x => x.id === one[1])
+      if (one && c) {
+        if (request.method === 'POST') { frontWrites.push({ id: c.id, kind: one[2] === 'messages' ? 'reply' : 'comment', body: String(body.body) }); response.writeHead(202, { 'Content-Type': 'application/json' }); response.end('{}'); return }
+        if (one[2] === 'messages') return json({ _results: [{ id: `msg_${c.id.slice(4)}`, subject: c.subject, text: `${c.last_message.blurb}. Please take a look.`, is_inbound: true, created_at: Math.floor(Date.now() / 1000) - 60, recipients: [{ role: 'from', handle: c.recipient.handle, name: c.recipient.handle.split('@')[0] }], attachments: [{ filename: 'results.txt', url: 'https://example.test/secret-attachment' }] }] })
+        if (one[2] === 'comments') return json({ _results: frontWrites.filter(w => w.id === c.id && w.kind === 'comment').map((w, i) => ({ id: `com_${i}`, body: w.body, posted_at: Math.floor(Date.now() / 1000), author: { username: 'me' } })) })
+        return json(c)
+      }
+    }
+    if (path.startsWith('/slack/')) {
+      const method = path.slice('/slack/'.length)
+      if (method === 'auth.test') return json({ ok: true, user: 'me', team: 'Fixture', team_id: 'T123', user_id: 'U001' })
+      if (method === 'users.list') return json({ ok: true, members: people.map((name, i) => ({ id: `U10${i}`, name: name.toLowerCase(), profile: { real_name: `${name} Hansen`, display_name: name } })), response_metadata: {} })
+      if (method === 'conversations.list') return json({ ok: true, channels: people.map((_, i) => ({ id: `D10${i}`, user: `U10${i}` })), response_metadata: {} })
+      if (method === 'search.messages') return json({ ok: true, messages: { matches: [{ iid: 'm1', text: 'Can you look at the deploy?', permalink: 'https://fixture.slack.com/archives/C1/p1', channel: { name: 'ops' }, username: 'carl', ts: '1700000000.0001' }] } })
+    }
+    if (path === '/github/user') return json({ login: 'me-test' })
+    if (path === '/github/search/issues') return json({ items: [{ id: 1, number: 42, title: 'Consent fix', state: 'open', html_url: 'https://github.com/acme/amino/pull/42', user: { login: 'carl' } }] })
     if (path === '/api/project') return json(projects)
     if (path === '/api/session/active') return json({ data: {} })
     if (path === '/api/model' || path === '/api/model/default') return json({ location, data: path.endsWith('default') ? model : [model] })
@@ -101,7 +135,9 @@ export async function fixtureServer(options?: { requestLimit?: number; createDel
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   const address = server.address() as { port: number }
   return {
-    url: `http://127.0.0.1:${address.port}`, requests, sessions,
+    url: `http://127.0.0.1:${address.port}`, requests, sessions, frontWrites,
+    /** Point the built-in connectors at this server instead of the real services. */
+    connectorURLs: JSON.stringify({ front: `http://127.0.0.1:${address.port}/front`, slack: `http://127.0.0.1:${address.port}/slack`, github: `http://127.0.0.1:${address.port}/github` }),
     seedHistory(id: string, count: number) {
       messages.set(id, Array.from({ length: count }, (_, i) => ({ id: `history_${i}`, type: 'assistant', content: [{ type: 'text', text: `Earlier response ${i}: ${'A detailed discussion of the current work. '.repeat(8)}` }], time: { created: i + 1, completed: i + 2 } })))
       emit('session.message.created', { sessionID: id })

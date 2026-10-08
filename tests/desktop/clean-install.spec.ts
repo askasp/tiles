@@ -30,7 +30,7 @@ test('clean install: model first, built-ins without any server, OpenCode only on
     await desktopReady(page)
     await expect(page.getByRole('region', { name: 'Empty desktop' })).toBeVisible()
     await expect(page.locator('.source-status')).toHaveCount(0)
-    expect(await page.evaluate(() => window.chatos.services())).toEqual(expect.not.arrayContaining([expect.objectContaining({ configured: true })]))
+    expect(await page.evaluate(() => window.chatos.connectors())).toEqual([])
 
     // Keyboard only: Tab walks the built-in sources, then lands on Add source.
     let k = await ask(page, '', false)

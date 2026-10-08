@@ -7,15 +7,15 @@ import { addIntent, launcherIntent, launcherScope, modelIntent, resourceAction, 
 import type { ModelInfo } from '../shared/model'
 import { api, friendlyError } from './data'
 import { IconButton, Modal, Status } from './ui'
-import { ConnectorSetup, KChips, KReply, KRow, ModelSetup, iconText } from './Setup'
+import { BuiltinSetup, ConnectorSetup, KChips, KReply, KRow, ModelSetup, iconText } from './Setup'
 import { registry, sourceByID, sourceFor } from './sources/registry'
 import type { AnySource, Candidate, Env, Query, Row } from './sources/types'
 
 export const tileSource = (tile: Tile) => tile.kind === 'recipe' ? tile.sourceName || tile.resource?.connectorID || 'Connector' : catalogue.find(s => s.id === resourceSource(tile))?.name || 'Browser'
 /** Short badge used in tile headers, the shelf and K rows. */
 export const tileBadge = (tile: Pick<TileInput, 'kind' | 'url' | 'resource'>) => {
-  if (tile.kind === 'recipe') return 'connector'
   const id = resourceSource(tile as TileInput)
+  if (id.startsWith('connector:')) return iconText[id.slice(10)] ? id.slice(10) : 'connector'
   return sourceByID(id)?.badge || sourceFor(tile.kind)?.badge || id
 }
 export function Badge({ icon, size = 'md' }: { icon: string; size?: 'sm' | 'md' }) {
@@ -59,8 +59,11 @@ export function TileLauncher(props: LauncherProps) {
   const enter = useRef<() => void>(undefined)
   const add = addIntent(query)
   const known = add?.known ? sourceByID(add.known) : undefined
+  // Front, Slack and GitHub ship as connectors: their setup shows straight away, no model call.
+  const builtin = add?.known && catalogue.find(c => c.id === add.known)?.connector ? add.known : undefined
   const panel = props.firstRun || modelIntent(query) ? 'model' as const
     : known?.Setup ? 'source' as const
+    : builtin ? 'builtin' as const
     : add && committed === add.name.toLowerCase() ? 'connector' as const : undefined
   const tidyQuery = /^(just |hide everything but |keep only )/i.test(query.trim())
   const intent = launcherIntent(query, scope)
@@ -92,10 +95,14 @@ export function TileLauncher(props: LauncherProps) {
     if (panel) return []
     if (add) return [{ key: 'add-ai', icon: 'add', title: `Add ${add.name}`, source: 'K', subtitle: model?.ready ? 'K looks up its API and proposes how it shows up · nothing is kept until you approve' : 'needs a model · Super+K → model', action: 'Ask K', run: () => setCommitted(add.name.toLowerCase()) }]
     if (/^(?:add|connect)\s*$/i.test(query)) {
-      return [...catalogue.filter(c => !c.builtin && !addedSources.some(s => s.id === c.id) && sourceByID(c.id)?.Setup).map(c => ({ key: `add:${c.id}`, icon: sourceByID(c.id)!.badge, title: `Add ${c.name}`, source: 'Source', subtitle: c.hint, action: 'Set up', fill: `add ${c.id}`, run: () => {} })),
+      return [...catalogue.filter(c => !c.builtin && (c.connector ? !env.connectors.some(x => x.definition.id === c.id) : !addedSources.some(s => s.id === c.id) && sourceByID(c.id)?.Setup)).map(c => ({ key: `add:${c.id}`, icon: sourceByID(c.id)?.badge || c.id, title: `Add ${c.name}`, source: 'Source', subtitle: c.hint, action: 'Set up', fill: `add ${c.id}`, run: () => {} })),
         { key: 'add:any', icon: 'add', title: 'Add anything with an API', source: 'K', subtitle: 'type its name, e.g. “add linear” · K builds a connector', action: 'Type a name', fill: 'add ', run: () => {} },
         { key: 'add:model', icon: 'ai', title: model?.ready ? `Model · ${model.model}` : 'Connect a model', source: 'Model', subtitle: 'the AI that powers K', action: 'Set up', fill: 'model', run: () => {} }]
     }
+    // `mail …`, `dm …` before that source is added: offer to add it, load nothing.
+    // (`dm`/`pr` aren't a firm scope: “PR cleanup” may be a session title.)
+    const missing = q.scope?.startsWith('connector:') && catalogue.find(c => c.connector && `connector:${c.id}` === q.scope && !env.connectors.some(x => x.definition.id === c.id))
+    if (missing) return [{ key: `add:${missing.id}`, icon: missing.id, title: `Add ${missing.name}`, source: 'Source', subtitle: `${missing.name} isn’t added yet · ${missing.hint.toLowerCase()}`, action: 'Set up', fill: `add ${missing.id}`, first: true, run: () => {} }]
     const commands = tidyQuery ? [] : registry.flatMap(s => s.commands?.(q, stateOf(states, s), env) || [])
     if (commands.some(c => c.exclusive)) return commands.filter(c => c.exclusive)
     // Resources: what's on the desktop, what each added source knows, and what searches found.
@@ -106,7 +113,7 @@ export function TileLauncher(props: LauncherProps) {
       // A desktop tile keeps its identity and local name; a better score still wins.
       if (c.score > old.score) best.set(c.input.key, { ...c, existing: old.existing, input: old.existing ? { ...c.input, title: tileTitle(old.existing) } : c.input })
     }
-    for (const tile of desktop.tiles) offer({ input: { ...tile, title: tileTitle(tile) }, existing: tile, score: Math.max(q.rank(`${tileTitle(tile)} ${tile.title} ${tile.url || ''} ${tile.frontQuery || ''} ${tile.path || ''} ${tile.directory || ''} ${tile.kind}`), query.trim() ? rankText(tileTitle(tile), query.trim()) : 0) })
+    for (const tile of desktop.tiles) offer({ input: { ...tile, title: tileTitle(tile) }, existing: tile, score: Math.max(q.rank(`${tileTitle(tile)} ${tile.title} ${tile.url || ''} ${tile.path || ''} ${tile.directory || ''} ${tile.kind}`), query.trim() ? rankText(tileTitle(tile), query.trim()) : 0) })
     for (const s of addedSources) for (const c of s.candidates?.(q, stateOf(states, s), env) || []) offer(c)
     if (found.query === searchKey) for (const c of found.items) offer(c)
     for (const resource of asked.resources) {
@@ -131,7 +138,7 @@ export function TileLauncher(props: LauncherProps) {
       }
     })
     if (tidyQuery) return resources
-    const narrow: Row[] = !q.scope && q.text ? scopes.filter(s => s.name.toLowerCase() === q.text.toLowerCase() && !(s.id === 'terminal' && terminalIntent(q.raw))).map(s => ({ key: `source:${s.id}`, icon: sourceByID(s.id)?.badge || 'connector', title: s.name, source: 'Source', subtitle: catalogue.find(c => c.id === s.id)?.hint || 'Search this source', action: 'Narrow to source', scope: s.id, run: () => {} })) : []
+    const narrow: Row[] = !q.scope && q.text ? scopes.filter(s => s.name.toLowerCase() === q.text.toLowerCase() && !(s.id === 'terminal' && terminalIntent(q.raw))).map(s => ({ key: `source:${s.id}`, icon: sourceByID(s.id)?.badge || (iconText[s.id.slice(10)] ? s.id.slice(10) : 'connector'), title: s.name, source: 'Source', subtitle: catalogue.find(c => c.id === s.id || `connector:${c.id}` === s.id)?.hint || 'Search this source', action: 'Narrow to source', scope: s.id, run: () => {} })) : []
     const addRow: Row[] = !query.trim() && !scope ? [{ key: 'add-source', icon: 'add', title: 'Add a source', source: 'K', subtitle: `${catalogue.filter(c => !c.builtin).map(c => c.name).slice(0, 3).join(', ')}${model?.ready ? ', or anything with an API' : '… · a model lets K add any API'}`, action: 'Choose', fill: 'add ', run: () => {} }] : []
     return [...narrow, ...commands.filter(c => c.first), ...resources, ...commands.filter(c => !c.first), ...addRow]
   }, [panel, add?.name, query, q, scope, model?.ready, model?.model, desktop, states, env, found, searchKey, asked, tidyQuery, tidy, scopes.map(s => s.id).join('|')]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -185,6 +192,7 @@ export function TileLauncher(props: LauncherProps) {
     {!panel && !add && <nav className="launcher-sources" aria-label="Search sources"><button className={`pill ${!q.scope ? 'primary' : ''}`} aria-pressed={!q.scope} onClick={() => { setScope(undefined); setQuery(q.text); setIndex(0) }}>All sources</button>{scopes.map(s => <button key={s.id} className={`pill ${q.scope === s.id ? 'primary' : ''}`} aria-pressed={q.scope === s.id} onClick={() => { setScope(s.id); setQuery(q.text); setIndex(0); setOpenError('') }}>{s.name}</button>)}<button className="pill" onClick={() => { setScope(undefined); setQuery('add '); input.current?.focus() }}>Add source</button>{!!env.connectors.length && model?.ready && <button className="pill" disabled={!query.trim()} onClick={() => void askAI()}>Ask K to find…</button>}</nav>}
     {panel === 'model' && <ModelSetup info={model} firstRun={props.firstRun} enter={enter} saved={info => { props.modelChanged(info); setQuery(''); input.current?.focus(); setGreeting(`Ready. ${info.model} powers K. Browser, Files and Terminal are built in; anything else with an API you can add by asking.`) }} skip={props.firstRun ? () => { void api.skipModel().then(info => { props.modelChanged(info); setQuery(''); input.current?.focus(); setGreeting('Browser, Files and Terminal are ready. Type “model” here whenever you want K to add services for you.') }).catch(e => setOpenError(friendlyError(e))) } : undefined} />}
     {panel === 'source' && known?.Setup && <known.Setup key={known.id} state={knownState} env={env} name={add!.name} done={close} enter={enter} />}
+    {panel === 'builtin' && builtin && <BuiltinSetup key={builtin} id={builtin} connectors={env.connectors} changed={env.setConnectors} enter={enter} open={i => env.open(i, 'here')} done={close} />}
     {panel === 'connector' && add && <ConnectorSetup key={add.name.toLowerCase()} name={add.name} model={model} connectors={env.connectors} changed={env.setConnectors} enter={enter} open={i => env.open(i, 'here')} adjust={definition => env.editConnector({ definition })} setupModel={() => setQuery('model')} done={close} />}
     {greeting && !query && !panel && <KReply>{greeting}</KReply>}
     {!panel && <FirstMessageChips rows={rows} />}

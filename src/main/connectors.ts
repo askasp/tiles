@@ -1,6 +1,7 @@
 import { convert } from 'html-to-text'
-import { connectorBaseURL, connectorRules, displayValue, exampleConnector, normalizeConnectorDraft, resourceKey, validateConnector, validateRef, valueAt, type ConnectorDefinition, type ConnectorInfo, type ConnectorSearch, type RecipeItem, type RecipePage, type ResourceRef } from '../shared/connectors'
-import type { SecretStorage } from './services'
+import { codeConnector, codeConnectors, type CodeContext } from './code-connectors'
+import { connectorBaseURL, connectorRules, displayValue, exampleConnector, normalizeConnectorDraft, resourceKey, validateConnector, validateRef, valueAt, type ConnectorDefinition, type ConnectorInfo, type ConnectorSearch, type TileRecipe, type RecipeItem, type RecipePage, type ResourceRef } from '../shared/connectors'
+import type { SecretStorage } from './secrets'
 import type { Storage } from './storage'
 import { connectorFetch, checkDestination } from './connector-network'
 import { OAuthBroker } from './oauth'
@@ -21,22 +22,91 @@ const plain = (value: unknown) => convert(displayValue(value), { wordwrap: false
 export class Connectors {
   private tokens = new Map<string, string>()
   private backoff = new Map<string, number>()
+  private accounts = new Map<string, string>()
+  private cache = new Map<string, { expires: number; value: Promise<unknown> }>()
   private oauth: OAuthBroker
   private pendingActions = new Set<string>()
   private pendingOAuth = new Set<string>()
   constructor(private store: Storage, private secrets: SecretStorage, private confirm: Confirm, private generate: Generate, private fetcher: typeof fetch = connectorFetch, private destinationCheck = checkDestination, openExternal: (url: string) => Promise<void> = async () => { throw new Error('OAuth browser is unavailable') }) {
     this.oauth = new OAuthBroker(store, secrets, confirm, openExternal, fetcher)
+    this.migrateServices()
   }
   list(): ConnectorInfo[] {
-    return this.store.definitions().map(entry => {
-      if (entry.definition.auth.type === 'oauth2') return { ...entry, ...this.oauth.info(entry.definition) }
-      let storage: ConnectorInfo['tokenStorage'] = this.tokens.has(entry.definition.id) ? 'session' : 'none'
-      const encrypted = this.store.secret(`connector:${entry.definition.id}`)
-      if (encrypted && this.secrets.available()) {
-        try { if (!this.tokens.has(entry.definition.id)) this.tokens.set(entry.definition.id, this.secrets.decrypt(encrypted)); storage = 'encrypted' } catch { /* Locked keychain; show missing auth, never disclose details. */ }
-      }
-      return { ...entry, hasToken: this.tokens.has(entry.definition.id), tokenStorage: storage }
-    })
+    const builtins = this.added().flatMap(id => { const code = codeConnector(id); return code ? [{ definition: code.definition, revision: 1 }] : [] })
+    return [...builtins, ...this.store.definitions()].map(entry => this.info(entry))
+  }
+  private info(entry: { definition: ConnectorDefinition; revision: number }): ConnectorInfo {
+    const code = codeConnector(entry.definition.id), settings = this.settingsOf(entry.definition.id)
+    const extra: Partial<ConnectorInfo> = code && this.added().includes(entry.definition.id) ? {
+      builtin: true, scopedSearch: true, account: this.accounts.get(entry.definition.id),
+      ...(code.settings && { settings: code.settings.map(f => ({ key: f.key, label: f.label, placeholder: f.placeholder, value: settings[f.key] || '' })) }),
+      ...(code.filters && { filters: code.filters(settings) }),
+    } : {}
+    return { ...this.credentials(entry), ...extra }
+  }
+  private credentials(entry: { definition: ConnectorDefinition; revision: number }): ConnectorInfo {
+    if (entry.definition.auth.type === 'oauth2') return { ...entry, ...this.oauth.info(entry.definition) }
+    let storage: ConnectorInfo['tokenStorage'] = this.tokens.has(entry.definition.id) ? 'session' : 'none'
+    const encrypted = this.store.secret(`connector:${entry.definition.id}`)
+    if (encrypted && this.secrets.available()) {
+      try { if (!this.tokens.has(entry.definition.id)) this.tokens.set(entry.definition.id, this.secrets.decrypt(encrypted)); storage = 'encrypted' } catch { /* Locked keychain; show missing auth, never disclose details. */ }
+    }
+    return { ...entry, hasToken: this.tokens.has(entry.definition.id), tokenStorage: storage }
+  }
+  /** Built-in connectors you added (they are code, so only the choice is stored). */
+  private added(): string[] { try { const ids = JSON.parse(this.store.get('builtin-connectors') || '[]'); return Array.isArray(ids) ? ids.filter(id => typeof id === 'string' && codeConnector(id)) : [] } catch { return [] } }
+  private settingsOf(id: string): Record<string, string> { try { const v = JSON.parse(this.store.get(`connector-settings:${id}`) || '{}'); return v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).filter((e): e is [string, string] => typeof e[1] === 'string')) : {} } catch { return {} } }
+  /** What `add front` shows before anything is kept. */
+  builtin(id: string): { definition: ConnectorDefinition; hint: string; settings: { key: string; label: string }[] } | undefined {
+    const code = codeConnector(id)
+    return code && { definition: code.definition, hint: code.hint, settings: (code.settings || []).map(({ key, label }) => ({ key, label })) }
+  }
+  async addBuiltin(id: string): Promise<ConnectorInfo[]> {
+    const code = codeConnector(id)
+    if (!code) throw new Error('Unknown built-in source')
+    if (this.added().includes(id)) return this.list()
+    const d = code.definition, writes = d.operations.filter(o => o.effect === 'write').map(o => o.label)
+    if (!await this.confirm(`Add ${d.name}?`, `API destination: ${d.baseURL}\nAuthentication: ${d.auth.type}\n${d.recipes.map(r => `${r.label} → ${r.view}`).join('\n')}\n${writes.length ? `Write operations (always ask): ${writes.join(', ')}` : 'Read-only; no write operations'}`)) throw new Error('Not added. Nothing was saved.')
+    this.store.set('builtin-connectors', JSON.stringify([...this.added(), id]))
+    return this.list()
+  }
+  /** Stop using a source: its token, settings and mapping. Tiles stay, and say what's missing. */
+  remove(id: string): ConnectorInfo[] {
+    this.disconnect(id)
+    if (codeConnector(id)) { this.store.set('builtin-connectors', JSON.stringify(this.added().filter(x => x !== id))); this.store.set(`connector-settings:${id}`, '{}') }
+    else this.store.deleteConnector(id)
+    return this.list()
+  }
+  saveSettings(id: string, values: Record<string, string>): ConnectorInfo[] {
+    const code = codeConnector(id)
+    if (!code?.settings || !values || typeof values !== 'object') throw new Error('This source has no settings')
+    const clean: Record<string, string> = {}
+    for (const field of code.settings) {
+      const value = typeof values[field.key] === 'string' ? values[field.key].trim() : ''
+      if (value.length > 320 || /[\r\n\x00]/.test(value)) throw new Error(`${field.label} is too long`)
+      const problem = value ? field.check?.(value) : undefined
+      if (problem) throw new Error(problem)
+      if (value) clean[field.key] = value
+    }
+    this.store.set(`connector-settings:${id}`, JSON.stringify(clean))
+    return this.list()
+  }
+  /** Older versions stored Front, Slack and GitHub as separate “services”. Bring them across once. */
+  private migrateServices() {
+    if (this.store.get('services-migrated')) return
+    let saved: Record<string, { front?: Record<string, string> }> = {}
+    try { saved = JSON.parse(this.store.get('services') || '{}') || {} } catch { /* Damaged: tokens below still move. */ }
+    const ids = new Set(this.added())
+    for (const id of ['front', 'slack', 'github']) {
+      const secret = this.store.secret(`service:${id}`)
+      if (secret && !this.store.secret(`connector:${id}`)) this.store.saveSecret(`connector:${id}`, secret)
+      this.store.saveSecret(`service:${id}`)
+      if (secret || saved[id]) ids.add(id)
+    }
+    const identity = saved.front?.front
+    if (identity && typeof identity === 'object') { try { this.saveSettings('front', identity) } catch { /* Invalid values: leave them out. */ } }
+    this.store.set('builtin-connectors', JSON.stringify([...ids]))
+    this.store.set('services-migrated', '1')
   }
   private definition(id: string): ConnectorDefinition {
     const info = this.list().find(c => c.definition.id === id)
@@ -61,10 +131,16 @@ export class Connectors {
     if (JSON.stringify(this.definition(id)) !== JSON.stringify(definition)) throw new Error('Connector changed during approval. Please reconnect the token.')
     this.store.saveSecret(`connector:${id}`, this.secrets.available() ? this.secrets.encrypt(token.trim()) : undefined)
     this.tokens.set(id, token.trim())
-    this.backoff.delete(id)
+    this.backoff.delete(id); this.forget(id)
+    const code = codeConnector(id)
+    if (code?.validate) {
+      try { this.accounts.set(id, await code.validate(this.context(definition))) }
+      catch (e) { this.disconnect(id); throw new Error(`${definition.name} didn't accept this token, so it wasn't kept. ${e instanceof Error ? e.message : ''}`.trim()) }
+    }
     return this.list()
   }
-  disconnect(id: string) { this.tokens.delete(id); this.store.saveSecret(`connector:${id}`); this.oauth.disconnect(id); this.backoff.delete(id); return this.list() }
+  private forget(id: string) { for (const key of this.cache.keys()) if (key.startsWith(`${id} `)) this.cache.delete(key) }
+  disconnect(id: string) { this.forget(id); this.accounts.delete(id); this.tokens.delete(id); this.store.saveSecret(`connector:${id}`); this.oauth.disconnect(id); this.backoff.delete(id); return this.list() }
   async connectOAuth(id: string, clientSecret?: string): Promise<ConnectorInfo[]> {
     if (this.pendingOAuth.has(id)) throw new Error('OAuth sign-in is already pending')
     this.pendingOAuth.add(id)
@@ -100,7 +176,7 @@ export class Connectors {
   async search(query: string, connectorID?: string): Promise<ConnectorSearch> {
     if (typeof query !== 'string' || query.length > 300) throw new Error('Keep searches under 300 characters')
     const result: ConnectorSearch = { resources: [], errors: [] }
-    const infos = this.list().filter(c => !connectorID || c.definition.id === connectorID)
+    const infos = this.list().filter(c => connectorID ? c.definition.id === connectorID : !c.scopedSearch)
     const searches = infos.flatMap(c => c.definition.recipes.filter(r => r.shape === 'collection' && r.searchOperation && !c.definition.operations.find(o => o.id === r.searchOperation)?.path.includes('{parent}')).map(r => ({ connectorID: c.definition.id, recipeID: r.id, query })))
     const refs = searches.slice(0, 8)
     if (searches.length > 8) result.errors.push('Search is bounded to 8 collections. Narrow to a source for more results.')
@@ -111,9 +187,9 @@ export class Connectors {
   }
   private async searchRecipe(ref: ResourceRef): Promise<ConnectorSearch['resources']> {
     const definition = this.definition(ref.connectorID), recipe = definition.recipes.find(r => r.id === ref.recipeID)!
-    const data = await this.request(definition, recipe.searchOperation!, ref)
-    const page = this.page(recipe, data)
-    const child = definition.recipes.find(r => r.id === recipe.itemRecipe)!
+    const page = await this.fetchPage(definition, recipe, ref, undefined, recipe.searchOperation!)
+    const child = definition.recipes.find(r => r.id === recipe.itemRecipe)
+    if (!child) return page.items.flatMap(item => item.url ? [{ ref, title: item.title, description: `${definition.name} · ${recipe.label} · ${item.subtitle}`, url: item.url }] : [])
     return page.items.map(item => {
       const childRef = { connectorID: definition.id, recipeID: child.id, ...(child.shape === 'collection' ? { parentID: item.id } : { resourceID: item.id, ...((item.parentID || ref.parentID) && { parentID: item.parentID || ref.parentID }) }) }
       resourceKey(childRef, child) // Reject missing parent-scoped identity before renderer use.
@@ -126,9 +202,35 @@ export class Connectors {
     if (recipe.shape === 'item' && !ref.resourceID) throw new Error('This detail tile needs a resource ID')
     if (recipe.shape === 'collection' && ref.resourceID !== undefined) throw new Error('Collection scope uses parentID, not an individual resource ID')
     resourceKey(ref, recipe)
-    const page = this.page(recipe, await this.request(definition, recipe.operation, ref, cursor))
+    const page = await this.fetchPage(definition, recipe, ref, cursor, recipe.operation)
     if (recipe.shape === 'item' && page.items[0]?.id !== ref.resourceID) throw new Error('Detail response identity does not match the requested resource. Check its mapping.')
     return page
+  }
+  /** Code when the connector has it, else the declarative mapping. */
+  private async fetchPage(definition: ConnectorDefinition, recipe: TileRecipe, ref: ResourceRef, cursor: string | undefined, operation: string): Promise<RecipePage> {
+    const code = codeConnector(definition.id)
+    if (code?.read && this.added().includes(definition.id)) return { recipe, ...await code.read(recipe, ref, cursor, this.context(definition)) }
+    return this.page(recipe, await this.request(definition, operation, ref, cursor))
+  }
+  private context(definition: ConnectorDefinition): CodeContext {
+    return {
+      settings: this.settingsOf(definition.id),
+      get: async (path, query = {}, ttl = 0) => {
+        if (typeof path !== 'string' || !path.startsWith('/') || /[?#\\]|\/\.\.?(\/|$)/.test(path)) throw new Error('Invalid API path')
+        const base = new URL(definition.baseURL), url = new URL(`${definition.baseURL}${path}`)
+        if (url.origin !== base.origin || !url.pathname.startsWith(base.pathname.replace(/\/$/, '') + '/')) throw new Error('Request escaped the approved API destination')
+        for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value)
+        const key = `${definition.id} ${url.href}`, cached = this.cache.get(key)
+        if (ttl > 0 && cached && cached.expires > Date.now()) return cached.value as Promise<Record<string, unknown>>
+        const value = this.send(definition, url.href, 'GET').then(data => data && typeof data === 'object' && !Array.isArray(data) ? data as Record<string, unknown> : { items: data })
+        if (ttl > 0) {
+          if (this.cache.size >= 80) this.cache.delete(this.cache.keys().next().value!)
+          this.cache.set(key, { expires: Date.now() + ttl, value })
+          void value.catch(() => { if (this.cache.get(key)?.value === value) this.cache.delete(key) })
+        }
+        return value
+      },
+    }
   }
   private page(recipe: ConnectorDefinition['recipes'][number], data: unknown): RecipePage {
     const selected = valueAt(data, recipe.items)
@@ -141,7 +243,8 @@ export class Connectors {
       const id = String(rawID)
       if (!id || id.length > 500 || seen.has(id)) return []
       seen.add(id)
-      return [{ id, title: plain(valueAt(row, recipe.titleField)).slice(0, 500) || id, subtitle: recipe.subtitleField ? plain(valueAt(row, recipe.subtitleField)).slice(0, 1000) : '', text: recipe.textField ? ['document', 'diff'].includes(recipe.view) ? displayValue(valueAt(row, recipe.textField)) : plain(valueAt(row, recipe.textField)) : '', ...(recipe.parentField && { parentID: displayValue(valueAt(row, recipe.parentField)).slice(0, 500) }), ...(recipe.timeField && { time: displayValue(valueAt(row, recipe.timeField)).slice(0, 100) }), fields: (recipe.fields || []).map(f => ({ label: f.label, value: plain(valueAt(row, f.path)).slice(0, 2000), kind: f.kind })) }]
+      const url = recipe.urlField ? displayValue(valueAt(row, recipe.urlField)) : ''
+      return [{ ...(/^https:\/\/[^\s]+$/.test(url) && { url: url.slice(0, 2000) }), id, title: plain(valueAt(row, recipe.titleField)).slice(0, 500) || id, subtitle: recipe.subtitleField ? plain(valueAt(row, recipe.subtitleField)).slice(0, 1000) : '', text: recipe.textField ? ['document', 'diff'].includes(recipe.view) ? displayValue(valueAt(row, recipe.textField)) : plain(valueAt(row, recipe.textField)) : '', ...(recipe.parentField && { parentID: displayValue(valueAt(row, recipe.parentField)).slice(0, 500) }), ...(recipe.timeField && { time: displayValue(valueAt(row, recipe.timeField)).slice(0, 100) }), fields: (recipe.fields || []).map(f => ({ label: f.label, value: plain(valueAt(row, f.path)).slice(0, 2000), kind: f.kind })) }]
     })
     if (recipe.shape === 'item' && !items.length) throw new Error('API response has no mapped resource ID. Check the detail mapping.')
     if (rows.length && !items.length) throw new Error('List rows have no mapped resource IDs. Check idField.')
@@ -158,6 +261,7 @@ export class Connectors {
     const operation = definition.operations.find(o => o.id === operationID)
     if (!operation || !recipe?.actions?.some(a => a.operation === operationID)) throw new Error('Action is not approved for this tile')
     if (typeof draft !== 'string' || draft.length > 60_000) throw new Error('Keep action drafts under 60 KB')
+    if (!draft.trim() && [...Object.values(operation.body || {}), ...Object.values(operation.query || {})].some(v => v.includes('{draft}'))) throw new Error('Write something first. Nothing was sent.')
     const key = `${resourceKey(ref, recipe)}:${operationID}`
     if (this.pendingActions.has(key)) throw new Error('This action is already pending. It has not been sent again.')
     this.pendingActions.add(key)
@@ -187,12 +291,20 @@ export class Connectors {
         url.searchParams.set(key, value)
       }
     }
-    const body = operation.body ? JSON.stringify(Object.fromEntries(Object.entries(operation.body).map(([key, value]) => [key, render(value)]))) : undefined
+    let fields = operation.body && Object.fromEntries(Object.entries(operation.body).map(([key, value]) => [key, render(value)]))
+    const code = codeConnector(definition.id)
+    if (fields && code?.body && this.added().includes(definition.id)) fields = code.body(operationID, fields, this.settingsOf(definition.id))
+    const body = fields ? JSON.stringify(fields) : undefined
     return { url: url.href, body }
   }
   private async request(definition: ConnectorDefinition, operationID: string, ref: ResourceRef, cursor = '', draft = '', action = false): Promise<unknown> {
     const operation = definition.operations.find(o => o.id === operationID)
     if (!operation || (!action && operation.effect !== 'read')) throw new Error('Unapproved operation')
+    const { url, body } = this.buildRequest(definition, operationID, ref, cursor, draft)
+    return this.send(definition, url, operation.method, body, action, operation.effect)
+  }
+  /** One request with the connector's credential: destination checked, size bounded, never retried. */
+  private async send(definition: ConnectorDefinition, url: string, method: string, body?: string, discard = false, effect: 'read' | 'write' = 'read'): Promise<unknown> {
     if (Date.now() < (this.backoff.get(definition.id) || 0)) throw new Error('API is rate-limited. Wait before retrying.')
     if (definition.auth.type === 'oauth-required') throw new Error(`OAuth setup required. ${definition.auth.help || 'Register an OAuth client and use a supported OAuth adapter. Token fallback cannot replace OAuth for this API.'}`)
     if (JSON.stringify(this.definition(definition.id)) !== JSON.stringify(definition)) throw new Error('Connector changed while this request was pending. Retry using its current mapping.')
@@ -201,13 +313,12 @@ export class Connectors {
     const token = definition.auth.type === 'oauth2' ? await this.oauth.token(definition) : this.tokens.get(definition.id)
     if (JSON.stringify(this.definition(definition.id)) !== JSON.stringify(definition)) throw new Error('Connector changed during authentication. Retry.')
     if (definition.auth.type === 'bearer' && !token) throw new Error('Connect an API token in Connections first')
-    const { url, body } = this.buildRequest(definition, operationID, ref, cursor, draft)
     let response: Response
     try {
-      response = await this.fetcher(url, { method: operation.method, headers: { Accept: 'application/json', ...(body && { 'Content-Type': 'application/json' }), ...(token && { Authorization: `Bearer ${token}` }) }, body, redirect: 'error', signal: AbortSignal.timeout(15_000) })
-    } catch { throw new Error(operation.effect === 'write' ? 'Connection failed. The write may already have reached the service; check it before retrying. It has not been automatically retried.' : 'API request failed. Check its destination and connection.') }
+      response = await this.fetcher(url, { method, headers: { Accept: 'application/json', 'User-Agent': 'ChatOS', ...(body && { 'Content-Type': 'application/json' }), ...(token && { Authorization: `Bearer ${token}` }) }, body, redirect: 'error', signal: AbortSignal.timeout(15_000) })
+    } catch { throw new Error(effect === 'write' ? 'Connection failed. The write may already have reached the service; check it before retrying. It has not been automatically retried.' : 'API request failed. Check its destination and connection.') }
     if (response.status === 429) { const seconds = Math.min(300, Math.max(1, Number(response.headers.get('retry-after')) || 30)); this.backoff.set(definition.id, Date.now() + seconds * 1000) }
-    if (!response.ok) { await response.body?.cancel(); throw new Error(`API returned HTTP ${response.status}. Check authentication, scopes and mapping.`) }
+    if (!response.ok) { await response.body?.cancel(); throw new Error(response.status === 401 || response.status === 403 ? `${definition.name} refused this (HTTP ${response.status}). Check the token and its scopes.${definition.auth.help ? ` ${definition.auth.help}` : ''}` : `API returned HTTP ${response.status}. Check authentication, scopes and mapping.`) }
     if (response.status === 204) return null
     const reader = response.body?.getReader()
     if (!reader) throw new Error('Empty API response')
@@ -220,7 +331,7 @@ export class Connectors {
         chunks.push(chunk.value)
       }
     } finally { await reader.cancel().catch(() => {}) }
-    if (action) return null
+    if (discard) return null
     try { return JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch { throw new Error('API did not return JSON') }
   }
 }

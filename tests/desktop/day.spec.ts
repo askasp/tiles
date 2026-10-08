@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { mkdtemp, rm, readFile } from 'node:fs/promises'
-import { ask, desktopReady, launchDesktop } from './launch'
+import { ask, desktopReady, fakeServices, launchDesktop } from './launch'
 import { fixtureServer } from './fixture'
 import type { TileDesktop } from '../../src/shared/tiles'
 
@@ -64,36 +64,32 @@ test('all-day desktop: five sessions, Slack DMs/mentions, mail/replies, PRs, she
 
 test('settings: no service is listed until added; add Slack from K, manage it, remove it, no renderer secret persistence', async () => {
   const fixture = await fixtureServer(), profile = await mkdtemp('/tmp/opencode/chatos-settings-')
-  const env: Record<string, string> = { ...Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => typeof e[1] === 'string')), CHATOS_USER_DATA: profile, CHATOS_SERVER_URL: fixture.url }
+  const env: Record<string, string> = { ...Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => typeof e[1] === 'string')), CHATOS_USER_DATA: profile, CHATOS_SERVER_URL: fixture.url, CHATOS_CONNECTOR_URLS: fixture.connectorURLs }
   delete env.ELECTRON_RUN_AS_NODE
   const app = await launchDesktop(env), page = await app.firstWindow()
   try {
-    await desktopReady(page)
-    // Verification would contact slack.com; stub it. Never use real credentials in tests.
-    await app.evaluate(({ ipcMain }) => { ipcMain.removeHandler('chatos:validateService'); ipcMain.handle('chatos:validateService', () => ({ ok: true, account: 'fixture-user' })) })
+    await desktopReady(page); await fakeServices(app)
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
-    await expect(page.locator('.service-card')).toHaveCount(0)
     await expect(page.getByRole('region', { name: 'Sources' })).not.toContainText('Slack')
     await page.getByRole('button', { name: 'Close settings', exact: true }).click()
-    await ask(page, 'add slack', false)
-    await page.getByRole('textbox', { name: 'Slack API token' }).fill('fake-private-token-for-settings-test')
-    await page.getByRole('textbox', { name: 'Launcher search' }).press('Enter')
-    await expect(page.locator('[data-service-setup="slack"]')).toContainText('Connected to Slack as fixture-user')
+    const k = await ask(page, 'add slack', false)
+    await expect(page.locator('[data-connector-setup="slack"] .k-map')).toBeVisible()
+    await k.press('Enter')
+    await page.getByRole('textbox', { name: 'Connector token' }).fill('fake-private-token-for-settings-test')
+    await page.getByRole('textbox', { name: 'Connector token' }).press('Enter')
+    await expect(page.locator('[data-connector-setup="slack"]')).toContainText('Connected as me · Fixture')
     await page.keyboard.press('Escape')
     await expect(page.getByRole('button', { name: 'Slack source' })).toBeVisible()
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
-    await page.locator('summary').filter({ hasText: 'Slack' }).click()
-    const slack = page.locator('.service-card').filter({ hasText: 'Slack' })
-    await slack.getByRole('textbox', { name: 'Slack URL' }).fill('https://example-workspace.slack.com/')
-    await slack.getByRole('button', { name: 'Save URL', exact: true }).click()
-    await expect(slack.getByRole('status')).toHaveText('URL saved.')
-    expect(await page.evaluate(() => JSON.stringify({ ...localStorage })) ).not.toContain('fake-private-token-for-settings-test')
+    const slack = page.locator('.source-row-details').filter({ hasText: 'Slack' })
+    await slack.locator('summary').click()
+    await expect(slack).toContainText('me · Fixture')
+    expect(await page.evaluate(() => JSON.stringify({ ...localStorage }))).not.toContain('fake-private-token-for-settings-test')
     expect((await readFile(`${profile}/chatos.sqlite`)).includes(Buffer.from('fake-private-token-for-settings-test'))).toBe(false)
-    expect(await page.evaluate(() => window.chatos.services())).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'slack', hasToken: true, url: 'https://example-workspace.slack.com/' })]))
-    await slack.getByRole('button', { name: 'Remove token', exact: true }).click()
-    await expect(slack).toContainText('No API token')
-    await page.getByRole('button', { name: 'Remove Slack as a source' }).click()
-    await expect(page.locator('.service-card')).toHaveCount(0)
-    expect(await page.evaluate(() => window.chatos.services())).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'slack', hasToken: false, configured: false })]))
+    await slack.getByRole('button', { name: 'Forget token', exact: true }).click()
+    await expect(slack).toContainText('no API token')
+    await slack.getByRole('button', { name: 'Remove Slack as a source' }).click()
+    await expect(page.locator('.source-row-details').filter({ hasText: 'Slack' })).toHaveCount(0)
+    expect(await page.evaluate(() => window.chatos.connectors())).toEqual([])
   } finally { await app.close(); await fixture.close(); await rm(profile, { recursive: true, force: true }) }
 })

@@ -5,7 +5,6 @@ import { Storage } from '../src/main/storage'
 import { desktopInitial, openTile, serializeDesktop, updateTile } from '../src/shared/tiles'
 import { projectTile } from '../src/shared/sources/opencode'
 import { exampleConnector } from '../src/shared/connectors'
-import { Services } from '../src/main/services'
 
 const directories: string[] = [], stores: Storage[] = []
 const codec = { available: () => true, encrypt: (s: string) => Buffer.from(s.split('').reverse().join('')), decrypt: (b: Buffer) => b.toString().split('').reverse().join('') }
@@ -63,17 +62,5 @@ describe('durable main-process SQLite storage', () => {
     expect(() => new Storage(dir)).toThrow('newer')
     const unchanged = new DatabaseSync(`${dir}/chatos.sqlite`)
     expect(unchanged.prepare('PRAGMA user_version').get()?.user_version).toBe(999); unchanged.close()
-  })
-  it('migrates provider settings and ciphertext without storing plaintext', async () => {
-    const store = setup(), token = 'sensitive-private-token'
-    writeFileSync(`${store.directory}/services.json`, JSON.stringify({ front: { url: 'https://app.frontapp.com/', encryptedToken: codec.encrypt(token).toString('base64') } }))
-    const services = new Services(store.directory, codec, fetch, store)
-    expect((await services.list()).find(s => s.id === 'front')?.hasToken).toBe(true)
-    expect(store.get('services')).not.toContain('encryptedToken')
-    expect(store.secret('service:front')).toEqual(codec.encrypt(token))
-    expect(readFileSync(store.backup()).includes(Buffer.from(token))).toBe(false)
-    await services.disconnect('front')
-    expect(store.secret('service:front')).toBeUndefined()
-    expect((await new Services(store.directory, codec, fetch, store).list()).find(s => s.id === 'front')?.hasToken).toBe(false)
   })
 })

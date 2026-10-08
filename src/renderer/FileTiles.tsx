@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FolderPage, TextFile } from '../shared/types'
 import { fileTile, type OpenMode, type Tile, type TileInput } from '../shared/tiles'
 import { api, friendlyError } from './data'
-import { KeyButton } from './ui'
+import { KeyButton, filterField } from './ui'
 import type { Other } from './sources/types'
 
 const imageExtension = /\.(png|jpe?g|gif|webp|avif|bmp|ico|svg)$/i
@@ -77,7 +77,7 @@ export function FileBody({ tile, open, replace, actions }: { tile: Tile; open: (
     </div>
     {error && <div className="inline-error" role="alert">{error}<button className="text-button" onClick={() => void refresh()}>Retry</button></div>}
     {tile.kind === 'folder' ? <>
-      <label className="files-filter"><input aria-label="Filter folder entries" placeholder="Filter this folder…" value={filter} onChange={e => { setFilter(e.target.value); setSelected(0) }} /></label>
+      <label className="files-filter filter-row"><input {...filterField} aria-label="Filter folder entries" placeholder="Filter this folder…" value={filter} onChange={e => { setFilter(e.target.value); setSelected(0) }} /><kbd aria-hidden>/</kbd></label>
       <div className="files-entries" role="list" aria-label="Folder entries" tabIndex={0} ref={rows}>{entries.map((entry, index) => <button disabled={entry.kind === 'other'} className={`file-entry ${selected === index ? 'selected' : ''}`} key={entry.path} onMouseEnter={() => setSelected(index)} onFocus={() => setSelected(index)} onClick={e => void go(entry.path, how(e))}>{entry.kind === 'folder' ? <FolderOpen size={15} /> : imageExtension.test(entry.name) ? <FileImage size={15} /> : <FileText size={15} />}<span className="truncate">{entry.name}</span><small>{entry.kind === 'folder' ? 'Folder' : entry.kind === 'link' ? 'Link' : entry.kind === 'file' ? imageExtension.test(entry.name) ? 'Image' : 'File' : 'Unsupported'}</small></button>)}{!busy && folder && !entries.length && <p className="empty-list">{filter ? 'No entries match this filter.' : 'This folder is empty.'}</p>}</div>
     </> : image ? <div className="image-preview" tabIndex={0} ref={rows}><img src={image.dataURL} alt={tile.title} draggable={false} /></div>
       : <div className="file-preview" tabIndex={0} ref={rows}>{file?.reason ? <p className="empty-list">{file.reason}</p> : <pre>{file?.text}</pre>}</div>}

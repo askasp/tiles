@@ -113,7 +113,7 @@
 .source-row em { font-style: normal; font-size: 11px; color: var(--muted); }
 .source-row-details > summary { list-style: none; cursor: pointer; }
 .source-row-details > summary::-webkit-details-marker { display: none; }
-.source-row-details > .service-card, .source-row-details > .button-row { margin: 0 14px 12px; }
+.source-row-details > .k-fields, .source-row-details > .button-row, .source-row-details > .k-note { margin: 0 14px 12px; }
 
 /* Project tile (C2) */
 .project-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 10px; }
@@ -142,10 +142,6 @@
 .tile-app .tile-toast.error { background: var(--danger-soft); color: var(--danger); box-shadow: 0 0 0 1px var(--danger-line), 0 14px 36px -14px #00000040; }
 .tile-app .tile-toast.error .icon-button { color: var(--danger); }
 /* Front reply (D4) */
-.front-reply { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--divider); }
-.front-reply textarea { width: 100%; resize: vertical; min-height: 44px; max-height: 200px; border: 1px solid var(--line-strong); border-radius: 12px; padding: 8px 12px; font: inherit; font-size: 13px; }
-.front-reply .button-row { justify-content: flex-end; }
-.front-reply .button-row .muted { margin-right: auto; }
 .tile-app .tile-toast.chord-hint { gap: 12px; }
 .tile-app .tile-toast.chord-hint span { font: 12px var(--mono); color: var(--line); }
 /* Icon buttons that show their key */
@@ -165,3 +161,12 @@
 .appearance { align-self: flex-start; display: inline-flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--canvas); }
 .appearance button { padding: 4px 12px; border-radius: 7px; font-size: 12.5px; color: var(--ink-3); }
 .appearance button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px #0000001a; }
+/* Keys on tile buttons and filters: shown on the focused tile, so the keyboard path is visible where it works. */
+.project-actions .pill kbd { margin-left: 2px; font-size: 10px; color: var(--faint); }
+.pill.primary kbd { color: inherit; opacity: .6; }
+.filter-row { position: relative; }
+.filter-row > kbd { position: absolute; right: 24px; top: 7px; font-size: 10px; color: var(--faint); pointer-events: none; }
+.project-tile-toolbar.filter-row > kbd { right: 10px; }
+.resource-tile:not(.tile-focused) :is(.project-actions .pill, .filter-row) kbd { display: none; }
+
+.recipe-presets { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px 0; }

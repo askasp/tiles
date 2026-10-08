@@ -1,5 +1,5 @@
 import { LoaderCircle } from 'lucide-react'
-import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import type { ButtonHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
 import { useEffect, useRef } from 'react'
 
 export function IconButton({ label, children, className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string; children: ReactNode }) {
@@ -50,7 +50,7 @@ export function Modal({ title, children, close, wide = false }: { title: string;
     // focused element, which may be outside this dialog. The dialog takes it back.
     const reclaim = () => { const e = dialog.current; if (e && !e.contains(document.activeElement)) (e.querySelector<HTMLElement>('input:not(:disabled), textarea:not(:disabled), select:not(:disabled), button:not(:disabled), [tabindex="0"]') || e).focus() }
     window.addEventListener('focus', reclaim)
-    return () => { window.removeEventListener('focus', reclaim); if (previous.current?.isConnected) previous.current.focus() }
+    return () => { window.removeEventListener('focus', reclaim); const back = previous.current; if (back?.isConnected && !back.closest('.resource-tile:not(.tile-focused)')) back.focus() }
   }, [])
   return <div className="modal-scrim" onMouseDown={event => { if (event.target === event.currentTarget) close() }}>
     <section ref={dialog} tabIndex={-1} className={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-label={title} onKeyDown={event => {
@@ -67,16 +67,27 @@ export function Modal({ title, children, close, wide = false }: { title: string;
   </div>
 }
 
-const rowSelector = '.session-row, .file-entry, .recipe-list-row, .recipe-timeline-row, .recipe-table tbody tr button, .front-conversation-row, .review-file-name, .overview-tile-row, .k-row'
-/** j/k move through the rows of the focused tile, l opens, h goes back. Never while typing. */
+export const rowSelector = '.session-row, .file-entry, .recipe-list-row, .recipe-timeline-row, .recipe-table tbody tr button, .review-file-name, .overview-tile-row, .k-row'
+/** j/k move through the rows of the focused tile, l opens, h goes back, / filters,
+ * and a button marked data-key runs on its key. Never while typing. */
 export function listKeys(event: KeyboardEvent) {
-  if (event.ctrlKey || event.altKey || event.metaKey || !['j', 'k', 'h', 'l'].includes(event.key)) return
+  if (event.ctrlKey || event.altKey || event.metaKey || event.key.length !== 1) return
   const target = event.target as HTMLElement | null
   if (!target || target.closest('input, textarea, select, [contenteditable="true"]')) return
-  const tile = target.closest<HTMLElement>('[data-tile-id]') || document.querySelector<HTMLElement>('.resource-tile.tile-focused')
+  // The focused tile wins over stale DOM focus left in the tile focus came from.
+  const tile = document.querySelector<HTMLElement>('.resource-tile.tile-focused') || target.closest<HTMLElement>('[data-tile-id]')
   if (!tile) return
-  // Lists that handle arrows themselves (Files, Front) get arrows.
-  const own = target.closest<HTMLElement>('[data-arrow-keys]')
+  if (event.key === '/') {
+    const filter = tile.querySelector<HTMLInputElement>('[data-filter]')
+    if (filter) { event.preventDefault(); filter.focus(); filter.select() }
+    return
+  }
+  const button = tile.querySelector<HTMLButtonElement>(`[data-key="${CSS.escape(event.key)}"]:not(:disabled)`)
+  if (button) { event.preventDefault(); button.click(); return }
+  if (!['j', 'k', 'h', 'l'].includes(event.key)) return
+  const inside = tile.contains(target)
+  // Lists that handle arrows themselves (Files) get arrows.
+  const own = (inside && target.closest<HTMLElement>('[data-arrow-keys]')) || tile.querySelector<HTMLElement>('[data-arrow-keys]')
   if (own) {
     event.preventDefault()
     const key = { j: 'ArrowDown', k: 'ArrowUp', l: 'Enter', h: 'Backspace' }[event.key]!
@@ -86,10 +97,23 @@ export function listKeys(event: KeyboardEvent) {
   const rows = [...tile.querySelectorAll<HTMLElement>(rowSelector)].filter(row => row.getClientRects().length && !(row as HTMLButtonElement).disabled)
   if (!rows.length) return
   event.preventDefault()
-  const at = rows.indexOf(target.closest<HTMLElement>(rowSelector) as HTMLElement)
+  const at = inside ? rows.indexOf(target.closest<HTMLElement>(rowSelector) as HTMLElement) : -1
   if (event.key === 'j' || event.key === 'k') rows[at < 0 ? 0 : Math.max(0, Math.min(rows.length - 1, at + (event.key === 'j' ? 1 : -1)))].focus()
   if (event.key === 'l' && at >= 0) rows[at].click()
   if (event.key === 'h') tile.querySelector<HTMLElement>('[data-back]')?.click()
+}
+
+/** A tile's filter field: / gets here, and Esc, ↓ or Enter (outside a form) go back to the list for j/k. */
+export const filterField = {
+  'data-filter': true,
+  onKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (!(event.key === 'Escape' || event.key === 'ArrowDown' || (event.key === 'Enter' && !event.currentTarget.form))) return
+    const tile = event.currentTarget.closest<HTMLElement>('[data-tile-id]')
+    if (!tile) return
+    event.preventDefault()
+    const row = [...tile.querySelectorAll<HTMLElement>(rowSelector)].find(row => row.getClientRects().length && !(row as HTMLButtonElement).disabled)
+    ;(row || tile.querySelector<HTMLElement>('[data-arrow-keys][tabindex="0"], [data-arrow-keys] [tabindex="0"]') || tile).focus()
+  },
 }
 
 /** An icon button that shows the key that does the same thing. */

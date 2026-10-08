@@ -73,6 +73,11 @@ export interface CoreAPI {
   connectorToken(id: string, token: string): Promise<import('./connectors').ConnectorInfo[]>
   connectorOAuth(id: string, clientSecret?: string): Promise<import('./connectors').ConnectorInfo[]>
   disconnectConnector(id: string): Promise<import('./connectors').ConnectorInfo[]>
+  /** A connector that ships with ChatOS (Front, Slack, GitHub), before it is added. */
+  builtinConnector(id: string): Promise<{ definition: import('./connectors').ConnectorDefinition; hint: string; settings: { key: string; label: string }[] } | undefined>
+  addBuiltinConnector(id: string): Promise<import('./connectors').ConnectorInfo[]>
+  removeConnector(id: string): Promise<import('./connectors').ConnectorInfo[]>
+  connectorSettings(id: string, values: Record<string, string>): Promise<import('./connectors').ConnectorInfo[]>
   proposeConnector(input: { description: string; baseURL: string; documentation: string }): Promise<import('./connectors').ConnectorDefinition>
   searchConnectors(query: string, connectorID?: string): Promise<import('./connectors').ConnectorSearch>
   planConnectorSearch(query: string): Promise<import('./connectors').ConnectorSearch>
@@ -81,15 +86,6 @@ export interface CoreAPI {
   inspectPath(path: string): Promise<LocalPath>
   listFolder(path: string): Promise<FolderPage>
   readTextFile(path: string): Promise<TextFile>
-  services(): Promise<ServiceInfo[]>
-  searchServices(query: string): Promise<ServiceSearch>
-  frontConversations(input: { query: string; cursor?: string }): Promise<FrontPage>
-  frontConversation(input: { id: string; cursor?: string }): Promise<FrontDetail>
-  frontWrite(input: { id: string; kind: 'reply' | 'comment'; body: string }): Promise<void>
-  saveService(input: { id: ServiceID; url?: string; token?: string; front?: FrontIdentity }): Promise<ServiceInfo>
-  validateService(id: ServiceID): Promise<{ ok: boolean; account?: string; error?: string }>
-  disconnectService(id: ServiceID): Promise<void>
-  removeService(id: ServiceID): Promise<void>
   chooseFolder(): Promise<string | null>
   chooseFiles(): Promise<{ uri: string; name: string }[]>
   browserLayout(placements: BrowserPlacement[]): Promise<void>
@@ -105,18 +101,6 @@ export interface FolderEntry { path: string; name: string; kind: 'folder' | 'fil
 export interface FolderPage { path: string; parent: string; entries: FolderEntry[]; truncated: boolean }
 export interface TextFile { path: string; text?: string; size: number; truncated: boolean; reason?: string }
 
-export type ServiceID = 'slack' | 'front' | 'github'
-export interface ServiceInfo {
-  configured?: boolean
-  id: ServiceID
-  name: string
-  url: string
-  hasToken: boolean
-  tokenStorage: 'encrypted' | 'session' | 'none'
-  secureStorage: boolean
-  account?: string
-  front?: FrontIdentity
-}
 export interface FrontIdentity { email: string; teammateID: string; tagID: string }
 export interface FrontConversation {
   id: string; subject: string; status: string; sender: string; preview: string;
@@ -127,10 +111,6 @@ export interface FrontMessage {
   recipients: { role: string; name: string; handle: string }[];
   attachments: { name: string; size?: number }[];
 }
-export interface FrontPage { items: FrontConversation[]; next?: string }
-export interface FrontDetail { conversation: FrontConversation; messages: FrontMessage[]; next?: string }
-export interface ServiceResource { service: ServiceID; title: string; url: string; description: string }
-export interface ServiceSearch { resources: ServiceResource[]; error?: string; more?: boolean }
 
 declare global {
   interface Window {

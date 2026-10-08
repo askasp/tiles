@@ -1,34 +1,11 @@
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
-import { ask, desktopReady, launchDesktop, startSession } from './launch'
+import { approvals, ask, desktopReady, fakeServices, launchDesktop, startSession } from './launch'
 import { fixtureServer } from './fixture'
 
-/** Slack and Front are mocked at the IPC boundary: no real accounts, tokens or messages. */
-async function mockServices(app: ElectronApplication, url: string) {
-  await app.evaluate(({ ipcMain }, base) => {
-    const writes: { id: string; kind: string; body: string }[] = []
-    ;(globalThis as typeof globalThis & { serviceWrites: typeof writes }).serviceWrites = writes
-    const tagged = [
-      { id: 'cnv_101', subject: 'Duplikate rekvisisjoner igjen', sender: 'ingrid@furst.test', preview: 'Det skjedde igjen i natt', status: 'assigned', tags: ['me'] },
-      { id: 'cnv_102', subject: 'Login loop on staging', sender: 'ops@example.test', preview: 'Users bounce back to login', status: 'open', tags: ['me'] },
-      { id: 'cnv_103', subject: 'Invoice question', sender: 'billing@example.test', preview: 'Can you check March?', status: 'open', tags: ['me'] },
-    ]
-    for (const name of ['searchServices', 'frontConversations', 'frontConversation', 'frontWrite', 'validateService']) ipcMain.removeHandler(`chatos:${name}`)
-    ipcMain.handle('chatos:validateService', () => ({ ok: true, account: 'me@example.test' }))
-    ipcMain.handle('chatos:searchServices', (_event, query: string) => {
-      const dm = query.match(/^dm (\w+)/i)?.[1]
-      return dm ? { resources: [{ service: 'slack', title: `DM ${dm}`, url: `${base}/preview/dm-${dm.toLowerCase()}`, description: 'Existing DM' }] } : { resources: [] }
-    })
-    ipcMain.handle('chatos:frontConversations', (_event, input: { query: string }) => ({ items: input.query.includes('tag:') ? tagged : tagged.slice(0, 1) }))
-    ipcMain.handle('chatos:frontConversation', (_event, input: { id: string }) => {
-      const c = tagged.find(t => t.id === input.id) || tagged[0]
-      return { conversation: c, messages: [{ id: `msg_${input.id}`, subject: c.subject, text: `${c.preview}. Please take a look.`, inbound: true, draft: false, createdAt: Date.now() - 60_000, recipients: [{ role: 'from', handle: c.sender, name: c.sender.split('@')[0] }], attachments: [] }] }
-    })
-    ipcMain.handle('chatos:frontWrite', (_event, input: { id: string; kind: string; body: string }) => { writes.push(input) })
-  }, url)
-}
-const writes = (app: ElectronApplication) => app.evaluate(() => (globalThis as typeof globalThis & { serviceWrites: { id: string; kind: string; body: string }[] }).serviceWrites)
+/** Slack and Front are built-in connectors pointed at the fixture's fake APIs; Slack pages are stubbed. No real accounts. */
 const pages = (app: ElectronApplication, part: string) => app.evaluate(({ webContents }, p) => webContents.getAllWebContents().filter(c => c.getURL().includes(p)).length, part)
+const livePages = (app: ElectronApplication) => app.evaluate(({ webContents }) => webContents.getAllWebContents().filter(c => /\/preview\/|\/client\/T123\//.test(c.getURL())).length)
 const visibleTiles = (page: Page) => page.locator('.resource-tile:visible')
 
 test('a developer day: Slack DMs, tagged Front mail with replies, 2 projects × 3 OpenCode sessions, heavy tile churn', async () => {
@@ -37,7 +14,7 @@ test('a developer day: Slack DMs, tagged Front mail with replies, 2 projects × 
   const profile = await mkdtemp('/tmp/opencode/chatos-dev-day-'), work = await mkdtemp('/tmp/opencode/chatos-dev-day-files-')
   await mkdir(`${work}/src`); await writeFile(`${work}/README.md`, 'hello'); await writeFile(`${work}/src/a.ts`, 'export {}'); await writeFile(`${work}/src/b.ts`, 'export {}')
   await mkdir(`${process.cwd()}/health-fixture`, { recursive: true })
-  const env: Record<string, string> = { ...Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => typeof e[1] === 'string')), CHATOS_USER_DATA: profile, CHATOS_SERVER_URL: fixture.url }
+  const env: Record<string, string> = { ...Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => typeof e[1] === 'string')), CHATOS_USER_DATA: profile, CHATOS_SERVER_URL: fixture.url, CHATOS_CONNECTOR_URLS: fixture.connectorURLs }
   delete env.ELECTRON_RUN_AS_NODE
   const timings: Record<string, number[]> = {}
   const time = async <T,>(name: string, run: () => Promise<T>) => { const start = Date.now(); const result = await run(); (timings[name] ||= []).push(Date.now() - start); return result }
@@ -48,46 +25,47 @@ test('a developer day: Slack DMs, tagged Front mail with replies, 2 projects × 
     const errors: string[] = []; page.on('pageerror', e => errors.push(e.message))
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1440, 900))
     await desktopReady(page, { opencode: true })
-    await mockServices(app, fixture.url)
+    await fakeServices(app)
 
     // Morning: add Slack and Front from K. Nothing else is listed until added.
-    for (const [service, label] of [['slack', 'Slack API token'], ['front', 'Front API token']] as const) {
-      await ask(page, `add ${service}`, false)
-      await page.getByRole('textbox', { name: label }).fill(`fake-${service}-token`)
-      await page.getByRole('textbox', { name: 'Launcher search' }).press('Enter')
-      await expect(page.locator(`[data-service-setup="${service}"]`)).toContainText('Connected')
-      await page.keyboard.press('Enter')
+    for (const service of ['slack', 'front'] as const) {
+      const k = await ask(page, `add ${service}`, false)
+      await expect(page.locator(`[data-connector-setup="${service}"] .k-map`)).toBeVisible()
+      await k.press('Enter')
+      await page.getByRole('textbox', { name: 'Connector token' }).fill(`fake-${service}-token`)
+      await page.getByRole('textbox', { name: 'Connector token' }).press('Enter')
+      await expect(page.locator(`[data-connector-setup="${service}"]`)).toContainText('Connected as')
+      await page.keyboard.press('Escape')
       await expect(page.getByRole('button', { name: `${service === 'slack' ? 'Slack' : 'Front'} source` })).toBeVisible()
     }
 
     // Read every DM sent to me. Each DM is one page in one tile.
-    for (const person of ['anna', 'bob', 'carl']) {
-      const input = await ask(page, `dm ${person}`, false)
+    for (const person of ['Anna', 'Bob', 'Carl']) {
+      const input = await ask(page, `dm ${person.toLowerCase()}`, false)
       await time('k-provider-result', () => expect(page.locator('.launcher-result').first()).toContainText(`DM ${person}`))
       await input.press('Enter')
       await expect(page.locator('.resource-tile.tile-focused .tile-title')).toHaveText(`DM ${person}`)
     }
-    expect(await pages(app, '/preview/dm-anna')).toBe(1)
+    expect(await pages(app, '/client/T123/D101')).toBe(1)
 
     // Tagged Front mail: comment on one, reply to another.
     let input = await ask(page, 'mail tag:tag_me', false)
-    await expect(page.locator('.launcher-result').first()).toContainText('Front inbox · tag:tag_me')
+    await expect(page.locator('.launcher-result').first()).toContainText('Front · Inbox · tag:tag_me')
     await input.press('Enter')
-    const inbox = page.locator('[data-kind="front-list"]:visible')
-    await expect(inbox.locator('.front-conversation-row')).toHaveCount(3)
-    await inbox.locator('.front-conversation-row').filter({ hasText: 'Duplikate' }).click()
-    let conversation = page.locator('[data-kind="front-conversation"].tile-focused')
-    await expect(conversation.locator('.front-message-text')).toContainText('Det skjedde igjen')
-    await conversation.getByRole('textbox', { name: 'Front reply draft' }).fill('Same root cause as last week — looking now.')
-    await conversation.getByRole('button', { name: 'Comment · confirm…' }).click()
-    await expect(conversation.getByRole('status')).toHaveText('Comment added.')
-    await expect(conversation.getByRole('textbox', { name: 'Front reply draft' })).toHaveValue('')
-    await inbox.locator('.front-conversation-row').filter({ hasText: 'Login loop' }).click()
-    conversation = page.locator('[data-kind="front-conversation"].tile-focused')
-    await conversation.getByRole('textbox', { name: 'Front reply draft' }).fill('Fixed in the 14:00 deploy. Can you confirm?')
-    await conversation.getByRole('button', { name: 'Reply · confirm…' }).click()
-    await expect(conversation.getByRole('status')).toHaveText('Reply sent.')
-    expect(await writes(app)).toEqual([{ id: 'cnv_101', kind: 'comment', body: 'Same root cause as last week — looking now.' }, { id: 'cnv_102', kind: 'reply', body: 'Fixed in the 14:00 deploy. Can you confirm?' }])
+    const inbox = page.locator('[data-kind="recipe"].tile-focused')
+    await expect(inbox.locator('.recipe-list-row')).toHaveCount(3)
+    const inboxID = await inbox.getAttribute('data-tile-id')
+    for (const [subject, action, text] of [['Duplikate', 'Comment', 'Same root cause as last week — looking now.'], ['Login loop', 'Reply', 'Fixed in the 14:00 deploy. Can you confirm?']] as const) {
+      await page.locator(`[data-tile-id="${inboxID}"] .recipe-list-row`).filter({ hasText: subject }).click()
+      const conversation = page.locator('[data-kind="recipe"].tile-focused')
+      await expect(conversation.locator('.recipe-message').first()).toBeVisible()
+      const draft = conversation.getByRole('textbox', { name: 'Resource action draft' })
+      await draft.fill(text)
+      await conversation.getByRole('button', { name: new RegExp(`^${action}`) }).click()
+      await expect(draft).toHaveValue('')
+    }
+    expect(fixture.frontWrites).toEqual([{ id: 'cnv_101', kind: 'comment', body: 'Same root cause as last week — looking now.' }, { id: 'cnv_102', kind: 'reply', body: 'Fixed in the 14:00 deploy. Can you confirm?' }])
+    expect((await approvals(app)).filter(a => a.startsWith('Confirm'))).toHaveLength(2)
 
     // Work: three OpenCode sessions in each of two projects, in their own workspaces.
     for (const [slot, project] of [[3, 'chatos'], [4, 'health']] as const) {
@@ -137,8 +115,8 @@ test('a developer day: Slack DMs, tagged Front mail with replies, 2 projects × 
     // The rest of the day: many interruptions. Measure what grows.
     const sizes: { pass: number; tiles: number; mounted: number; browsers: number; pages: number; workspaces: number; terminals: number }[] = []
     for (let pass = 0; pass < Number(process.env.DAY_PASSES || 4); pass++) {
-      for (const person of ['anna', 'bob', 'carl']) {
-        input = await ask(page, `dm ${person}`, false)
+      for (const person of ['Anna', 'Bob', 'Carl']) {
+        input = await ask(page, `dm ${person.toLowerCase()}`, false)
         await expect(page.locator('.launcher-result').first()).toContainText(`DM ${person}`)
         await input.press(pass % 2 ? 'Control+Enter' : 'Enter')
       }
@@ -166,7 +144,7 @@ test('a developer day: Slack DMs, tagged Front mail with replies, 2 projects × 
       await expect(page.locator('.stage-tab, .browser-tabs')).toHaveCount(0)
       for (const w of await page.locator('.workspace-button').all()) expect(Number((await w.locator('small').textContent())?.replace(/\D/g, '') || 0)).toBeLessThanOrEqual(4)
       await page.waitForTimeout(300)
-      sizes.push({ pass, tiles: await page.evaluate(() => JSON.parse(window.chatos.loadDesktop() || '{}').tiles?.length || 0), mounted: await page.locator('.resource-tile').count(), browsers: await page.locator('.resource-tile[data-kind="browser"]').count(), pages: await pages(app, '/preview/'), workspaces: await page.locator('.workspace-button').count(), terminals: await page.locator('.resource-tile[data-kind="terminal"]').count() })
+      sizes.push({ pass, tiles: await page.evaluate(() => JSON.parse(window.chatos.loadDesktop() || '{}').tiles?.length || 0), mounted: await page.locator('.resource-tile').count(), browsers: await page.locator('.resource-tile[data-kind="browser"]').count(), pages: await livePages(app), workspaces: await page.locator('.workspace-button').count(), terminals: await page.locator('.resource-tile[data-kind="terminal"]').count() })
     }
     console.log('DAY sizes', JSON.stringify(sizes))
     console.log('DAY kinds', JSON.stringify(await page.locator('.resource-tile').evaluateAll(els => els.reduce<Record<string, number>>((m, e) => { const k = `${(e as HTMLElement).dataset.kind}`; m[k] = (m[k] || 0) + 1; return m }, {}))))
@@ -186,7 +164,7 @@ test('a developer day: Slack DMs, tagged Front mail with replies, 2 projects × 
     // Restart mid-day: everything comes back where it was, drafts included.
     const beforeRestart = await page.evaluate(() => window.chatos.loadDesktop())
     await app.close()
-    app = await launchDesktop(env); page = await app.firstWindow()
+    app = await launchDesktop(env); await fakeServices(app); page = await app.firstWindow()
     await desktopReady(page, { opencode: true })
     const afterRestart = await page.evaluate(() => window.chatos.loadDesktop())
     expect(JSON.parse(afterRestart!).tiles.length).toBe(JSON.parse(beforeRestart!).tiles.length)
