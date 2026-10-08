@@ -1,0 +1,260 @@
+import { OpenCode, type OpenCodeClient } from '@opencode/client'
+import { Service } from '@opencode/client/service'
+import { setTimeout as delay } from 'node:timers/promises'
+import type {
+  ChatOSAPI, ConnectionInfo, DesktopEvent, MessageInfo, MessagePage,
+  SessionDetail, SessionInfo, SessionPage, Snapshot,
+} from '../shared/types'
+
+const timeout = () => ({ signal: AbortSignal.timeout(20_000) })
+const textLimit = (text: string, max = 60_000) => text.length > max ? `${text.slice(0, max)}\n… (output truncated in ChatOS)` : text
+
+export function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (error && typeof error === 'object' && 'message' in error) return String(error.message)
+  return typeof error === 'string' ? error : 'The request failed. Check the OpenCode server connection.'
+}
+
+function messagesForUI(page: Awaited<ReturnType<OpenCodeClient['message']['list']>>): MessagePage {
+  return {
+    cursor: page.cursor,
+    data: page.data.map(message => {
+      const result: MessageInfo = { id: message.id, type: message.type, time: message.time }
+      if ('text' in message) result.text = message.text
+      if ('description' in message) result.description = message.description
+      if ('agent' in message) result.agent = message.agent
+      if ('model' in message) result.model = message.model
+      if ('files' in message) result.files = message.files?.map(file => ({ name: file.name, mime: file.mime }))
+      if ('error' in message) result.error = message.error
+      if ('finish' in message) result.finish = message.finish
+      if (message.type === 'assistant') {
+        result.content = message.content.map(part => {
+          if (part.type !== 'tool') return { type: part.type, text: part.text }
+          const { state } = part
+          return {
+            type: 'tool', id: part.id, name: part.name, time: part.time,
+            state: {
+              status: state.status,
+              ...('input' in state && { input: typeof state.input === 'string' ? { streaming: state.input } : state.input }),
+              ...('error' in state && { error: errorMessage(state.error) }),
+              ...('content' in state && {
+                content: (state.content || []).map(content => content.type === 'text'
+                  ? { type: 'text' as const, text: textLimit(content.text) }
+                  : { type: 'file' as const, name: content.name }),
+              }),
+            },
+          }
+        })
+      }
+      if (message.type === 'shell') result.text = `$ ${message.command}\n${message.output || ''}`
+      return result
+    }),
+  }
+}
+
+export class OpenCodeBridge {
+  private client?: OpenCodeClient
+  private stream?: AbortController
+  private disposed = false
+  private generation = 0
+  private connecting?: Promise<ConnectionInfo>
+  private settings: { url?: string; token?: string }
+  connection: ConnectionInfo = { connected: false, automatic: true }
+
+  constructor(
+    private readonly emit: (event: DesktopEvent) => void,
+    readonly directory: string,
+    settings: { url?: string; token?: string } = {},
+  ) { this.settings = settings }
+
+  private updateConnection(patch: Partial<ConnectionInfo>) {
+    this.connection = { ...this.connection, ...patch }
+    this.emit({ type: 'connection', connection: this.connection })
+  }
+
+  connect(settings?: { url?: string; token?: string }): Promise<ConnectionInfo> {
+    if (this.connecting && !settings) return this.connecting
+    if (settings) this.settings = settings
+    const generation = ++this.generation
+    this.stream?.abort()
+    this.client = undefined
+    this.connecting = this.connectOnce(generation).finally(() => { this.connecting = undefined })
+    return this.connecting
+  }
+
+  private async connectOnce(generation: number): Promise<ConnectionInfo> {
+    const automatic = !this.settings.url
+    this.updateConnection({ connected: false, automatic, error: undefined, streaming: false })
+    try {
+      let url = this.settings.url
+      let headers: Record<string, string> = {}
+      if (!url) {
+        const endpoint = await Service.discover()
+        if (!endpoint) throw new Error('No running OpenCode 2 service found. Start opencode2, then click Reconnect.')
+        url = endpoint.url
+        headers = Service.headers(endpoint) || {}
+      } else {
+        const parsed = new URL(url)
+        if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
+          throw new Error('Use an HTTP(S) server URL without embedded credentials.')
+        }
+        if (parsed.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname)) {
+          throw new Error('Remote servers require HTTPS so credentials and prompts are encrypted.')
+        }
+        url = parsed.href.replace(/\/$/, '')
+        if (this.settings.token) headers.authorization = `Bearer ${this.settings.token}`
+      }
+      const client = OpenCode.make({ baseUrl: url, headers })
+      const info = await client.server.info(timeout())
+      if (!info.version.startsWith('2.')) throw new Error(`This app needs OpenCode 2; the server reports ${info.version}.`)
+      if (generation !== this.generation || this.disposed) return this.connection
+      this.client = client
+      this.updateConnection({ connected: true, url, version: info.version, automatic, error: undefined })
+      this.stream = new AbortController()
+      void this.consumeEvents(client, generation, this.stream.signal)
+    } catch (error) {
+      if (generation === this.generation) this.updateConnection({ connected: false, error: errorMessage(error), automatic })
+    }
+    return this.connection
+  }
+
+  private async consumeEvents(client: OpenCodeClient, generation: number, signal: AbortSignal) {
+    let failures = 0
+    while (!signal.aborted && !this.disposed && generation === this.generation) {
+      try {
+        for await (const event of client.event.subscribe({ signal })) {
+          failures = 0
+          if (event.type === 'server.connected') {
+            this.updateConnection({ connected: true, streaming: true, error: undefined })
+          } else if (/^(session\.|permission\.|form\.|project\.|vcs\.|filesystem\.)/.test(event.type)) {
+            // The renderer needs invalidation signals, not every session's
+            // token/provider state or potentially huge tool output over IPC.
+            const data = event.data as Record<string, unknown>
+            this.emit({ type: 'server', event: {
+              id: event.id, type: event.type,
+              data: {
+                ...(typeof data.sessionID === 'string' && { sessionID: data.sessionID }),
+                ...(typeof data.title === 'string' && { title: data.title }),
+              },
+            } })
+          }
+        }
+        if (signal.aborted) break
+        throw new Error('Event connection closed')
+      } catch (error) {
+        if (signal.aborted || generation !== this.generation) break
+        this.updateConnection({ streaming: false, error: 'Live updates disconnected. Reconnecting…' })
+        try { await delay(Math.min(1_000 * 2 ** failures++, 10_000), undefined, { signal }) } catch { break }
+        if (this.connection.automatic) {
+          try {
+            const endpoint = await Service.discover()
+            if (endpoint && endpoint.url !== this.connection.url) {
+              void this.connect()
+              return
+            }
+          } catch { /* Try the same endpoint again. */ }
+        }
+      }
+    }
+  }
+
+  private ready(): OpenCodeClient {
+    if (!this.client) throw new Error(this.connection.error || 'Not connected to OpenCode. Open Connection settings to reconnect.')
+    return this.client
+  }
+
+  async bootstrap(home: string, platform: string): Promise<Snapshot> {
+    if (!this.client) await this.connect()
+    const empty: Snapshot = {
+      connection: this.connection, directory: this.directory, home, platform,
+      projects: [], sessions: { data: [], cursor: {} }, active: [],
+    }
+    if (!this.client) return empty
+    try {
+      const [projects, sessions, active] = await Promise.all([
+        this.client.project.list(timeout()), this.sessions(), this.activeSessions(),
+      ])
+      return { ...empty, connection: this.connection, projects, sessions, active }
+    } catch (error) {
+      this.updateConnection({ connected: false, error: errorMessage(error) })
+      return { ...empty, connection: this.connection }
+    }
+  }
+
+  async sessions(query: Parameters<ChatOSAPI['sessions']>[0] = {}): Promise<SessionPage> {
+    return this.ready().session.list({ ...query, limit: 50, parentID: 'null', ...(!query?.cursor && { order: 'desc' }) }, timeout())
+  }
+
+  async activeSessions() { return Object.keys(await this.ready().session.active(timeout())) }
+
+  // One-shot generation has no tools and creates/modifies no server sessions.
+  async generateText(prompt: string): Promise<string> {
+    return (await this.ready().generate.text({ prompt }, { signal: AbortSignal.timeout(90_000) })).text
+  }
+
+  async messages(id: string, cursor?: string): Promise<MessagePage> {
+    return messagesForUI(await this.ready().message.list({ sessionID: id, limit: 40, ...(cursor ? { cursor } : { order: 'desc' }) }, timeout()))
+  }
+
+  async session(id: string): Promise<SessionDetail> {
+    const client = this.ready()
+    const [session, messages, permissions, forms, inbox] = await Promise.all([
+      client.session.get({ sessionID: id }, timeout()), this.messages(id),
+      client.permission.list({ sessionID: id }, timeout()),
+      client.session.form.list({ sessionID: id }, timeout()),
+      client.session.inbox.list({ sessionID: id }, timeout()),
+    ])
+    return { session, messages, permissions, forms, inbox }
+  }
+
+  async catalog(directory: string): ReturnType<ChatOSAPI['catalog']> {
+    const client = this.ready()
+    const input = { location: { directory } }
+    const [agents, models, defaultModel] = await Promise.all([
+      client.agent.list(input, timeout()), client.model.list(input, timeout()), client.model.default(input, timeout()),
+    ])
+    return {
+      agents: agents.data.filter(agent => !agent.hidden && agent.mode !== 'subagent'),
+      models: models.data.filter(model => model.enabled).map(model => ({
+        id: model.id, modelID: model.modelID, name: model.name, providerID: model.providerID,
+        variants: model.variants.map(variant => ({ id: variant.id })), enabled: model.enabled, limit: model.limit,
+      })),
+      ...(defaultModel.data && { defaultModel: { id: defaultModel.data.id, providerID: defaultModel.data.providerID } }),
+    }
+  }
+
+  async createSession(input: Parameters<ChatOSAPI['createSession']>[0]): Promise<SessionInfo> {
+    if (!input.directory) throw new Error('Choose a project folder first.')
+    return this.ready().session.create({ location: { directory: input.directory }, agent: input.agent, model: input.model }, timeout())
+  }
+
+  async prompt(input: Parameters<ChatOSAPI['prompt']>[0]) {
+    if (!input.text.trim() && !input.files?.length) throw new Error('Write a message first.')
+    await this.ready().session.prompt(input, timeout())
+  }
+
+  async interrupt(id: string) { await this.ready().session.interrupt({ sessionID: id }, timeout()) }
+
+  async renameSession(id: string, title: string) {
+    if (!title.trim()) throw new Error('The session name cannot be empty.')
+    await this.ready().session.update({ sessionID: id, title: title.trim() }, timeout())
+    return this.ready().session.get({ sessionID: id }, timeout())
+  }
+
+  async switchAgent(id: string, agent: string) { await this.ready().session.switchAgent({ sessionID: id, agent }, timeout()) }
+  async switchModel(id: string, model: Parameters<ChatOSAPI['switchModel']>[1]) { await this.ready().session.switchModel({ sessionID: id, model }, timeout()) }
+  async permissionReply(input: Parameters<ChatOSAPI['permissionReply']>[0]) { await this.ready().permission.reply(input, timeout()) }
+  async formReply(input: Parameters<ChatOSAPI['formReply']>[0]) { await this.ready().session.form.reply(input, timeout()) }
+  async formCancel(input: Parameters<ChatOSAPI['formCancel']>[0]) { await this.ready().session.form.cancel(input, timeout()) }
+
+  async diff(input: Parameters<ChatOSAPI['diff']>[0]) {
+    const result = await this.ready().vcs.diff({ location: { directory: input.directory }, mode: input.mode }, timeout())
+    return result.data
+  }
+
+  dispose() {
+    this.disposed = true
+    this.generation++
+    this.stream?.abort()
+  }
+}

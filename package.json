@@ -1,0 +1,70 @@
+{
+  "name": "chatos",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A project-first desktop workspace for OpenCode 2",
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "node scripts/check-environment.mjs && electron-vite dev",
+    "build": "npm run typecheck && electron-vite build",
+    "start": "node scripts/check-environment.mjs && electron .",
+    "doctor": "node scripts/check-environment.mjs --verbose",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:desktop": "npm run doctor && npm run build && playwright test",
+    "test:soak": "npm run doctor && playwright test tests/desktop/soak.spec.ts --reporter=list",
+    "check:server": "tsx scripts/check-server.ts",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "@fontsource-variable/geist": "^5.2.8",
+    "@fontsource-variable/geist-mono": "^5.2.7",
+    "@opencode/client": "2.0.24",
+    "html-to-text": "^10.0.1",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.0",
+    "@types/html-to-text": "^9.0.4",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "electron": "^44.7.0",
+    "electron-builder": "^26.0.0",
+    "electron-vite": "^5.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.0.0",
+    "vitest": "^5.0.3"
+  },
+  "build": {
+    "appId": "dev.chatos.desktop",
+    "productName": "ChatOS",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.developer-tools"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Development"
+    }
+  }
+}
