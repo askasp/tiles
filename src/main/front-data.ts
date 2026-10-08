@@ -34,7 +34,7 @@ export function frontCursor(data: Record<string, unknown>, path: string): string
   if (typeof next !== 'string') return
   try {
     const url = new URL(next)
-    if (url.protocol !== 'https:' || url.username || url.password || url.port || !(url.hostname === 'api2.frontapp.com' || /^[a-z0-9-]+\.api\.frontapp\.com$/.test(url.hostname)) || url.pathname !== new URL(path, 'https://api2.frontapp.com/').pathname) return
+    if (url.protocol !== 'https:' || url.username || url.password || url.port || !(url.hostname === 'api2.frontapp.com' || /^[a-z0-9-]+\.api\.frontapp\.com$/.test(url.hostname)) || decodeURIComponent(url.pathname) !== decodeURIComponent(new URL(path, 'https://api2.frontapp.com/').pathname)) return
     const cursor = url.searchParams.get('page_token')
     return cursor && cursor.length <= 4096 ? cursor : undefined
   } catch { return }

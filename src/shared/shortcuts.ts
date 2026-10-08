@@ -85,17 +85,17 @@ export function createShortcutReader(now = () => Date.now()) {
 
 /** What the key sheet, Settings and the Ctrl+W hint show. `action` ties a row to shortcutFor/windowChord (checked by tests). */
 export interface KeyHelp { keys: string; label: string; actions?: string[] }
-export interface KeyGroup { title: string; rows: KeyHelp[] }
+export interface KeyGroup { title: string; rows: KeyHelp[]; /** The Ctrl+W group, shown while the chord waits. */ chord?: boolean }
 /** `system` is ⌘ on macOS, Super elsewhere (Ctrl+Alt also works on Linux). */
 export function keyHelp(system: string): KeyGroup[] {
-  const S = system
+  const S = system, mac = system === '⌘'
   return [
-    { title: 'Anywhere', rows: [
-      { keys: `${S}+K · Ctrl+K · ${S}+Space`, label: 'K: search, open, ask, or add a source', actions: ['launcher'] },
+    { title: mac ? 'App · ⌘' : 'App · Super, or Ctrl+Alt', rows: [
+      { keys: `${S}+K · Ctrl+K`, label: 'K: search, open, ask, or add a source', actions: ['launcher'] },
       { keys: `${S}+. · ␣ in a tile`, label: 'Actions for the focused tile', actions: ['actions'] },
       { keys: `${S}+/ · ?`, label: 'This key sheet', actions: ['keys'] },
-      { keys: `${S}+1–9 · ${S}+0`, label: 'Workspace by number · home', actions: ['workspace'] },
-      { keys: `${S}+Tab`, label: 'Overview of workspaces and the shelf', actions: ['overview'] },
+      { keys: mac ? '⌘1–9 · ⌘0' : 'Ctrl+Alt+1–9 · Ctrl+Alt+0', label: 'Workspace by number · home', actions: ['workspace'] },
+      { keys: `${S}+O`, label: 'Overview of workspaces and the shelf', actions: ['overview'] },
       { keys: `${S}+U`, label: 'Go to what is waiting on you', actions: ['attention'] },
       { keys: `${S}+T · ${S}+N`, label: 'Terminal in the focused folder · new item like the focused tile', actions: ['new-terminal', 'new'] },
       { keys: 'Ctrl+T · Ctrl+Shift+T', label: 'New browser tile · reopen the last closed tile', actions: ['new-browser', 'restore-closed'] },
@@ -104,20 +104,18 @@ export function keyHelp(system: string): KeyGroup[] {
       { keys: `${S}+Z`, label: 'Undo what K just arranged', actions: ['undo-arrangement'] },
       { keys: `${S}+,`, label: 'Settings', actions: ['settings'] },
     ] },
-    { title: 'Tiles', rows: [
-      { keys: `${S}+H J K L · ${S}+arrows`, label: 'Focus the neighbour (Super+K is K: use ↑)', actions: ['focus'] },
-      { keys: `${S}+Shift+H J K L`, label: 'Swap with the neighbour', actions: ['swap'] },
-      { keys: 'Ctrl+Tab · Ctrl+Shift+Tab', label: 'Next · previous tile', actions: ['next-tile', 'previous-tile'] },
-      { keys: `${S}+Shift+1–9`, label: 'Move the tile to a workspace', actions: ['move-workspace'] },
+    { title: 'The focused tile', rows: [
       { keys: `Ctrl+O · Ctrl+I · ${S}+[ ${S}+]`, label: 'Back · forward in the tile (a list ↔ what you opened from it)', actions: ['tile-back', 'tile-forward'] },
+      { keys: 'Ctrl+Tab · Ctrl+Shift+Tab', label: 'Next · previous tile', actions: ['next-tile', 'previous-tile'] },
       { keys: `${S}+F · Ctrl+Shift+B`, label: 'Fullscreen', actions: ['fullscreen'] },
       { keys: `${S}+− · ${S}+=`, label: 'Shelf · bring back the last shelved', actions: ['shelf-tile', 'restore-tile'] },
       { keys: `${S}+W`, label: 'Close for good', actions: ['close-tile'] },
       { keys: 'F2', label: 'Rename', actions: ['rename'] },
     ] },
-    { title: 'Ctrl+W, then (vim)', rows: [
+    { title: 'Tiles · Ctrl+W, then (vim)', chord: true, rows: [
       { keys: 'h j k l · arrows', label: 'Focus the neighbour', actions: ['focus'] },
       { keys: 'H J K L', label: 'Swap with the neighbour', actions: ['swap'] },
+      { keys: '1–9', label: 'Move the tile to that workspace', actions: ['move-workspace'] },
       { keys: 'w · W p', label: 'Next · previous tile', actions: ['next-tile', 'previous-tile'] },
       { keys: 'o · x', label: 'Fullscreen · make main', actions: ['fullscreen', 'promote'] },
       { keys: '− · = +', label: 'Shelf · bring back', actions: ['shelf-tile', 'restore-tile'] },

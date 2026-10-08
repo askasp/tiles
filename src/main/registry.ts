@@ -12,6 +12,8 @@ export interface MainContext {
   env: NodeJS.ProcessEnv
   home: string
   platform: string
+  /** A native confirmation. `action` names the button, e.g. “Delete”. */
+  confirm(title: string, detail: string, action?: string): Promise<boolean>
 }
 export interface MainSource<K extends keyof SourceAPIs = keyof SourceAPIs> { id: K; api: SourceAPIs[K]; dispose(): void }
 export const mainSources: { [K in keyof SourceAPIs]: (ctx: MainContext) => MainSource<K> } = { opencode: createOpenCodeSource }

@@ -33,9 +33,11 @@ export const connectorsSource = source<{ connectors: ConnectorInfo[] }>({
     const scoped = [q.scope, q.prefix].find(s => s?.startsWith('connector:'))?.slice(10)
     const c = scoped && state.connectors.find(x => x.definition.id === scoped)
     if (!c || !q.text || q.text.length > 300) return []
+    // A connector with any list of web pages (Slack DMs) keeps its matches first, even for its lists of tiles (Slack channels).
+    const pages = collections(c).some(r => r.searchOperation && r.urlField)
     return collections(c).filter(r => r.searchOperation).map(r => {
       const input = filterTile(c, r.id, q.text, `${r.label} · ${q.text}`)
-      return { key: `filter:${input.key}`, icon: badge(c), title: input.title, source: `${c.definition.name} list`, subtitle: 'the list with this filter · reading changes nothing', action: 'Show list', first: !r.urlField && !c.filters?.some(f => f.title.toLowerCase().includes(q.text.toLowerCase())), run: mode => env.open(input, mode) }
+      return { key: `filter:${input.key}`, icon: badge(c), title: input.title, source: `${c.definition.name} list`, subtitle: 'the list with this filter · reading changes nothing', action: 'Show list', first: !pages && !c.filters?.some(f => f.title.toLowerCase().includes(q.text.toLowerCase())), run: mode => env.open(input, mode) }
     })
   },
   search(q, state) {

@@ -31,6 +31,11 @@ export function useOpenCodeData(onError: (message: string) => void) {
   const ingest = useCallback((items: SessionInfo[]) => {
     setSessions(previous => ({ ...previous, ...Object.fromEntries(items.map(session => [session.id, session])) }))
   }, [])
+  /** A deleted session: drop it from what ChatOS knows. */
+  const forget = useCallback((id: string) => {
+    setSessions(previous => { if (!previous[id]) return previous; const { [id]: _gone, ...rest } = previous; return rest })
+    setActive(previous => previous.filter(x => x !== id)); setWaiting(previous => previous.filter(x => x !== id))
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -123,6 +128,7 @@ export function useOpenCodeData(onError: (message: string) => void) {
         if (['session.execution.succeeded', 'session.execution.failed', 'session.execution.interrupted', 'session.idle'].includes(type)) {
           setActive(previous => previous.filter(current => current !== id))
         }
+        if (type === 'session.deleted') forget(id)
         if (type === 'session.renamed' && typeof payload?.title === 'string') {
           setSessions(previous => previous[id] ? { ...previous, [id]: { ...previous[id], title: payload.title as string } } : previous)
         }
@@ -152,7 +158,7 @@ export function useOpenCodeData(onError: (message: string) => void) {
     if (connection.connected) for (const id of watched.current) void refreshSession(id)
   }, [connection.connected, refreshSession])
 
-  return { snapshot, connection, sessions, active, waiting, details, loading, loadingSession, ingest, load, refreshSession, watchSessions, olderMessages }
+  return { snapshot, connection, sessions, active, waiting, details, loading, loadingSession, ingest, forget, load, refreshSession, watchSessions, olderMessages }
 }
 
 export function useSessionList(query: { directory?: string; project?: string; search?: string }, enabled: boolean, ingest: (items: SessionInfo[]) => void) {
@@ -191,7 +197,7 @@ export function useSessionList(query: { directory?: string; project?: string; se
     if (!enabled) return
     let timer: ReturnType<typeof setTimeout> | undefined
     const unsubscribe = onOpenCodeEvent(event => {
-      if (event.type === 'server' && ['session.created', 'session.renamed', 'session.moved'].includes(String(event.event.type)) && !timer) {
+      if (event.type === 'server' && ['session.created', 'session.renamed', 'session.moved', 'session.deleted'].includes(String(event.event.type)) && !timer) {
         timer = setTimeout(() => { timer = undefined; void refresh(undefined, true) }, 600)
       }
     })

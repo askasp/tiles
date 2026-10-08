@@ -18,6 +18,6 @@ export const coreCatalogue: CatalogueEntry[] = [
   { id: 'files', name: 'Files', hint: 'Folders, text and images', prefixes: ['files'], hosts: [], builtin: true, kinds: { folder: { label: 'Folder', kind: 'Folder', action: 'Browse files' }, file: { label: 'File', kind: 'File', action: 'Open' } } },
   { id: 'terminal', name: 'Terminal', hint: 'A shell in any folder', prefixes: ['terminal'], hosts: [], builtin: true, kinds: { terminal: { label: 'Terminal', kind: 'Shell', action: 'Open terminal' } } },
   { id: 'front', name: 'Front', hint: 'Inboxes and conversations', prefixes: ['mail', 'front'], hosts: ['frontapp.com', 'front.com'], builtin: false, connector: true, kinds: {} },
-  { id: 'slack', name: 'Slack', hint: 'DMs and mentions', prefixes: ['slack', 'dm'], hosts: ['slack.com'], builtin: false, connector: true, kinds: {} },
+  { id: 'slack', name: 'Slack', hint: 'DMs, channels and mentions', prefixes: ['slack', 'dm'], hosts: ['slack.com'], builtin: false, connector: true, kinds: {} },
   { id: 'github', name: 'GitHub', hint: 'Pull requests to review', prefixes: ['github', 'pr'], hosts: ['github.com'], builtin: false, connector: true, kinds: {} },
 ]

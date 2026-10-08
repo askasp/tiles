@@ -29,6 +29,9 @@ describe('key sheet', () => {
 })
 
 describe('Ctrl+W chord', () => {
+  it('has a hint group listing every chord key', () => {
+    for (const system of ['⌘', 'Super']) expect(keyHelp(system).filter(g => g.chord)).toHaveLength(1)
+  })
   it('pairs with the next key, gives up after 1.5 s, and cancels on Escape', () => {
     let now = 0
     const read = createShortcutReader(() => now)

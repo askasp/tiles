@@ -86,6 +86,8 @@ export interface CoreAPI {
   inspectPath(path: string): Promise<LocalPath>
   listFolder(path: string): Promise<FolderPage>
   readTextFile(path: string): Promise<TextFile>
+  /** Moves a file or folder to the system Trash, after a native confirmation. */
+  trashPath(path: string): Promise<void>
   chooseFolder(): Promise<string | null>
   chooseFiles(): Promise<{ uri: string; name: string }[]>
   browserLayout(placements: BrowserPlacement[]): Promise<void>

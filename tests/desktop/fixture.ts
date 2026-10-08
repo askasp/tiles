@@ -63,6 +63,7 @@ export async function fixtureServer(options?: { requestLimit?: number; createDel
       const route = path.slice('/front'.length)
       if (route === '/me') return json({ email: 'me@example.test' })
       if (route === '/conversations') return json({ _results: [conversations[3]] })
+      if (route === '/inboxes') return json({ _results: [{ id: 'inb_support', name: 'Support', is_private: false }] })
       const search = route.match(/^\/conversations\/search\/(.+)$/)
       if (search) { const q = decodeURIComponent(search[1]); return json({ _results: q.includes('tag:') ? conversations.slice(0, 3) : q.includes('to:') ? [conversations[3]] : [] }) }
       const one = route.match(/^\/conversations\/(cnv_\w+)(?:\/(messages|comments))?$/)
@@ -79,11 +80,20 @@ export async function fixtureServer(options?: { requestLimit?: number; createDel
       if (method === 'auth.test') return json({ ok: true, user: 'me', team: 'Fixture', team_id: 'T123', user_id: 'U001' })
       if (method === 'users.list') return json({ ok: true, members: people.map((name, i) => ({ id: `U10${i}`, name: name.toLowerCase(), profile: { real_name: `${name} Hansen`, display_name: name } })), response_metadata: {} })
       if (method === 'conversations.list') return json({ ok: true, channels: people.map((_, i) => ({ id: `D10${i}`, user: `U10${i}` })), response_metadata: {} })
+      if (method === 'users.conversations') return json({ ok: true, channels: [{ id: 'C201', name: 'ops', topic: { value: 'Deploys and incidents' } }], response_metadata: {} })
+      if (method === 'conversations.info') return json({ ok: true, channel: { id: 'C201', name: 'ops', topic: { value: 'Deploys and incidents' }, num_members: 4 } })
+      if (method === 'conversations.history') return json({ ok: true, messages: [{ ts: '1700000000.0001', user: 'U102', text: 'Can you look at the deploy?' }] })
       if (method === 'search.messages') return json({ ok: true, messages: { matches: [{ iid: 'm1', text: 'Can you look at the deploy?', permalink: 'https://fixture.slack.com/archives/C1/p1', channel: { name: 'ops' }, username: 'carl', ts: '1700000000.0001' }] } })
     }
     if (path === '/github/user') return json({ login: 'me-test' })
     if (path === '/github/search/issues') return json({ items: [{ id: 1, number: 42, title: 'Consent fix', state: 'open', html_url: 'https://github.com/acme/amino/pull/42', user: { login: 'carl' } }] })
     if (path === '/api/project') return json(projects)
+    if (path === '/api/command') return json({ location, data: [{ name: 'review', description: 'Review the current changes' }] })
+    if (path === '/api/skill') return json({ location, data: [{ id: 'opencode', name: 'OpenCode', description: 'Questions about OpenCode itself', path: '/builtin/opencode.md', content: '' }, { id: 'release-notes', name: 'Release notes', description: 'Write release notes', path: '.opencode/skills/release-notes/SKILL.md', content: '' }] })
+    if (path === '/api/fs/find') {
+      const query = (url.searchParams.get('query') || '').toLowerCase()
+      return json({ location, data: [{ path: 'src', type: 'directory' }, { path: 'src/renderer/sources/opencode/Composer.tsx', type: 'file' }, { path: 'package.json', type: 'file' }].filter(entry => entry.path.toLowerCase().includes(query)) })
+    }
     if (path === '/api/session/active') return json({ data: {} })
     if (path === '/api/model' || path === '/api/model/default') return json({ location, data: path.endsWith('default') ? model : [model] })
     if (path === '/api/agent') return json({ location, data: [{ id: 'build', name: 'Build', mode: 'primary', hidden: false }, { id: 'plan', name: 'Plan', mode: 'primary', hidden: false }] })
@@ -106,12 +116,14 @@ export async function fixtureServer(options?: { requestLimit?: number; createDel
       if (!session) { response.writeHead(404); response.end(); return }
       if (!action) {
         if (request.method === 'PATCH') { session.title = String(body.title); emit('session.renamed', { sessionID: id, title: session.title }); return done() }
+        if (request.method === 'DELETE') { sessions.splice(sessions.indexOf(session), 1); emit('session.deleted', { sessionID: id }); return done() }
         return json({ data: session })
       }
       if (action === 'message') return json({ data: [...(messages.get(id) || [])].reverse(), cursor: {} })
       if (action === 'inbox') return json({ data: [] })
       if (action === 'permission') return json({ data: permissions.get(id) || [] })
       if (action === 'form') return json({ data: forms.get(id) || [] })
+      if (action === 'command') return json({ data: { id: `inb_${Date.now()}`, sessionID: id, type: 'command' } })
       if (action === 'prompt') {
         if (options?.promptDelay) await new Promise(resolve => setTimeout(resolve, options.promptDelay))
         const text = String(body.text)

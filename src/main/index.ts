@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, safeStorage, shell } from 'electron'
-import { dirname, join, basename } from 'node:path'
+import { dirname, join, basename, isAbsolute, resolve } from 'node:path'
+import { lstat } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { homedir } from 'node:os'
 import type { CoreAPI, DesktopEvent } from '../shared/types'
@@ -19,6 +20,7 @@ let sources: MainSource[] = []
 let browsers: Browsers | undefined
 let storage: Storage | undefined
 let connectors: Connectors | undefined
+let confirm: (title: string, detail: string, action?: string) => Promise<boolean> = async () => false
 let model: ModelBroker | undefined
 let terminals: Terminals | undefined
 const files = new Files()
@@ -113,6 +115,16 @@ function registerIPC() {
   handle('inspectPath', path => files.inspect(path))
   handle('listFolder', path => files.list(path))
   handle('readTextFile', path => files.read(path))
+  // Never deletes: moves to the system Trash, after asking. Your home folder and the folders above it are refused.
+  handle('trashPath', async (raw: unknown) => {
+    if (typeof raw !== 'string' || !isAbsolute(raw) || raw.includes('\0')) throw new Error('Use an absolute path')
+    const path = resolve(raw), home = homedir(), info = await lstat(path)
+    if (path === '/' || path === home || `${home}/`.startsWith(`${path}/`)) throw new Error('ChatOS won’t move your home folder, or a folder above it, to the Trash.')
+    const name = basename(path), folder = info.isDirectory()
+    if (!await confirm(`Move “${name}” to the Trash?`, `${path}\n${folder ? 'The folder and everything in it. ' : ''}You can restore it from the Trash.`, 'Move to Trash')) throw new Error('Not moved. Nothing changed.')
+    try { await shell.trashItem(path) }
+    catch { throw new Error(`“${name}” can’t go to the Trash here (some places, like /tmp, have none). Nothing was moved or deleted.`) }
+  })
   handle('chooseFolder', async () => {
     const result = await dialog.showOpenDialog(window!, { properties: ['openDirectory'], title: 'Open a project folder' })
     return result.canceled ? null : result.filePaths[0]
@@ -151,13 +163,13 @@ async function createWindow() {
   // Optional sources (e.g. OpenCode). Each is contacted only once the person added it.
   for (const source of sources) source.dispose()
   const store = storage
-  sources = (Object.entries(mainSources) as [string, (ctx: MainContext) => MainSource][]).map(([id, create]) => create({ emit: event => emit({ type: 'source', source: id, event }), storage: store, secrets, env: process.env, home: homedir(), platform: process.platform }))
+  confirm = async (title: string, detail: string, action = 'Approve') => {
+    if (!window) return false
+    return (await dialog.showMessageBox(window, { type: action === 'Approve' ? 'question' : 'warning', title, message: title, detail, buttons: ['Cancel', action], defaultId: 0, cancelId: 0, noLink: true })).response === 1
+  }
+  sources = (Object.entries(mainSources) as [string, (ctx: MainContext) => MainSource][]).map(([id, create]) => create({ emit: event => emit({ type: 'source', source: id, event }), storage: store, secrets, env: process.env, home: homedir(), platform: process.platform, confirm: (title, detail, action) => confirm(title, detail, action) }))
   browsers = new Browsers(window, emit)
   terminals = new Terminals(emit)
-  const confirm = async (title: string, detail: string) => {
-    if (!window) return false
-    return (await dialog.showMessageBox(window, { type: 'question', title, message: title, detail, buttons: ['Cancel', 'Approve'], defaultId: 0, cancelId: 0, noLink: true })).response === 1
-  }
   model ||= new ModelBroker(storage, secrets, confirm)
   connectors ||= new Connectors(storage, secrets, confirm, prompt => model!.generate(prompt), undefined, undefined, url => shell.openExternal(url))
   registerIPC()

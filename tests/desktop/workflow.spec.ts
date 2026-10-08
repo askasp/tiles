@@ -48,7 +48,7 @@ test('V3 messages, permissions, questions, unique browser, linked move, and rest
     await expect(page.locator('.context-chip')).toContainText('Local preview')
     // Moving the session also moves its preview, without reconstructing Chromium.
     await page.locator(`[data-tile-id="${id}"] textarea`).click()
-    await page.keyboard.press('Control+Alt+Shift+2')
+    await page.keyboard.press('Control+w'); await page.keyboard.press('2')
     await expect(page.locator('.workspace-button.selected')).toContainText('2')
     await expect(page.locator('.resource-tile:visible')).toHaveCount(2)
     await expect(page.locator(`[data-tile-id="${browserID}"]`)).toBeVisible()

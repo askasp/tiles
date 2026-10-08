@@ -2,13 +2,15 @@ import { OpenCode, type OpenCodeClient } from '@opencode/client'
 import { Service } from '@opencode/client/service'
 import { setTimeout as delay } from 'node:timers/promises'
 import { execFile } from 'node:child_process'
-import { access, constants } from 'node:fs/promises'
-import { delimiter, join } from 'node:path'
+import { access, constants, stat } from 'node:fs/promises'
+import { delimiter, join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { homedir } from 'node:os'
 import type {
   ConnectionInfo, MessageInfo, MessagePage, OpenCodeAPI, OpenCodeEvent,
   OpenCodeProbe, SessionDetail, SessionInfo, SessionPage, Snapshot,
 } from '../../shared/sources/opencode/types'
+import { fileMentions, leadingSlash, slashMentions } from '../../shared/sources/opencode/mentions'
 import type { MainContext, MainSource } from '../registry'
 
 /** Remembered OpenCode source. Absent means OpenCode is not a source. */
@@ -273,8 +275,9 @@ export class OpenCodeBridge {
   async catalog(directory: string): ReturnType<OpenCodeAPI['catalog']> {
     const client = this.ready()
     const input = { location: { directory } }
-    const [agents, models, defaultModel] = await Promise.all([
+    const [agents, models, defaultModel, commands, skills] = await Promise.all([
       client.agent.list(input, timeout()), client.model.list(input, timeout()), client.model.default(input, timeout()),
+      this.commands(directory), this.skills(directory),
     ])
     return {
       agents: agents.data.filter(agent => !agent.hidden && agent.mode !== 'subagent'),
@@ -283,7 +286,19 @@ export class OpenCodeBridge {
         variants: model.variants.map(variant => ({ id: variant.id })), enabled: model.enabled, limit: model.limit,
       })),
       ...(defaultModel.data && { defaultModel: { id: defaultModel.data.id, providerID: defaultModel.data.providerID } }),
+      commands: commands.map(command => ({ name: command.name, description: command.description })),
+      skills: skills.map(skill => ({ id: skill.id, name: skill.name, description: skill.description })),
     }
+  }
+
+  // Both routes are experimental in OpenCode 2: without them, “/” just completes nothing.
+  private async commands(directory: string) { return (await this.ready().command.list({ location: { directory } }, timeout()).catch(() => undefined))?.data || [] }
+  private async skills(directory: string) { return (await this.ready().skill.list({ location: { directory } }, timeout()).catch(() => undefined))?.data || [] }
+
+  async findFiles(directory: string, query: string) {
+    if (!directory) return []
+    const result = await this.ready().file.find({ location: { directory }, query, limit: 30 }, timeout())
+    return result.data.map(entry => ({ path: entry.path, type: entry.type }))
   }
 
   async createSession(input: Parameters<OpenCodeAPI['createSession']>[0]): Promise<SessionInfo> {
@@ -291,9 +306,33 @@ export class OpenCodeBridge {
     return this.ready().session.create({ location: { directory: input.directory }, agent: input.agent, model: input.model }, timeout())
   }
 
-  async prompt(input: Parameters<OpenCodeAPI['prompt']>[0]) {
+  async prompt({ directory, ...input }: Parameters<OpenCodeAPI['prompt']>[0]) {
     if (!input.text.trim() && !input.files?.length) throw new Error('Write a message first.')
-    await this.ready().session.prompt(input, timeout())
+    const client = this.ready()
+    if (!directory) { await client.session.prompt(input, timeout()); return }
+    const [commands, skills, mentioned] = await Promise.all([this.commands(directory), this.skills(directory), this.mentionedFiles(directory, input.text)])
+    const files = [...(input.files || []), ...mentioned]
+    const attached = slashMentions(input.text, new Set(skills.map(skill => skill.id))).map(({ name, ...mention }) => ({ id: name, mention }))
+    const slash = leadingSlash(input.text)
+    if (slash && commands.some(command => command.name === slash.name)) {
+      // The command gets only its arguments, so mention offsets into the full text no longer apply.
+      await client.session.command({
+        sessionID: input.sessionID, name: slash.name, text: slash.args, delivery: input.delivery,
+        files: files.map(({ uri, name }) => ({ uri, name })), ...(attached.length && { skills: attached.map(({ id }) => ({ id })) }),
+      }, timeout())
+      return
+    }
+    await client.session.prompt({ ...input, files, ...(attached.length && { skills: attached }) }, timeout())
+  }
+
+  /** “@path” mentions of files or folders that exist in the project. */
+  private async mentionedFiles(directory: string, text: string) {
+    const found = await Promise.all(fileMentions(text).map(async ({ path, ...mention }) => {
+      const absolute = resolve(directory, path)
+      try { await stat(absolute) } catch { return undefined }
+      return { uri: pathToFileURL(absolute).href, name: path, mention }
+    }))
+    return found.filter(file => file !== undefined)
   }
 
   async interrupt(id: string) { await this.ready().session.interrupt({ sessionID: id }, timeout()) }
@@ -303,6 +342,8 @@ export class OpenCodeBridge {
     await this.ready().session.update({ sessionID: id, title: title.trim() }, timeout())
     return this.ready().session.get({ sessionID: id }, timeout())
   }
+
+  async deleteSession(id: string) { await this.ready().session.remove({ sessionID: id }, timeout()) }
 
   async switchAgent(id: string, agent: string) { await this.ready().session.switchAgent({ sessionID: id, agent }, timeout()) }
   async switchModel(id: string, model: Parameters<OpenCodeAPI['switchModel']>[1]) { await this.ready().session.switchModel({ sessionID: id, model }, timeout()) }
@@ -343,13 +384,27 @@ export function createOpenCodeSource(ctx: MainContext): MainSource<'opencode'> {
       store.set('opencode-source', JSON.stringify({ ...(settings.url && { url: settings.url }) }))
     },
   })
+  const hidden = (): string[] => { try { const v = JSON.parse(store.get('opencode-hidden-projects') || '[]'); return Array.isArray(v) ? v.filter((d): d is string => typeof d === 'string') : [] } catch { return [] } }
   const api: OpenCodeAPI = {
     probe: () => bridge.probe(), start: () => bridge.start(), disconnect: async () => bridge.disconnect(),
     bootstrap: () => bridge.bootstrap(ctx.home, ctx.platform), reconnect: settings => bridge.connect(settings),
     sessions: query => bridge.sessions(query), activeSessions: () => bridge.activeSessions(),
-    session: id => bridge.session(id), messages: (id, cursor) => bridge.messages(id, cursor), catalog: directory => bridge.catalog(directory),
+    session: id => bridge.session(id), messages: (id, cursor) => bridge.messages(id, cursor), catalog: directory => bridge.catalog(directory), findFiles: (directory, query) => bridge.findFiles(directory, query),
     createSession: input => bridge.createSession(input), prompt: input => bridge.prompt(input), interrupt: id => bridge.interrupt(id),
-    renameSession: (id, title) => bridge.renameSession(id, title), switchAgent: (id, agent) => bridge.switchAgent(id, agent), switchModel: (id, model) => bridge.switchModel(id, model),
+    renameSession: (id, title) => bridge.renameSession(id, title),
+    deleteSession: async input => {
+      if (!input || typeof input.sessionID !== 'string' || !input.sessionID) throw new Error('Invalid session')
+      const title = String(input.title || 'this session').slice(0, 200)
+      if (!await ctx.confirm(`Delete “${title}”?`, `OpenCode deletes the session for good: its messages, history and files it tracks. There is no undo.${input.draft ? '\nYour unsent message in it goes too.' : ''}`, 'Delete')) throw new Error('Not deleted. Nothing changed.')
+      await bridge.deleteSession(input.sessionID)
+    },
+    hiddenProjects: async () => hidden(),
+    hideProject: async (directory, hide) => {
+      if (typeof directory !== 'string' || !directory.startsWith('/')) throw new Error('Invalid project folder')
+      const next = hide ? [...new Set([...hidden(), directory])] : hidden().filter(d => d !== directory)
+      store.set('opencode-hidden-projects', JSON.stringify(next))
+      return next
+    }, switchAgent: (id, agent) => bridge.switchAgent(id, agent), switchModel: (id, model) => bridge.switchModel(id, model),
     permissionReply: input => bridge.permissionReply(input), formReply: input => bridge.formReply(input), formCancel: input => bridge.formCancel(input),
     diff: input => bridge.diff(input),
   }

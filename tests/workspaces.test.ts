@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { addTab, closeTab, hideWorkspace, initialState, moveTab, normalizeURL, openSession, restoreState, restoreTab, serializableState, splitWorkspace } from '../src/shared/sources/opencode/legacy'
 import type { SessionInfo } from '../src/shared/sources/opencode/types'
-import { shortcutFor } from '../src/shared/shortcuts'
+import { shortcutFor, windowChord } from '../src/shared/shortcuts'
 
 const session: SessionInfo = { id: 'ses_test', projectID: 'project', title: 'Test session', cost: 0, tokens: { input: 0, output: 0 }, time: { created: 1, updated: 1 }, location: { directory: '/workspace' } }
 
@@ -80,8 +80,13 @@ describe('i3-style app shortcuts', () => {
     // System+Enter is left to lists (open beside); Ctrl+W x promotes.
     expect(shortcutFor({ ...input, key: 'enter' })).toBeUndefined()
     expect(shortcutFor({ ...input, key: '[' })).toBe('tile-back')
-    expect(shortcutFor({ ...input, key: '2', shift: true })).toBe('move-workspace:2')
-    expect(shortcutFor({ ...input, key: '@', code: 'Digit2', shift: true })).toBe('move-workspace:2')
+    // Shift+digit is not ours (⌘⇧3/4/5 are macOS screenshots): Ctrl+W, then a digit moves a tile.
+    expect(shortcutFor({ ...input, key: '2', shift: true })).toBeUndefined()
+    expect(shortcutFor({ ...input, key: '@', code: 'Digit2', shift: true })).toBeUndefined()
+    expect(windowChord['2']).toBe('move-workspace:2')
+    // Never the OS's: app switcher, Spotlight/layouts, hide, lock, window snapping, Ubuntu's terminal.
+    for (const [key, mods] of [['Tab', { meta: true }], [' ', { meta: true }], [' ', { control: true, alt: false }], ['h', { meta: true }], ['l', { meta: true }], ['ArrowLeft', { meta: true }], ['t', { control: true, alt: true }], ['ArrowRight', { control: true, alt: true }]] as const)
+      expect(shortcutFor(Object.assign({}, input, { key, control: false, alt: false, meta: false }, mods))).toBeUndefined()
     expect(shortcutFor({ ...input, control: false, alt: false })).toBeUndefined()
   })
 })

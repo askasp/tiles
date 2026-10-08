@@ -54,6 +54,9 @@ export function FileBody({ tile, env, others }: { tile: Tile; env: Env; others: 
     ] : []),
     ...others.map((action, index) => ({ id: `other-${index}`, label: action.label, key: action.key, run: () => run(action) })),
     { id: 'refresh', label: 'Refresh', key: 'r', disabled: busy, run: () => void refresh() },
+    // No key yet: the keymap is being settled. Always asks first; the Trash can restore it.
+    ...(tile.kind === 'folder' ? current && current.kind !== 'other' ? [{ id: 'delete', label: `Move “${current.name}” to the Trash…`, run: () => void api.trashPath(current.path).then(() => refresh()).catch(e => setError(friendlyError(e))) }] : []
+      : [{ id: 'delete', label: `Move “${tile.title}” to the Trash…`, run: () => void api.trashPath(tile.path!).then(() => { if (!env.tileBack(tile.id)) void go(parent) }).catch(e => setError(friendlyError(e))) }]),
   ])
   return <div className="files-body" data-arrow-keys onKeyDown={e => {
     if ((e.target as HTMLElement).closest('input, textarea')) return

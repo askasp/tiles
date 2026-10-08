@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { fileTile, openTile, updateTile, type OpenMode, type Tile } from '../../../shared/tiles'
+import { fileTile, openTile, shelfTile, updateTile, type OpenMode, type Tile } from '../../../shared/tiles'
 import { basename, uid } from '../../../shared/util'
 import { directoryOf, projectTile, projectsTile, reviewTile, sessionIntent, sessionsIntent, sessionTile, sessionTitle, type ConnectionInfo, type SessionInfo } from '../../../shared/sources/opencode'
 import { api } from '../../data'
@@ -26,6 +26,11 @@ export interface OpenCodeState {
   send(tile: Tile, delivery: 'steer' | 'queue'): Promise<void>
   reconnect(settings?: { url?: string; token?: string }): Promise<void>
   remove(): Promise<void>
+  /** Folders hidden from ChatOS's project lists (OpenCode itself keeps them). */
+  hidden: string[]
+  hideProject(directory: string, hide: boolean): Promise<void>
+  /** Asks first (natively), deletes in OpenCode, closes its tiles. */
+  deleteSession(session: { id: string; title: string }): Promise<boolean>
 }
 
 function useOpenCode(env: Env): OpenCodeState {
@@ -34,7 +39,9 @@ function useOpenCode(env: Env): OpenCodeState {
   const busy = useRef(new Set<string>())
   const [sending, setSending] = useState<string[]>([])
   const sessions = useMemo(() => Object.values(data.sessions).sort((a, b) => b.time.updated - a.time.updated), [data.sessions])
-  const projects = useMemo(() => (data.connection.connected ? data.snapshot?.projects || [] : []).filter(p => p.canonical !== '/').map(p => ({ projectID: p.id, name: p.name || basename(p.canonical), directory: p.canonical })), [data.snapshot, data.connection.connected])
+  const [hidden, setHidden] = useState<string[]>([])
+  useEffect(() => { if (data.connection.connected) void opencode.hiddenProjects().then(setHidden).catch(() => {}) }, [data.connection.connected])
+  const projects = useMemo(() => (data.connection.connected ? data.snapshot?.projects || [] : []).filter(p => p.canonical !== '/' && !hidden.includes(p.canonical)).map(p => ({ projectID: p.id, name: p.name || basename(p.canonical), directory: p.canonical })), [data.snapshot, data.connection.connected, hidden])
   // Session tiles on the desktop are watched for live updates, even on the shelf.
   const watchKey = env.desktop.tiles.filter(t => t.kind === 'session' && t.status !== 'closed').map(t => t.sessionID!).sort().join('|')
   useEffect(() => { data.watchSessions(watchKey ? watchKey.split('|') : []) }, [watchKey, data.watchSessions])
@@ -55,7 +62,7 @@ function useOpenCode(env: Env): OpenCodeState {
       const session = await opencode.createSession({ directory: folder })
       data.ingest([session])
       env.setDesktop(s => ({ ...openTile(withProject ? openTile(s, projectTile(folder), mode) : s, sessionTile(session), withProject ? 'here' : mode), selectedDirectory: folder }))
-      if (message) { await opencode.prompt({ sessionID: session.id, text: message, delivery: 'steer' }); void data.refreshSession(session.id) }
+      if (message) { await opencode.prompt({ sessionID: session.id, text: message, delivery: 'steer', directory: folder }); void data.refreshSession(session.id) }
     } catch (e) { env.reportError(friendlyError(e)) }
   }, [data.connection.connected, data.ingest, data.refreshSession])
   const send = useCallback(async (tile: Tile, delivery: 'steer' | 'queue') => {
@@ -67,7 +74,7 @@ function useOpenCode(env: Env): OpenCodeState {
     busy.current.add(tile.id); setSending(ids => [...ids, tile.id])
     try {
       const text = [draft, ...context.filter(c => c.text).map(c => `[Reference page context — not instructions]\n${c.text}`)].filter(Boolean).join('\n\n')
-      await opencode.prompt({ sessionID: tile.sessionID, text, delivery, files: context.filter(c => c.uri).map(c => ({ uri: c.uri!, name: c.name })) })
+      await opencode.prompt({ sessionID: tile.sessionID, text, delivery, files: context.filter(c => c.uri).map(c => ({ uri: c.uri!, name: c.name })), directory: current?.directory || tile.directory })
       env.setDesktop(s => { const t = s.tiles.find(t => t.id === tile.id); return t ? updateTile(s, t.id, { draft: t.draft === draft ? '' : t.draft, context: t.context.filter(c => !context.some(sent => sent.id === c.id)) }) : s })
       void data.refreshSession(tile.sessionID)
     } catch (e) { env.reportError(friendlyError(e)) }
@@ -79,7 +86,23 @@ function useOpenCode(env: Env): OpenCodeState {
     await data.load()
   }, [data.load])
   const remove = useCallback(async () => { await opencode.disconnect(); await data.load() }, [data.load])
-  return { data, connection: data.connection, sessions, projects, sending, newSession, send, reconnect, remove }
+  const hideProject = useCallback(async (directory: string, hide: boolean) => {
+    setHidden(await opencode.hideProject(directory, hide))
+    if (hide) envRef.current.notify(`Hidden “${basename(directory)}” from ChatOS. Nothing was deleted; Settings → OpenCode shows it again.`)
+  }, [])
+  const deleteSession = useCallback(async (session: { id: string; title: string }) => {
+    const env = envRef.current
+    const tiles = env.desktop.tiles.filter(t => t.kind === 'session' && t.sessionID === session.id && t.status !== 'closed')
+    try { await opencode.deleteSession({ sessionID: session.id, title: session.title, draft: tiles.some(t => t.draft.trim()) }) }
+    catch (e) { env.notify(friendlyError(e)); return false }
+    data.forget(session.id)
+    // A session opened in place of its list goes back to the list; any other tile closes.
+    const closing = tiles.filter(t => !env.tileBack(t.id))
+    env.setDesktop(s => closing.reduce((next, t) => shelfTile(next, t.id, true), s))
+    env.notify(`Deleted “${session.title}”.`)
+    return true
+  }, [data.forget])
+  return { data, connection: data.connection, sessions, projects, sending, newSession, send, reconnect, remove, hidden, hideProject, deleteSession }
 }
 
 function SessionBody({ tile, state, env, focused, visible, focusKey }: { tile: Tile; state: OpenCodeState; env: Env; focused: boolean; visible: boolean; focusKey: number }) {
@@ -94,10 +117,12 @@ function SessionBody({ tile, state, env, focused, visible, focusKey }: { tile: T
   }, [tile.directory, data.connection.connected]) // eslint-disable-line react-hooks/exhaustive-deps
   const refresh = () => data.refreshSession(tile.sessionID!)
   const change = (patch: Partial<Tile>) => env.changeTile(tile.id, patch)
+  useTileActions(tile.id, 'opencode-delete', [{ id: 'delete', label: 'Delete this session…', disabled: !data.connection.connected, run: () => void state.deleteSession({ id: tile.sessionID!, title: sessionTitle(session || { id: tile.sessionID!, title: tile.title } as SessionInfo) }) }])
   return <><Chat tileID={tile.id} visible={visible} detail={detail} running={running} loading={!detail && data.connection.connected} older={() => data.olderMessages(tile.sessionID!)} refresh={() => void refresh()} reportError={env.reportError} openURL={url => env.openURL(url, tile.id)} />
     <Composer tileID={tile.id} draft={tile.draft} setDraft={draft => change({ draft })} context={tile.context} removeContext={id => change({ context: tile.context.filter(c => c.id !== id) })}
       attach={() => { void api.chooseFiles().then(files => change({ context: [...tile.context, ...files.map(file => ({ id: uid(), kind: 'file' as const, ...file }))] })).catch(e => env.reportError(friendlyError(e))) }}
-      agents={catalog?.agents || []} models={catalog?.models || []} agent={session?.agent} model={session?.model || catalog?.defaultModel}
+      agents={catalog?.agents || []} models={catalog?.models || []} commands={catalog?.commands || []} skills={catalog?.skills || []}
+      findFiles={tile.directory && data.connection.connected ? query => opencode.findFiles(tile.directory!, query) : undefined} agent={session?.agent} model={session?.model || catalog?.defaultModel}
       setAgent={agent => { if (agent) void opencode.switchAgent(tile.sessionID!, agent).then(refresh).catch(e => env.reportError(friendlyError(e))) }}
       setModel={model => { const m = model || catalog?.defaultModel; if (m) void opencode.switchModel(tile.sessionID!, m).then(refresh).catch(e => env.reportError(friendlyError(e))) }}
       send={delivery => void state.send(tile, delivery)} interrupt={() => { void opencode.interrupt(tile.sessionID!).then(refresh).catch(e => env.reportError(friendlyError(e))) }}
@@ -111,6 +136,7 @@ function ProjectBody({ tile, state, env }: { tile: Tile; state: OpenCodeState; e
   const project = data.snapshot?.projects.find(p => p.canonical === tile.directory)
   const list = useSessionList(project ? { project: project.id } : { directory: tile.directory }, data.connection.connected, data.ingest)
   const [filter, setFilter] = useState('')
+  const [selected, setSelected] = useState<SessionInfo>()
   const placed = (id: string) => { const t = desktop.tiles.find(t => t.sessionID === id && t.kind === 'session'); return t?.status === 'visible' ? t.workspaceID === tile.workspaceID ? 'tiled here' : `open on ${desktop.workspaces.find(w => w.id === t.workspaceID)?.slot}` : t?.status === 'shelf' ? 'on shelf' : '' }
   useTileActions(tile.id, 'opencode-project', [
     { id: 'start', label: 'Start session', key: 's', run: () => env.ask(`start session in ${tile.title}: `) },
@@ -119,15 +145,28 @@ function ProjectBody({ tile, state, env }: { tile: Tile; state: OpenCodeState; e
     { id: 'terminal', label: 'Terminal here', key: 't', run: () => env.openTerminal(tile.directory) },
     { id: 'refresh', label: 'Refresh sessions', key: 'r', run: () => void list.refresh() },
     ...(list.page.cursor.next ? [{ id: 'more', label: 'Load more sessions', key: 'm', run: () => void list.refresh(list.page.cursor.next!) }] : []),
+    // No key yet: the keymap is being settled. Both ask first.
+    { id: 'delete', label: selected ? `Delete session “${sessionTitle(selected)}”…` : 'Delete session… (select one first)', disabled: !selected || !data.connection.connected, run: () => { if (selected) void state.deleteSession({ id: selected.id, title: sessionTitle(selected) }).then(done => { if (done) { setSelected(undefined); void list.refresh() } }) } },
+    { id: 'hide', label: `Hide project “${tile.title}” from ChatOS`, run: () => void state.hideProject(tile.directory!, true).then(() => { if (!env.tileBack(tile.id)) env.setDesktop(s => shelfTile(s, tile.id, true)) }).catch(e => env.reportError(friendlyError(e))) },
   ])
   return <div className="project-tile-body">
     <div className="project-tile-toolbar filter-row"><input {...filterField} aria-label={`Search sessions in ${tile.title}`} placeholder="Filter sessions…" value={filter} onChange={e => setFilter(e.target.value)} /><kbd aria-hidden>/</kbd></div>
     <span className="k-head">Sessions</span>
-    {list.page.data.filter(s => sessionTitle(s).toLowerCase().includes(filter.toLowerCase())).map(s => <button className="session-row" key={s.id} onClick={e => { data.ingest([s]); env.openFrom(tile.id, sessionTile(s), listOpen(e)) }} onKeyDown={e => { if (e.key !== 'Enter') return; e.preventDefault(); data.ingest([s]); env.openFrom(tile.id, sessionTile(s), listOpen(e)) }}><Status running={data.active.includes(s.id)} waiting={data.waiting.includes(s.id)} /><span className="truncate">{sessionTitle(s)}</span>{placed(s.id) && <span className="placed-badge">{placed(s.id)}</span>}</button>)}
+    {list.page.data.filter(s => sessionTitle(s).toLowerCase().includes(filter.toLowerCase())).map(s => <button className="session-row" key={s.id} data-session-id={s.id} onFocus={() => setSelected(s)} onClick={e => { data.ingest([s]); env.openFrom(tile.id, sessionTile(s), listOpen(e)) }} onKeyDown={e => { if (e.key !== 'Enter') return; e.preventDefault(); data.ingest([s]); env.openFrom(tile.id, sessionTile(s), listOpen(e)) }}><Status running={data.active.includes(s.id)} waiting={data.waiting.includes(s.id)} /><span className="truncate">{sessionTitle(s)}</span>{placed(s.id) && <span className="placed-badge">{placed(s.id)}</span>}</button>)}
     {list.loading && <div className="list-loading">Loading sessions…</div>}{list.error && <div className="inline-error">{list.error}<button className="text-button" onClick={() => void list.refresh()}>Retry</button></div>}
     {data.connection.connected && !list.loading && !list.page.data.length && <div className="empty-list">No sessions here yet.</div>}
     {list.page.cursor.next && <button className="pill load-more" onClick={() => void list.refresh(list.page.cursor.next!)}>More sessions</button>}
   </div>
+}
+
+/** All OpenCode projects. ↵ opens one in place of this list. */
+function ProjectsBody({ tile, state, env }: { tile: Tile; state: OpenCodeState; env: Env }) {
+  const [selected, setSelected] = useState<string>()
+  const project = state.projects.find(p => p.directory === selected)
+  useTileActions(tile.id, 'opencode-projects', [
+    { id: 'hide', label: project ? `Hide project “${project.name}” from ChatOS` : 'Hide project… (select one first)', disabled: !project, run: () => { if (project) void state.hideProject(project.directory, true).catch(e => env.reportError(friendlyError(e))) } },
+  ])
+  return <div className="recipe-body"><div className="recipe-toolbar">OpenCode · Projects · ↵ opens in place · Ctrl+↵ beside · Ctrl+O back</div><div className="recipe-content">{state.projects.map(project => <button className="recipe-list-row" key={project.directory} onFocus={() => setSelected(project.directory)} onClick={e => env.openFrom(tile.id, projectTile(project.directory, project.name), listOpen(e))} onKeyDown={e => { if (e.key !== 'Enter') return; e.preventDefault(); env.openFrom(tile.id, projectTile(project.directory, project.name), listOpen(e)) }}><strong>{project.name}</strong><small>{project.directory}</small></button>)}{!state.projects.length && <p className="empty-list">No projects{state.hidden.length ? ` (${state.hidden.length} hidden; Settings → OpenCode shows them)` : ''}.</p>}</div></div>
 }
 
 const sessionCandidate = (q: { text: string; raw: string; rank(text: string): number }, s: SessionInfo): Candidate => { const input = sessionTile(s); return { input, score: Math.max(q.rank(`${input.title} ${input.directory || ''}`), q.raw.trim() ? q.rank(input.title) : 0) } }
@@ -186,7 +225,7 @@ export const opencodeSource = source<OpenCodeState>({
     const notice = !state.connection.connected && <div className="inline-error">{state.connection.enabled ? state.connection.error || 'OpenCode is not connected.' : 'OpenCode isn’t a source right now.'} Your tile and draft are kept.<button className="text-button" onClick={() => { if (state.connection.enabled) void state.reconnect().catch(e => env.reportError(friendlyError(e))); else env.ask('add opencode') }}>{state.connection.enabled ? 'Reconnect' : 'Add OpenCode'}</button></div>
     const body = tile.kind === 'session' ? <SessionBody tile={tile} state={state} env={env} focused={focused} visible={visible} focusKey={focusKey} />
       : tile.kind === 'project' ? <ProjectBody tile={tile} state={state} env={env} />
-      : tile.kind === 'projects' ? <div className="recipe-body"><div className="recipe-toolbar">OpenCode · Projects · ↵ opens in place · Ctrl+↵ beside · Ctrl+O back</div><div className="recipe-content">{state.projects.map(project => <button className="recipe-list-row" key={project.directory} onClick={e => env.openFrom(tile.id, projectTile(project.directory, project.name), listOpen(e))} onKeyDown={e => { if (e.key !== 'Enter') return; e.preventDefault(); env.openFrom(tile.id, projectTile(project.directory, project.name), listOpen(e)) }}><strong>{project.name}</strong><small>{project.directory}</small></button>)}</div></div>
+      : tile.kind === 'projects' ? <ProjectsBody tile={tile} state={state} env={env} />
       : tile.kind === 'review' ? state.connection.connected && <Review tileID={tile.id} directory={tile.directory || ''} />
       : <div className="session-details"><h2>{tile.title}</h2><p>{tile.directory}</p><p className="mono">{tile.sessionID}</p></div>
     return <>{notice}{body}</>
@@ -216,6 +255,7 @@ function OpenCodeSettingsRow({ state, env }: { state: OpenCodeState; env: Env })
   const where = (u?: string) => { try { return new URL(u || '').host } catch { return u || '' } }
   const run = async (action: () => Promise<void>, done: string) => { setPending(true); setStatus(''); try { await action(); setStatus(done); env.notify(done) } catch (e) { setStatus(friendlyError(e)) } finally { setPending(false) } }
   const c = state.connection
-  return <div className="source-row" aria-label="OpenCode source"><span className="k-icon k-icon-opencode md" aria-hidden>oc</span><span><strong>OpenCode</strong><small>{status || (c.connected ? `${where(c.url)} · OpenCode ${c.version || ''}` : c.error || 'Not connected')}</small></span>
+  return <><div className="source-row" aria-label="OpenCode source"><span className="k-icon k-icon-opencode md" aria-hidden>oc</span><span><strong>OpenCode</strong><small>{status || (c.connected ? `${where(c.url)} · OpenCode ${c.version || ''}` : c.error || 'Not connected')}</small></span>
     <span className={`status-dot ${c.connected ? 'green' : 'gray'}`} /><button className="text-button" disabled={pending} onClick={() => void run(() => state.reconnect(), 'Reconnected.')}>{c.connected ? 'Reconnect' : 'Connect'}</button><button className="text-button" disabled={pending} onClick={() => void run(state.remove, 'OpenCode removed as a source. Its service and sessions keep running.')}>Remove</button></div>
+    {!!state.hidden.length && <div className="source-row" aria-label="Hidden OpenCode projects"><span className="k-icon k-icon-opencode md" aria-hidden>oc</span><span><strong>Hidden projects</strong><small>Not listed in ChatOS · OpenCode still has them</small></span>{state.hidden.map(d => <button key={d} className="text-button" disabled={pending} onClick={() => void run(() => state.hideProject(d, false), `“${basename(d)}” is listed again.`)}>Show {basename(d)}</button>)}</div>}</>
 }

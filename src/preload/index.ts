@@ -20,7 +20,7 @@ const api: ChatOSAPI = {
   connectors: invoke('connectors'), saveConnector: invoke('saveConnector'), connectorRevisions: invoke('connectorRevisions'),
   connectorToken: invoke('connectorToken'), connectorOAuth: invoke('connectorOAuth'), disconnectConnector: invoke('disconnectConnector'), builtinConnector: invoke('builtinConnector'), addBuiltinConnector: invoke('addBuiltinConnector'), removeConnector: invoke('removeConnector'), connectorSettings: invoke('connectorSettings'), proposeConnector: invoke('proposeConnector'),
   searchConnectors: invoke('searchConnectors'), planConnectorSearch: invoke('planConnectorSearch'), readRecipe: invoke('readRecipe'), recipeAction: invoke('recipeAction'),
-  inspectPath: invoke('inspectPath'), listFolder: invoke('listFolder'), readTextFile: invoke('readTextFile'),
+  inspectPath: invoke('inspectPath'), listFolder: invoke('listFolder'), readTextFile: invoke('readTextFile'), trashPath: invoke('trashPath'),
   chooseFolder: invoke('chooseFolder'), chooseFiles: invoke('chooseFiles'),
   browserLayout: invoke('browserLayout'), browserAction: invoke('browserAction'), browserClose: invoke('browserClose'),
   browserContext: invoke('browserContext'), browserScreenshot: invoke('browserScreenshot'),

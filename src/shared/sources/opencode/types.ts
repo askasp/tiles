@@ -45,6 +45,10 @@ export interface AgentInfo {
   hidden: boolean
 }
 
+/** “/” in the composer: OpenCode commands (run) and skills (loaded into the turn). */
+export interface SlashCommand { name: string; description?: string }
+export interface SlashSkill { id: string; name: string; description?: string }
+
 export interface ToolPart {
   type: 'tool'
   id: string
@@ -171,11 +175,19 @@ export interface OpenCodeAPI {
   activeSessions(): Promise<string[]>
   session(id: string): Promise<SessionDetail>
   messages(id: string, cursor?: string): Promise<MessagePage>
-  catalog(directory: string): Promise<{ agents: AgentInfo[]; models: ModelInfo[]; defaultModel?: ModelRef }>
+  catalog(directory: string): Promise<{ agents: AgentInfo[]; models: ModelInfo[]; defaultModel?: ModelRef; commands: SlashCommand[]; skills: SlashSkill[] }>
+  /** Files and folders in the project matching a fuzzy query, for “@” mentions. */
+  findFiles(directory: string, query: string): Promise<{ path: string; type: 'file' | 'directory' }[]>
   createSession(input: { directory: string; agent?: string; model?: ModelRef }): Promise<SessionInfo>
-  prompt(input: { sessionID: string; text: string; files?: { uri: string; name?: string }[]; delivery: 'steer' | 'queue' }): Promise<void>
+  /** With a directory, “@path” mentions attach those files and a leading “/name” runs that command or skill. */
+  prompt(input: { sessionID: string; text: string; files?: { uri: string; name?: string }[]; delivery: 'steer' | 'queue'; directory?: string }): Promise<void>
   interrupt(id: string): Promise<void>
   renameSession(id: string, title: string): Promise<SessionInfo>
+  /** Deletes the session in OpenCode for good, after a native confirmation. OpenCode has no undo. */
+  deleteSession(input: { sessionID: string; title: string; draft?: boolean }): Promise<void>
+  /** Projects hidden from ChatOS's lists. OpenCode can't remove projects; nothing is deleted. */
+  hiddenProjects(): Promise<string[]>
+  hideProject(directory: string, hidden: boolean): Promise<string[]>
   switchAgent(id: string, agent: string): Promise<void>
   switchModel(id: string, model: ModelRef): Promise<void>
   permissionReply(input: { sessionID: string; requestID: string; decision: 'once' | 'always' | 'reject' }): Promise<void>
@@ -183,6 +195,6 @@ export interface OpenCodeAPI {
   formCancel(input: { sessionID: string; formID: string }): Promise<void>
   diff(input: { directory: string; mode: 'working' | 'branch' | 'committed'; sessionID?: string }): Promise<FileDiff[]>
 }
-export const opencodeMethods = ['bootstrap', 'reconnect', 'sessions', 'activeSessions', 'session', 'messages', 'catalog', 'createSession', 'prompt', 'interrupt', 'renameSession', 'switchAgent', 'switchModel', 'permissionReply', 'formReply', 'formCancel', 'diff', 'probe', 'start', 'disconnect'] as const satisfies readonly (keyof OpenCodeAPI)[]
+export const opencodeMethods = ['bootstrap', 'reconnect', 'sessions', 'activeSessions', 'session', 'messages', 'catalog', 'findFiles', 'createSession', 'prompt', 'interrupt', 'renameSession', 'deleteSession', 'hiddenProjects', 'hideProject', 'switchAgent', 'switchModel', 'permissionReply', 'formReply', 'formCancel', 'diff', 'probe', 'start', 'disconnect'] as const satisfies readonly (keyof OpenCodeAPI)[]
 /** Main → renderer live events. */
 export type OpenCodeEvent = { type: 'server'; event: Record<string, unknown> } | { type: 'connection'; connection: ConnectionInfo }
