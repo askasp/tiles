@@ -6,6 +6,8 @@
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
+    "postinstall": "node node_modules/electron/install.js",
+    "setup:electron": "node node_modules/electron/install.js",
     "dev": "node scripts/check-environment.mjs && electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
     "start": "node scripts/check-environment.mjs && electron .",

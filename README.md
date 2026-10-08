@@ -7,10 +7,13 @@ An Electron desktop following the unique-resource model in `ChatOS Flows v3.html
 
 ```sh
 cd /home/aksel/git/chatos
+npm install
 npm run dev
 ```
 
 Or `npm run build` then `npm start`. Existing dependencies are installed. The app discovers your running local OpenCode 2 service; it never starts, restarts or stops it.
+
+Electron 44 downloads its executable separately from its npm package. `npm install` now runs that installer explicitly on macOS/Linux/Windows, since `electron-vite` cannot trigger Electron's lazy installation itself. If you see **Electron uninstall**, or npm installation scripts were disabled, run `npm run setup:electron`, then `npm run doctor` and retry. No deletion of `node_modules` is needed. Use Node 22.12+ (prefer a current Node LTS); the platform/architecture is detected by Electron's installer. Startup checks now validate the installed executable on every platform before starting Vite; doctor itself does not download anything.
 
 On Linux, `npm run doctor` checks the installed Electron sandbox helper. If it reports a setup problem, run the exact `sudo chown root:root` and `sudo chmod 4755` commands it prints. Sandboxing stays enabled. Reinstalling Electron can replace the helper and require setup again.
 
@@ -176,6 +179,8 @@ Select text in a browser and use **Ctrl+.** to add only that selection to its li
 Automatic discovery keeps local service credentials in the main process. Manual URLs/tokens in connection settings apply to the current run. Remote services require HTTPS. Environment overrides: `CHATOS_SERVER_URL`, `CHATOS_SERVER_TOKEN` and `CHATOS_DIRECTORY`.
 
 Existing managed Basic-auth services should use auto-discovery rather than a bare manual URL. Browser tiles remain usable when OpenCode is disconnected.
+
+For SSH forwarding, turn off automatic discovery and enter `http://127.0.0.1:LOCAL_PORT` in Settings. HTTP is allowed for loopback; SSH encrypts the remote hop. Server authentication still applies. Example: `ssh -N -L 4096:127.0.0.1:4096 user@server` when OpenCode listens on port 4096 on the remote machine. Adjust both ports as needed; the server can stay bound to its loopback interface.
 
 ## Checks
 
