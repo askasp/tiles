@@ -107,6 +107,7 @@ export default function App() {
   const knownSessions = useMemo(() => Object.values(data.sessions).sort((a, b) => b.time.updated - a.time.updated), [data.sessions])
   const home = data.snapshot?.home || ''
   const firstRun = Boolean(model && !model.ready && !model.skipped)
+  const firstRunRef = useRef(firstRun); firstRunRef.current = firstRun
   const projects = useMemo(() => {
     const items: ProjectEntry[] = (data.connection.connected ? data.snapshot?.projects || [] : []).filter(p => p.canonical !== '/').map(p => ({ id: p.id, projectID: p.id, name: p.name || basename(p.canonical), directory: p.canonical, vcs: p.vcs }))
     const folders = [...desktop.folders, ...desktop.tiles.filter(t => t.kind === 'folder').map(t => t.path!), ...(data.connection.connected ? knownSessions.map(directoryOf) : [])]
@@ -305,14 +306,14 @@ export default function App() {
       if (event.isComposing) return
       // Terminals own their keys, except the window-manager chords.
       const inTerminal = (event.target as HTMLElement | null)?.closest?.('.terminal-host')
-      if (event.key === 'Escape' && overlay) { if (!(overlay === 'launcher' && firstRun)) setOverlay(null); return }
+      if (event.key === 'Escape' && overlay) { if (!(overlay === 'launcher' && firstRunRef.current)) setOverlay(null); return }
       const action = shortcutFor({ type: 'keyDown', key: event.key, code: event.code, control: event.ctrlKey, alt: event.altKey, meta: event.metaKey, shift: event.shiftKey } as Electron.Input)
       if (action && inTerminal && !event.metaKey && !(event.ctrlKey && event.altKey) && action !== 'attach-selection') return
       if (action) { event.preventDefault(); handler.current(action) }
     }
     document.addEventListener('keydown', keys)
     return () => { unsubscribe(); document.removeEventListener('keydown', keys) }
-  }, [overlay, openURL, changeTile, firstRun])
+  }, [overlay, openURL, changeTile])
   useLayoutEffect(() => {
     let frame = 0
     const position = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => {
