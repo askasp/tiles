@@ -253,8 +253,8 @@ export class OpenCodeBridge {
   }
 
   // One-shot generation has no tools and creates/modifies no server sessions.
-  async generateText(prompt: string): Promise<string> {
-    return (await this.ready().generate.text({ prompt }, { signal: AbortSignal.timeout(90_000) })).text
+  async generateText(prompt: string, model?: { providerID: string; id: string }): Promise<string> {
+    return (await this.ready().generate.text({ prompt, ...(model && { model }) }, { signal: AbortSignal.timeout(120_000) })).text
   }
 
   async messages(id: string, cursor?: string): Promise<MessagePage> {

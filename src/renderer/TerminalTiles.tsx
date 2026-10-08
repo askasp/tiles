@@ -7,7 +7,7 @@ import { api, friendlyError } from './data'
 
 /** A shell in a folder. The process lives in the main process, so shelving
  * the tile keeps it running; reopening replays recent output. */
-export function TerminalBody({ tile, visible, focused, focusKey }: { tile: Tile; visible: boolean; focused: boolean; focusKey: number }) {
+export function TerminalBody({ tile, visible, focused, focusKey, consumeDraft }: { tile: Tile; visible: boolean; focused: boolean; focusKey: number; consumeDraft: () => void }) {
   const host = useRef<HTMLDivElement>(null)
   const term = useRef<Terminal>(undefined)
   const fit = useRef<FitAddon>(undefined)
@@ -39,6 +39,8 @@ export function TerminalBody({ tile, visible, focused, focusKey }: { tile: Tile;
     void api.terminalOpen({ id: tile.id, cwd: tile.directory || '', cols: terminal.cols, rows: terminal.rows }).then(result => {
       if (result.replay) terminal.write(result.replay)
       setState({ alive: true, shell: result.shell.split('/').pop() })
+      // A suggested command is typed, never run: the person presses Enter.
+      if (tile.draft && !result.replay) { const command = tile.draft; consumeDraft(); setTimeout(() => { void api.terminalInput(tile.id, command).catch(() => {}) }, 600) }
     }).catch(e => { alive = false; setState({ alive: false, error: friendlyError(e) }) })
     return () => { unsubscribe(); input.dispose(); resize.dispose(); textarea?.removeEventListener('focus', focusIn); textarea?.removeEventListener('blur', focusOut); if (textarea === document.activeElement) focusOut(); terminal.dispose(); term.current = undefined }
   }, [tile.id, tile.directory, generation])

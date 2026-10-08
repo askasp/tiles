@@ -11,7 +11,17 @@ npm install
 npm run dev
 ```
 
-Or `npm run build` then `npm start`. Existing dependencies are installed. The app discovers your running local OpenCode 2 service; it never starts, restarts or stops it.
+Or `npm run build` then `npm start`.
+
+### First launch (clean install)
+
+1. K opens and asks for one thing: **a model**. Paste a base URL and key for any OpenAI-compatible endpoint (the key is checked as you paste it, and the model list fills in), or choose **Use a local model instead** (e.g. Ollama at `http://localhost:11434/v1`, no key). **Use your ChatGPT subscription** routes K through OpenCode instead: K uses any model your OpenCode service is signed into (run `opencode auth login` → OpenAI → ChatGPT Plus/Pro; the panel can open a terminal with that command typed for you). No key is stored in ChatOS, and that model is ready whenever OpenCode is connected. **Skip for now** is allowed: Browser, Files and Terminal work without a model. Type `model` in K later to set it up.
+2. The desktop starts empty. Built in: **Browser**, **Files** (folders, text and images) and **Terminal** (a real shell in any folder, `Super+T` or `terminal` in K). Nothing else is preinstalled, listed or contacted.
+3. Everything else is a source you add with K: `add opencode`, `add front`, `add github`, `add slack`, or `add <anything with an API>`. Tab in an empty K walks the sources and ends on **Add source**.
+
+OpenCode is opt-in. `add opencode` finds the CLI and a running background service, and offers to connect to it, start it (`opencode serve --service`, which keeps running for your other OpenCode clients) or connect to a URL. Once connected, it is remembered across restarts. **Settings → Sources → Remove** forgets it; ChatOS never stops the service.
+
+K finds folders and files by name: Spotlight on macOS, and a bounded, background-indexed walk of your home folder elsewhere (hidden folders, `node_modules`, `Library` and build output are skipped).
 
 Electron 44 downloads its executable separately from its npm package. `npm install` now runs that installer explicitly on macOS/Linux/Windows, since `electron-vite` cannot trigger Electron's lazy installation itself. If you see **Electron uninstall**, or npm installation scripts were disabled, run `npm run setup:electron`, then `npm run doctor` and retry. No deletion of `node_modules` is needed. Use Node 22.12+ (prefer a current Node LTS); the platform/architecture is detected by Electron's installer. Startup checks now validate the installed executable on every platform before starting Vite; doctor itself does not download anything.
 
@@ -20,7 +30,7 @@ On Linux, `npm run doctor` checks the installed Electron sandbox helper. If it r
 ## The tile model
 
 - Sessions, OpenCode project lists/session lists, local folders/files, Front inboxes/conversations, browsers, repository review and custom connector resources use the same tile header.
-- **Collection → independent item tile** is the connector contract. Lists do not contain nested tile tabs. Home → **Projects tile** opens an OpenCode project collection; each project opens its session collection, and each session opens its own conversation. Opening any of these does not create a session.
+- **Collection → independent item tile** is the connector contract. Lists do not contain nested tile tabs. Once OpenCode is added, `opencode projects` in K opens the project collection; each project opens its session collection, and each session opens its own conversation. Opening any of these does not create a session.
 - One visible tile fills the workspace; two split it; three use a big slot and two stacked slots; four form a grid.
 - Promote moves the focused tile to the first/big slot. In a four-tile grid, promotion temporarily enlarges it fullscreen rather than making the neighbours too small; promote again or use fullscreen to return.
 - Opening a fifth shelves the least recently focused tile. It keeps running, stays searchable, and can be restored.
@@ -46,7 +56,7 @@ Browser views have no desktop preload, Node access or app tokens. They use a sha
 | Launcher: open here or go to existing owner | Enter |
 | Launcher: move here, with linked tiles | Shift+Enter |
 | Launcher: unopened resource in a new workspace | Ctrl+Enter |
-| Home / workspace | System+0 / 1–9 |
+| Empty desktop / workspace | System+0 / 1–9 |
 | Move tile and linked tiles to a workspace | System+Shift+1–9 |
 | Directional focus | System+arrows or H/J/L |
 | Swap with a neighbour | System+Shift+arrows or H/J/K/L |
@@ -70,7 +80,7 @@ Super+K is reserved for the launcher, so upward focus uses Super+Up rather than 
 
 The launcher searches all known tiles (visible, shelved and closed), project folders and server session titles. Every result shows **source · resource type · action**, plus its path or existing owner. Searching `chatos` (or `open chatos`) offers separate **Files · Folder · Browse files** and **OpenCode · Project · Show sessions** results. Neither creates a session. Equally relevant resources you used recently rank higher; their action remains visible.
 
-Search everywhere by default, or choose a source chip. Typing `OpenCode` and pressing Enter enters that source's search without opening a tile. Empty Backspace returns to all sources. Source scoping is optional navigation, not a nested tile container. You can also use prefixes (`opencode chatos`, `files chatos`, `web example.com`, `mail …`, `slack …`, `github …`). Short `dm …` / `pr …` commands request provider discovery but retain universal local matches, so a session named **PR cleanup** or a renamed **DM Carl** tile stays findable. Home provides direct **Search OpenCode** and **Search Files** buttons.
+Search everywhere by default, or press Tab to narrow to a source (Tab again moves to the next, then to **Add source**). Typing `OpenCode` and pressing Enter enters that source's search without opening a tile. Empty Backspace returns to all sources. Source scoping is optional navigation, not a nested tile container. You can also use prefixes (`opencode chatos`, `files chatos`, `web example.com`, `mail …`, `slack …`, `github …`). Short `dm …` / `pr …` commands request provider discovery but retain universal local matches, so a session named **PR cleanup** or a renamed **DM Carl** tile stays findable.
 
 - `browse the chatos files` / `browse files in chatos`: find the local folder tile.
 - `open the chatos sessions in OpenCode`: find the OpenCode project/session list.
@@ -82,8 +92,8 @@ These built-in commands use explicit local patterns. Custom sources also partici
 
 ### Add a service without application code changes
 
-1. Open **Home → Add / manage source**, **Settings → Add / manage source**, or **Launcher → Add source** (`add …` + Enter also opens it).
-2. Describe the service, enter its API base URL, and paste **public API documentation / an OpenAPI excerpt**. **Generate mapping proposal** uses your connected OpenCode model's one-shot generation endpoint; it creates no server session and runs no tools. Alternatively paste a connector JSON definition directly.
+1. In K, type `add <service>` and press Enter. K asks your model (never OpenCode) for a connector. It may ask follow-ups; reply in K, or paste a link to the public API docs, which ChatOS fetches once (GET, HTTPS, bounded, converted to inert text) and passes on as data.
+2. K shows **Resource → Opens as → Actions**. **Keep** saves it, **Adjust** opens the JSON editor. For hand-written connectors use **Settings → Write a connector by hand**.
 3. Inspect **Resource → Opens as → Row opens / actions**, and edit the JSON. **Keep mapping** validates it and asks for native approval of destinations, auth and write capabilities. No API requests run just because a model produced a proposal.
 4. Authenticate with a scoped bearer token, or a registered native OAuth client. Open a collection to check the API and field mapping. Rows open separate detail/child-collection tiles; **Open filtered list** gives a distinct collection identity.
 5. Reopen the mapping from a tile's **Mapping** button. **Version history → Preview v… → Keep** creates a new approved revision rather than destroying history.
@@ -135,7 +145,9 @@ Backups contain private drafts and may retain earlier **encrypted** credentials.
 
 ### Files tiles
 
-Folders and files are independent native resources, not OpenCode projects or sessions. Folder rows support ↑/↓ and Enter, and their filter matches the loaded folder's names. Opening a child or parent goes to its own unique tile; LRU shelving keeps the desktop bounded. Folder tiles offer explicit **Show OpenCode sessions** and **Start OpenCode session here** actions; OpenCode project tiles offer **Browse files**. The Home folder picker now browses the selected folder rather than forcing it into OpenCode.
+Folders and files are independent native resources, not OpenCode projects or sessions. Folder rows support ↑/↓ and Enter, and their filter matches the loaded folder's names. Opening a child or parent goes to its own unique tile; LRU shelving keeps the desktop bounded. Folder tiles offer **Open terminal here**, and, once OpenCode is a source, **Show OpenCode sessions** and **Start OpenCode session here**. OpenCode project tiles offer **Browse files**. Image files (PNG, JPEG, GIF, WebP, AVIF, BMP, ICO, SVG up to 25 MB) open in an image viewer; SVG renders as an image, so scripts never run.
+
+Terminal tiles run your login shell in a real pseudo-terminal via the system `script` command (macOS and Linux; no native modules). Shelving keeps the shell running; closing the tile ends it. After a restart the tile comes back and starts a fresh shell in the same folder. While a terminal has focus, plain Ctrl chords (Ctrl+W, Ctrl+L, Ctrl+K…) go to the shell; Super / Ctrl+Alt chords still manage tiles.
 
 Local file access is read-only, through the main process. Symlink targets resolve to canonical identities before opening. Directory listings are bounded at 1,000 entries; text previews at 256 KiB. Binary/non-UTF-8 files and system pseudo-files are not previewed. HTML/scripts are displayed as inert text, not executed. File content is not stored in desktop persistence; paths and tile ownership survive restart, then contents reload. **Files are local to the desktop machine**; an OpenCode server's remote-only path may not exist locally. This is a navigator/text reader, not a file editor or recursive indexed filesystem search.
 
@@ -160,7 +172,7 @@ Requests use fixed HTTPS provider endpoints with bearer tokens in headers only, 
 
 ### Native Front workflow
 
-1. In Settings → Front, save your scoped API token, then click **Open Front API inbox**. The Home Front shortcut and `front` / `mail` in the launcher also open it.
+1. In K, type `add front`, paste your scoped API token and press Enter. It is checked, and Front becomes a source. `front` / `mail` in K open the inbox; **Settings → Sources → Front** has the token, filters and **Open Front API inbox**.
 2. Optionally save **your email, Front teammate ID and tag ID** under Personal mail filters. The native inbox then provides **Addressed to me**, **Assigned to me**, **Mentions**, **Tagged**, and **Replies to my mail** buttons. Front needs `tea_…` and `tag_…` IDs rather than names.
 3. Select a conversation with the mouse, or use ↑/↓ and Enter in the list. Its native message tile shows sender/recipients, message text, status, tags and attachment names. No Front web view is loaded.
 4. Each query is its own unique, persistable tile. Reopen `mail to:you@example.com`, `mail mention:tea_YOUR_ID`, `mail tag:tag_TAG_ID` or `mail author:tea_YOUR_ID is:unreplied` to go to that list. Use the shared pencil to give it a short name, e.g. **Mail · replies**.
@@ -176,11 +188,11 @@ Select text in a browser and use **Ctrl+.** to add only that selection to its li
 
 ## OpenCode connection
 
-Automatic discovery keeps local service credentials in the main process. Manual URLs/tokens in connection settings apply to the current run. Remote services require HTTPS. Environment overrides: `CHATOS_SERVER_URL`, `CHATOS_SERVER_TOKEN` and `CHATOS_DIRECTORY`.
+Add it with `add opencode` in K. Automatic discovery keeps local service credentials in the main process. A manual URL is remembered; its token is stored with OS encryption (memory only without a secure store). Remote services require HTTPS. Environment overrides: `CHATOS_SERVER_URL`, `CHATOS_SERVER_TOKEN` and `CHATOS_DIRECTORY`.
 
 Existing managed Basic-auth services should use auto-discovery rather than a bare manual URL. Browser tiles remain usable when OpenCode is disconnected.
 
-For SSH forwarding, turn off automatic discovery and enter `http://127.0.0.1:LOCAL_PORT` in Settings. HTTP is allowed for loopback; SSH encrypts the remote hop. Server authentication still applies. Example: `ssh -N -L 4096:127.0.0.1:4096 user@server` when OpenCode listens on port 4096 on the remote machine. Adjust both ports as needed; the server can stay bound to its loopback interface.
+For SSH forwarding, choose **Connect to a server URL** in `add opencode` and enter `http://127.0.0.1:LOCAL_PORT`. HTTP is allowed for loopback; SSH encrypts the remote hop. Server authentication still applies. Example: `ssh -N -L 4096:127.0.0.1:4096 user@server` when OpenCode listens on port 4096 on the remote machine. Adjust both ports as needed; the server can stay bound to its loopback interface.
 
 ## Checks
 

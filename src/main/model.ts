@@ -1,5 +1,5 @@
 import { convert } from 'html-to-text'
-import { modelSettings, discoveryPlan, isLoopbackURL, type ModelInfo, type ModelProbe, type ModelSettings, type DiscoveryResult, type DiscoveryTurn } from '../shared/model'
+import { modelSettings, discoveryPlan, isLoopbackURL, opencodeModelRef, type OpenCodeModels, type ModelInfo, type ModelProbe, type ModelSettings, type DiscoveryResult, type DiscoveryTurn } from '../shared/model'
 import { connectorBaseURL, exampleConnector } from '../shared/connectors'
 import { connectorFetch, checkDestination } from './connector-network'
 import type { SecretStorage } from './services'
@@ -24,7 +24,7 @@ export class ModelBroker {
   private settings?: ModelSettings
   private encrypted = false
   private saving = false
-  constructor(private store: Storage, private secrets: SecretStorage, private confirm: Confirm, private fetcher = connectorFetch, private destinationCheck = checkDestination) {
+  constructor(private store: Storage, private secrets: SecretStorage, private confirm: Confirm, private fetcher = connectorFetch, private destinationCheck = checkDestination, private opencode?: OpenCodeModels) {
     const saved = store.get('model')
     if (saved) this.settings = modelSettings(JSON.parse(saved))
     const secret = store.secret('model:api-key')
@@ -34,6 +34,7 @@ export class ModelBroker {
   }
   info(): ModelInfo {
     const s = this.settings
+    if (s?.provider === 'opencode') return { provider: 'opencode', baseURL: '', model: s.model, configured: true, local: false, ready: Boolean(this.opencode?.connected()), skipped: this.store.get('model-skipped') === '1', tokenStorage: 'none' }
     const local = Boolean(s && isLoopbackURL(s.baseURL))
     return {
       baseURL: s?.baseURL || 'https://api.openai.com/v1', model: s?.model || '', configured: Boolean(s), local,
@@ -72,6 +73,13 @@ export class ModelBroker {
     this.saving = true
     try {
       const settings = modelSettings(raw)
+      if (settings.provider === 'opencode') {
+        if (!this.opencode?.connected()) throw new Error('Connect OpenCode first: Super+K → add opencode')
+        if (!await this.confirm('Use this model through OpenCode?', `Model: ${settings.model}\n\nK sends what you type in K, and documentation it reads, to your OpenCode service, which passes it to this model with the account OpenCode is signed into (for example a ChatGPT subscription). Service tokens are never sent. AI proposes plans and mappings; it cannot execute actions.`)) throw new Error('Model setup cancelled')
+        this.store.saveModel(JSON.stringify(settings), undefined)
+        this.settings = settings; this.token = undefined; this.encrypted = false
+        return this.info()
+      }
       if (!validKey(raw.apiKey)) throw new Error('Invalid API key')
       const token = this.keyFor(settings.baseURL, raw.apiKey)
       if (!token && !isLoopbackURL(settings.baseURL)) throw new Error('Enter an API key for this model destination')
@@ -92,6 +100,11 @@ export class ModelBroker {
     if (!this.info().ready || !this.settings) throw new Error('Connect a model first: Super+K, then “model”.')
     if (typeof prompt !== 'string' || prompt.length > 160_000) throw new Error('Model input is too large')
     const settings = this.settings, token = this.token
+    if (settings.provider === 'opencode') {
+      const text = await this.opencode!.generate(prompt, opencodeModelRef(settings.model))
+      if (typeof text !== 'string' || !text.trim() || text.length > 100_000) throw new Error('Model did not return a bounded text response')
+      return text
+    }
     const response = await this.fetcher(`${settings.baseURL}/chat/completions`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
       body: JSON.stringify({ model: settings.model, messages: [{ role: 'user', content: prompt }], max_completion_tokens: 6000 }),

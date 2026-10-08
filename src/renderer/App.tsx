@@ -106,7 +106,7 @@ export default function App() {
   const visible = w?.tileIDs.map(id => desktop.tiles.find(t => t.id === id)!).filter(t => !w.fullscreenID || t.id === w.fullscreenID) || []
   const knownSessions = useMemo(() => Object.values(data.sessions).sort((a, b) => b.time.updated - a.time.updated), [data.sessions])
   const home = data.snapshot?.home || ''
-  const firstRun = Boolean(model && !model.ready && !model.skipped)
+  const firstRun = Boolean(model && !model.configured && !model.skipped)
   const firstRunRef = useRef(firstRun); firstRunRef.current = firstRun
   const projects = useMemo(() => {
     const items: ProjectEntry[] = (data.connection.connected ? data.snapshot?.projects || [] : []).filter(p => p.canonical !== '/').map(p => ({ id: p.id, projectID: p.id, name: p.name || basename(p.canonical), directory: p.canonical, vcs: p.vcs }))
@@ -121,8 +121,10 @@ export default function App() {
   useEffect(() => { void api.connectors().then(setConnectors).catch(e => reportError(friendlyError(e))) }, [reportError])
   useEffect(() => {
     // A0: the only thing first launch asks for is a model for K.
-    void api.modelInfo().then(info => { setModel(info); if (!info.ready && !info.skipped) setOverlay('launcher') }).catch(e => reportError(friendlyError(e)))
+    void api.modelInfo().then(info => { setModel(info); if (!info.configured && !info.skipped) setOverlay('launcher') }).catch(e => reportError(friendlyError(e)))
   }, [reportError])
+  // A model reached through OpenCode is ready only while OpenCode is connected.
+  useEffect(() => { void api.modelInfo().then(setModel).catch(() => {}) }, [data.connection.connected])
 
   useEffect(() => {
     if (boot.error) return // Never overwrite a database whose startup read failed.
@@ -180,11 +182,11 @@ export default function App() {
     notify(close ? tile?.kind === 'terminal' ? 'Terminal closed and its shell ended.' : 'Tile closed locally. Server sessions keep running; search reopens it.' : 'Moved to the shelf. Super+= brings it back.')
   }, [notify, reportError])
   /** A5: a terminal opens in the folder of the focused tile, or home. */
-  const openTerminal = useCallback((directory?: string, mode: OpenMode = 'here') => {
+  const openTerminal = useCallback((directory?: string, mode: OpenMode = 'here', command?: string) => {
     const tile = focusedTile(ref.current)
     const folder = directory || (tile?.kind === 'file' ? tile.path!.replace(/\/[^/]*$/, '') : tile?.directory) || home
     if (!folder) { reportError('Choose a folder first.'); return }
-    try { open(terminalTile(folder), mode); notify(`Terminal opened in ${folder.startsWith(home) && home ? `~${folder.slice(home.length)}` : folder}${!directory && tile?.directory ? ', the focused folder' : ''}`, false, 'Super+T') } catch (e) { reportError(friendlyError(e)) }
+    try { open({ ...terminalTile(folder), ...(command && { draft: command }) }, mode); notify(`Terminal opened in ${folder.startsWith(home) && home ? `~${folder.slice(home.length)}` : folder}${!directory && tile?.directory ? ', the focused folder' : ''}`, false, 'Super+T') } catch (e) { reportError(friendlyError(e)) }
   }, [home, open, notify, reportError])
   const newSession = useCallback(async (chosenDirectory?: string, mode: OpenMode = 'here', withProject = false, message?: string) => {
     if (!data.connection.connected) { ask('add opencode'); return }
@@ -335,7 +337,7 @@ export default function App() {
 
   const shelf = shelfTiles(desktop)
   const sourceStatus = [
-    ...(model?.ready ? [{ key: 'model', name: model.model, ok: true, label: 'Model' }] : []),
+    ...(model?.configured ? [{ key: 'model', name: model.model.split('/').pop()!, ok: model.ready, label: 'Model' }] : []),
     ...(data.connection.enabled ? [{ key: 'opencode', name: 'opencode', ok: data.connection.connected, label: 'OpenCode source' }] : []),
     ...addedServices.map(s => ({ key: s.id, name: s.id, ok: s.hasToken, label: `${s.name} source` })),
     ...connectors.map(c => ({ key: c.definition.id, name: c.definition.id, ok: c.hasToken || c.definition.auth.type === 'none', label: `${c.definition.name} source` })),
@@ -375,7 +377,7 @@ export default function App() {
               : tile.kind === 'projects' ? <div className="recipe-body"><div className="recipe-toolbar">OpenCode · Projects · rows open independent session-list tiles</div><div className="recipe-content">{projects.filter(p => p.projectID).map(project => <button className="recipe-list-row" key={project.id} onClick={() => open(projectTile(project.directory, project.name))}><strong>{project.name}</strong><small>{project.directory}</small></button>)}</div></div>
               : tile.kind === 'recipe' ? <RecipeBody tile={tile} connectors={connectors} visible={visible.some(t => t.id === tile.id)} open={open} change={patch => changeTile(tile.id, patch)} settings={() => { setConnectorDraft({ id: tile.resource?.connectorID }); setOverlay('connectors') }} />
               : tile.kind === 'folder' || tile.kind === 'file' ? <FileBody tile={tile} open={open} create={directory => void newSession(directory)} terminal={directory => openTerminal(directory)} opencode={data.connection.connected} />
-              : tile.kind === 'terminal' ? <TerminalBody tile={tile} visible={visible.some(t => t.id === tile.id)} focused={focused?.id === tile.id} focusKey={focusKey} />
+              : tile.kind === 'terminal' ? <TerminalBody tile={tile} visible={visible.some(t => t.id === tile.id)} focused={focused?.id === tile.id} focusKey={focusKey} consumeDraft={() => changeTile(tile.id, { draft: '' })} />
               : tile.kind === 'front-list' ? <FrontInbox tile={tile} visible={visible.some(t => t.id === tile.id)} account={services.find(s => s.id === 'front')} open={open} settings={() => ask('add front')} web={() => openURL(services.find(s => s.id === 'front')?.url || 'https://app.frontapp.com/')} />
               : tile.kind === 'front-conversation' ? <FrontConversationBody tile={tile} visible={visible.some(t => t.id === tile.id)} account={services.find(s => s.id === 'front')} settings={() => ask('add front')} web={() => { changeTile(tile.id, { kind: 'browser', label: tile.label || tile.title }); focus(tile.id) }} />
               : tile.kind === 'review' ? data.connection.connected && <Review directory={tile.directory || ''} reportError={reportError} />
@@ -388,10 +390,10 @@ export default function App() {
       tidy={id => { setDesktop(s => tidyAround(focusTile(s, id), id)); notify('Other tiles shelved. Undo arrangement restores them.') }} undo={() => setDesktop(undoArrangement)} close={() => { if (!firstRun) { setOverlay(null); setLauncherSource(undefined); setLauncherQuery(undefined) } }}
       serviceLinks={serviceLinks} initialSource={launcherSource} initialQuery={launcherQuery} availableSources={availableSources} connection={data.connection} projectCount={data.snapshot?.projects.length || 0}
       connectors={connectors} connectorsChanged={setConnectors} adjustConnector={definition => { setConnectorDraft({ definition }); setOverlay('connectors') }}
-      services={services} servicesChanged={setServices} model={model} modelChanged={info => { setModel(info) }} firstRun={firstRun} reconnect={reconnect} home={home} />}
+      services={services} servicesChanged={setServices} model={model} modelChanged={info => { setModel(info) }} firstRun={firstRun} reconnect={reconnect} home={home} signIn={command => { setOverlay(null); openTerminal(home, 'here', command) }} />}
     {overlay === 'overview' && <TileOverview desktop={desktop} waiting={data.waiting} focus={focus} move={move} go={go} close={() => setOverlay(null)} />}
     {overlay === 'address' && <AddressDialog submit={url => openURL(url, focused?.kind === 'session' ? focused.id : focused?.linkID)} close={() => setOverlay(null)} />}
-    {overlay === 'settings' && <SettingsDialog model={model} modelChanged={setModel} connection={data.connection} reconnect={() => reconnect()} disconnectOpenCode={async () => { await api.opencodeDisconnect(); await data.load() }} services={services} servicesChanged={setServices} connectors={connectors} manageConnector={id => { setConnectorDraft({ id }); setOverlay('connectors') }} addSource={query => ask(query)} openURL={url => { openURL(url); setOverlay(null) }} openFront={() => { open(frontInboxTile('is:open', 'Front · API inbox')); setOverlay(null) }} close={() => setOverlay(null)} platform={data.snapshot?.platform || ''} />}
+    {overlay === 'settings' && <SettingsDialog model={model} modelChanged={setModel} home={home} signIn={command => { setOverlay(null); openTerminal(home, 'here', command) }} reconnectWith={reconnect} connection={data.connection} reconnect={() => reconnect()} disconnectOpenCode={async () => { await api.opencodeDisconnect(); await data.load() }} services={services} servicesChanged={setServices} connectors={connectors} manageConnector={id => { setConnectorDraft({ id }); setOverlay('connectors') }} addSource={query => ask(query)} openURL={url => { openURL(url); setOverlay(null) }} openFront={() => { open(frontInboxTile('is:open', 'Front · API inbox')); setOverlay(null) }} close={() => setOverlay(null)} platform={data.snapshot?.platform || ''} />}
     {overlay === 'connectors' && <ConnectorSettings connectors={connectors} changed={setConnectors} open={open} close={() => { setOverlay(null); setConnectorDraft({}) }} initialID={connectorDraft.id || focused?.resource?.connectorID} initialDefinition={connectorDraft.definition} modelReady={!!model?.ready} />}
     {overlay === 'rename' && renameID && <RenameDialog title={tileTitle(desktop.tiles.find(t => t.id === renameID) || { title: '' })} label={desktop.tiles.find(t => t.id === renameID)?.kind === 'session' ? 'Session name' : 'Tile name'} submit={async title => { try { const tile = ref.current.tiles.find(t => t.id === renameID); if (!tile) throw new Error('This tile is no longer available.'); if (tile.kind === 'session') data.ingest([await api.renameSession(tile.sessionID!, title)]); else changeTile(tile.id, { label: title.trim() }); setOverlay(null) } catch (e) { reportError(friendlyError(e)) } }} close={() => setOverlay(null)} />}
     {overlay === 'send-page' && pageContext && <SendPage page={pageContext} sessions={knownSessions} send={(session, note) => { setDesktop(s => { let next = s; let tile = next.tiles.find(t => t.kind === 'session' && t.sessionID === session.id); if (!tile) { next = openTile(next, sessionTile(session)); tile = next.tiles.find(t => t.id === session.id)! } return updateTile(next, tile.id, { draft: note ? `${tile.draft}${tile.draft ? '\n' : ''}${note}` : tile.draft, context: [...tile.context, { id: uid(), kind: 'page', name: pageContext.title || pageContext.url, text: `URL: ${pageContext.url}\n\n${pageContext.text}` }] }) }); notify(`Page added to ${sessionTitle(session)}’s draft. Nothing sent.`) }} close={() => setOverlay(null)} />}

@@ -183,7 +183,11 @@ async function createWindow() {
     if (!window) return false
     return (await dialog.showMessageBox(window, { type: 'question', title, message: title, detail, buttons: ['Cancel', 'Approve'], defaultId: 0, cancelId: 0, noLink: true })).response === 1
   }
-  model ||= new ModelBroker(storage, secrets, confirm)
+  // K can also use a model your OpenCode service is signed into, e.g. a ChatGPT subscription.
+  model ||= new ModelBroker(storage, secrets, confirm, undefined, undefined, {
+    connected: () => Boolean(bridge?.connection.connected),
+    generate: (prompt, ref) => { if (!bridge) throw new Error('OpenCode is not connected'); return bridge.generateText(prompt, ref) },
+  })
   connectors ||= new Connectors(storage, secrets, confirm, prompt => model!.generate(prompt), undefined, undefined, url => shell.openExternal(url))
   registerIPC()
   files.warm(homedir())

@@ -42,6 +42,7 @@ export async function fixtureServer(options?: { requestLimit?: number; createDel
     const json = (data: unknown) => { response.writeHead(200, { 'Content-Type': 'application/json' }); response.end(JSON.stringify(data)) }
     const done = () => { response.writeHead(204); response.end() }
     if (path === '/api/info') return json({ version: '2.0.24', pid: process.pid, urls: [], paths: { tmp: '/tmp/opencode' } })
+    if (path === '/api/experimental/generate' && options?.generate) return json({ data: { text: options.generate(String(body.prompt)) } })
     // OpenAI-compatible model endpoint for K (base URL: `${url}/v1`).
     if (path === '/v1/models') return json({ object: 'list', data: [{ id: 'fixture-embedding' }, { id: 'fixture-chat' }] })
     if (path === '/v1/chat/completions' && options?.generate) {

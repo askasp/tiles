@@ -34,10 +34,16 @@ export function preferredModel(models: string[], current?: string) {
 }
 
 /** A0: the one thing first launch asks for. Any OpenAI-compatible endpoint, or a local model. */
-export function ModelSetup({ info, firstRun, saved, skip, enter, embedded }: { info?: ModelInfo; firstRun: boolean; saved: (info: ModelInfo) => void; skip?: () => void; enter?: EnterRef; embedded?: boolean }) {
-  const [baseURL, setBaseURL] = useState(info?.configured ? info.baseURL : 'https://api.openai.com/v1')
+export interface ViaOpenCode { connection: ConnectionInfo; reconnect: (settings?: { url?: string; token?: string }) => Promise<void>; home: string; signIn: (command: string) => void }
+export function ModelSetup({ info, firstRun, saved, skip, enter, embedded, opencode }: { info?: ModelInfo; firstRun: boolean; saved: (info: ModelInfo) => void; skip?: () => void; enter?: EnterRef; embedded?: boolean; opencode?: ViaOpenCode }) {
+  const [via, setVia] = useState<'api' | 'opencode'>(info?.provider === 'opencode' ? 'opencode' : 'api')
+  if (via === 'opencode' && opencode) return <OpenCodeModelSetup info={info} firstRun={firstRun} saved={saved} skip={skip} enter={enter} embedded={embedded} opencode={opencode} back={() => setVia('api')} />
+  return <APIModelSetup info={info} firstRun={firstRun} saved={saved} skip={skip} enter={enter} embedded={embedded} subscription={opencode ? () => setVia('opencode') : undefined} />
+}
+function APIModelSetup({ info, firstRun, saved, skip, enter, embedded, subscription }: { info?: ModelInfo; firstRun: boolean; saved: (info: ModelInfo) => void; skip?: () => void; enter?: EnterRef; embedded?: boolean; subscription?: () => void }) {
+  const [baseURL, setBaseURL] = useState(info?.configured && info.provider !== 'opencode' ? info.baseURL : 'https://api.openai.com/v1')
   const [apiKey, setAPIKey] = useState('')
-  const [model, setModel] = useState(info?.model || '')
+  const [model, setModel] = useState(info?.provider === 'opencode' ? '' : info?.model || '')
   const [probe, setProbe] = useState<ModelProbe>()
   const [checking, setChecking] = useState(false)
   const [error, setError] = useState('')
@@ -70,6 +76,7 @@ export function ModelSetup({ info, firstRun, saved, skip, enter, embedded }: { i
   const rows = [
     { key: 'connect', icon: 'ai', title: busy ? 'Connecting…' : 'Connect', source: 'Model', subtitle: model ? `${model} · checks the key and saves it` : 'pick a model once the key is checked', action: 'Connect', run: () => void connect(), disabled: !canConnect },
     ...(!local ? [{ key: 'local', icon: 'ai', title: 'Use a local model instead', source: 'Model', subtitle: `e.g. Ollama at ${localModelURL}, no key`, action: 'Set up', run: useLocal, disabled: false }] : [{ key: 'remote', icon: 'ai', title: 'Use a hosted endpoint instead', source: 'Model', subtitle: 'OpenAI, OpenRouter, Groq, Together… any OpenAI-compatible API', action: 'Set up', run: () => { setBaseURL('https://api.openai.com/v1'); setModel('') }, disabled: false }]),
+    ...(subscription ? [{ key: 'subscription', icon: 'opencode', title: 'Use your ChatGPT subscription', source: 'OpenCode', subtitle: 'or any model your OpenCode is signed into · no API key needed', action: 'Set up', run: subscription, disabled: false }] : []),
     ...(skip ? [{ key: 'skip', icon: 'tile', title: 'Skip for now', source: 'Built in', subtitle: 'Browser, Files and Terminal work without a model. Super+K → “model” sets it up later.', action: 'Skip', run: skip, disabled: false }] : []),
   ]
   const selected = Math.min(choice, rows.length - 1)
@@ -86,7 +93,7 @@ export function ModelSetup({ info, firstRun, saved, skip, enter, embedded }: { i
     </div>
     <KChips items={[{ label: 'Model', value: model || '—' }, { label: 'Used for', value: 'Super+K, connectors, tile mapping' }]} />
     {!embedded ? <div className="k-rows">{rows.map((r, i) => <KRow key={r.key} icon={r.icon} title={r.title} source={r.source} subtitle={r.subtitle} action={r.action} hint={i === selected ? '↵' : ''} selected={i === selected} disabled={r.disabled} onClick={() => { setChoice(i); r.run() }} />)}</div>
-      : <div className="button-row k-buttons"><button className="pill primary" disabled={!canConnect} onClick={() => void connect()}>{busy ? 'Connecting…' : info?.ready ? 'Save model' : 'Connect model'}</button>{!local && <button className="pill" onClick={useLocal}>Use a local model</button>}{info?.tokenStorage !== 'none' && info?.ready && <button className="text-button" onClick={() => void api.forgetModelKey().then(saved).catch(e => setError(friendlyError(e)))}>Forget key</button>}</div>}
+      : <div className="button-row k-buttons"><button className="pill primary" disabled={!canConnect} onClick={() => void connect()}>{busy ? 'Connecting…' : info?.ready ? 'Save model' : 'Connect model'}</button>{!local && <button className="pill" onClick={useLocal}>Use a local model</button>}{subscription && <button className="pill" onClick={subscription}>Use ChatGPT subscription</button>}{info?.tokenStorage !== 'none' && info?.ready && <button className="text-button" onClick={() => void api.forgetModelKey().then(saved).catch(e => setError(friendlyError(e)))}>Forget key</button>}</div>}
     {!embedded && <ModelRowKeys count={rows.length} move={d => setChoice(c => Math.max(0, Math.min(rows.length - 1, c + d)))} />}
   </div>
 }
@@ -101,6 +108,48 @@ function ModelRowKeys({ count, move }: { count: number; move: (delta: number) =>
     return () => document.removeEventListener('keydown', keys, true)
   }, [count, move])
   return null
+}
+
+/** K through OpenCode: whatever OpenCode is signed into, including a ChatGPT Plus/Pro subscription. */
+function OpenCodeModelSetup({ info, firstRun, saved, skip, enter, embedded, opencode, back }: { info?: ModelInfo; firstRun: boolean; saved: (info: ModelInfo) => void; skip?: () => void; enter?: EnterRef; embedded?: boolean; opencode: ViaOpenCode; back: () => void }) {
+  const [models, setModels] = useState<{ value: string; name: string }[]>()
+  const [model, setModel] = useState(info?.provider === 'opencode' ? info.model : '')
+  const [busy, setBusy] = useState(false), [error, setError] = useState(''), [generation, setGeneration] = useState(0)
+  const connected = opencode.connection.connected
+  useEffect(() => {
+    if (!connected) return
+    let valid = true
+    setModels(undefined); setError('')
+    void api.catalog(opencode.home || '/').then(c => {
+      if (!valid) return
+      const list = c.models.filter(m => m.enabled).map(m => ({ value: `${m.providerID}/${m.id}`, name: `${m.name || m.id} · ${m.providerID}` }))
+        .sort((a, b) => Number(b.value.startsWith('openai/')) - Number(a.value.startsWith('openai/')) || a.value.localeCompare(b.value))
+      setModels(list)
+      setModel(current => list.some(m => m.value === current) ? current : list.find(m => m.value.startsWith('openai/') && !/fast|spark|mini/.test(m.value))?.value || list[0]?.value || '')
+    }).catch(e => { if (valid) setError(friendlyError(e)) })
+    return () => { valid = false }
+  }, [connected, opencode.home, generation])
+  const connect = async () => {
+    if (busy || !model) return
+    setBusy(true); setError('')
+    try { saved(await api.saveModel({ provider: 'opencode', baseURL: '', model })) } catch (e) { setError(friendlyError(e)) } finally { setBusy(false) }
+  }
+  if (!connected) return <div className="k-panel" data-model-setup>
+    <KReply>K can use the models your OpenCode is signed into, including a ChatGPT Plus or Pro subscription. First, connect OpenCode:</KReply>
+    <OpenCodeSetup connection={opencode.connection} projects={0} reconnect={opencode.reconnect} enter={enter} done={() => {}} openProjects={() => {}} />
+    <div className="button-row k-buttons"><button className="text-button" onClick={back}>Use an API key instead</button>{skip && <button className="text-button" onClick={skip}>Skip for now</button>}</div>
+  </div>
+  const openai = models?.some(m => m.value.startsWith('openai/'))
+  if (enter) enter.current = () => void connect()
+  return <div className="k-panel" data-model-setup="opencode">
+    {!embedded && <KReply>{models === undefined ? 'Reading the models OpenCode can use…' : openai ? 'These come from OpenCode’s sign-ins. OpenAI models use your ChatGPT subscription if that is how OpenCode signed in.' : 'OpenCode has no OpenAI sign-in yet. Sign in with your ChatGPT account in a terminal, then refresh.'}</KReply>}
+    <div className="k-fields">
+      <label className="k-field"><span>Model through OpenCode</span><span className="k-input">{models?.length ? <select aria-label="OpenCode model" value={model} onChange={e => setModel(e.target.value)}>{models.map(m => <option key={m.value} value={m.value}>{m.name}</option>)}</select> : <input aria-label="OpenCode model" disabled value={models ? 'No models available' : 'Loading…'} readOnly />}<em className="good">{models?.length ? `✓ ${models.length} models` : ''}</em></span></label>
+      <p className="k-note">ChatGPT subscription: run <code>opencode auth login</code>, choose OpenAI, then ChatGPT Plus/Pro. Nothing extra is stored in ChatOS.</p>
+      {error && <p className="k-error" role="alert">{error}</p>}
+    </div>
+    <div className="button-row k-buttons"><button className="pill primary" disabled={busy || !model} onClick={() => void connect()}>{busy ? 'Connecting…' : 'Use this model'}{!embedded && <kbd>↵</kbd>}</button><button className="pill" onClick={() => opencode.signIn('opencode auth login')}>Sign in to ChatGPT in a terminal</button><button className="text-button" onClick={() => setGeneration(g => g + 1)}>Refresh</button><button className="text-button" onClick={back}>Use an API key instead</button>{skip && <button className="text-button" onClick={skip}>Skip for now</button>}</div>
+  </div>
 }
 
 const opencodeMap = [

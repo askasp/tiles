@@ -22,8 +22,8 @@ export function AddressDialog({ initial, submit, close }: { initial?: string; su
   </form></Modal>
 }
 
-export function Settings({ model, modelChanged, connection, reconnect, disconnectOpenCode, services, servicesChanged, connectors, manageConnector, addSource, openURL, openFront, close, platform }: {
-  model?: ModelInfo; modelChanged: (info: ModelInfo) => void;
+export function Settings({ model, modelChanged, home, signIn, reconnectWith, connection, reconnect, disconnectOpenCode, services, servicesChanged, connectors, manageConnector, addSource, openURL, openFront, close, platform }: {
+  model?: ModelInfo; modelChanged: (info: ModelInfo) => void; home: string; signIn: (command: string) => void; reconnectWith: (settings?: { url?: string; token?: string }) => Promise<void>;
   connection: ConnectionInfo; reconnect: () => Promise<void>; disconnectOpenCode: () => Promise<void>;
   services: ServiceInfo[]; servicesChanged: (list: ServiceInfo[]) => void;
   connectors: ConnectorInfo[]; manageConnector: (id?: string) => void; addSource: (query: string) => void;
@@ -36,7 +36,7 @@ export function Settings({ model, modelChanged, connection, reconnect, disconnec
   const where = (u?: string) => { try { return new URL(u || '').host } catch { return u || '' } }
   return <Modal title="Settings" close={close} wide><div className="modal-heading"><Settings2 size={18} /><h2>Settings</h2><span className="muted">Super+,</span><IconButton label="Close settings" onClick={close}><X size={16} /></IconButton></div>
     <div className="settings-grid">
-      <section className="settings-section" aria-label="Model"><h3>Model</h3><p className="muted">Powers K: understanding requests, building connectors and mapping tiles.</p><ModelSetup embedded info={model} firstRun={false} saved={info => { modelChanged(info); setStatus(info.ready ? `Model saved: ${info.model}` : 'Model key forgotten.') }} /></section>
+      <section className="settings-section" aria-label="Model"><h3>Model</h3><p className="muted">Powers K: understanding requests, building connectors and mapping tiles.</p><ModelSetup embedded info={model} firstRun={false} opencode={{ connection, reconnect: reconnectWith, home, signIn }} saved={info => { modelChanged(info); setStatus(info.ready ? `Model saved: ${info.model}` : 'Model key forgotten.') }} /></section>
       <section className="settings-section" aria-label="Sources"><h3>Sources</h3>
         <div className="source-list">
           {sources.filter(s => s.builtin).map(s => <div className="source-row" key={s.id}><Badge icon={s.id} /><span><strong>{s.name}</strong><small>{s.hint}</small></span><em>built in</em></div>)}
