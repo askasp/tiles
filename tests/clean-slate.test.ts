@@ -38,6 +38,9 @@ describe('clean-slate sources', () => {
     expect(restored.tiles.filter(t => t.kind === 'terminal').map(t => t.directory)).toEqual(['/home/me/chatos', '/home/me/chatos'])
     expect(() => terminalTile('relative/path')).toThrow()
   })
+  it('explains what is missing instead of failing silently when no pty backend exists on macOS', () => {
+    expect(() => new Terminals(() => {}, 'darwin', null).open({ id: 't', cwd: '/tmp', cols: 80, rows: 24 })).toThrow('node-pty')
+  })
 })
 
 describe('independent model for K', () => {
@@ -121,9 +124,10 @@ describe('built-in Files and Terminal', () => {
     expect(found.map(f => [f.kind, f.path])).toEqual([['folder', `${home}/code/chatos`], ['file', `${home}/notes/chatos.md`], ['folder', `${home}/code/chatos-docs`]])
     expect(await files.findPaths('c', home)).toEqual([])
   })
-  it.skipIf(process.platform === 'win32')('runs a real pty shell in the requested folder, resizes it and ends it on close', async () => {
+  it.skipIf(process.platform === 'win32').each([['node-pty', undefined], ['script fallback', null]] as const)('runs a real pty shell (%s) in the requested folder, resizes it and ends it on close', async (_name, pty) => {
+    if (pty === null && process.platform !== 'linux') return
     const cwd = temp('chatos-term-'), events: DesktopEvent[] = []
-    const terminals = new Terminals(e => events.push(e))
+    const terminals = pty === null ? new Terminals(e => events.push(e), process.platform, null) : new Terminals(e => events.push(e))
     const output = () => events.filter((e): e is Extract<DesktopEvent, { type: 'terminal' }> => e.type === 'terminal').map(e => e.data).join('')
     const until = async (check: () => boolean) => { for (let i = 0; i < 100 && !check(); i++) await new Promise(r => setTimeout(r, 50)); expect(check()).toBe(true) }
     try {

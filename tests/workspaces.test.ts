@@ -73,7 +73,8 @@ describe('i3-style app shortcuts', () => {
     const input = { type: 'keyDown', key: '2', control: true, alt: true, meta: false, shift: false } as Electron.Input
     expect(shortcutFor(input)).toBe('workspace:2')
     expect(shortcutFor({ ...input, control: false, alt: false, meta: true })).toBe('workspace:2')
-    expect(shortcutFor({ ...input, key: 'q', shift: true })).toBe('close-tile')
+    expect(shortcutFor({ ...input, key: 'w' })).toBe('close-tile')
+    expect(shortcutFor({ ...input, key: 'q', shift: true })).toBeUndefined()
     expect(shortcutFor({ ...input, key: '-' })).toBe('shelf-tile')
     expect(shortcutFor({ ...input, key: 't', alt: false, shift: true })).toBe('restore-closed')
     expect(shortcutFor({ ...input, key: 'enter' })).toBe('promote')

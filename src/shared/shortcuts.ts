@@ -18,7 +18,8 @@ export function shortcutFor(input: Input): string | undefined {
     if (key === 'n') return 'new'
     if (key === 't') return 'new-terminal'
     if (key === ',') return 'settings'
-    if (key === 'q' && input.shift) return 'close-tile'
+    // Cmd+W / Super+W / Ctrl+Alt+W closes a tile, like a tab. (Cmd+Shift+Q belongs to macOS.)
+    if (key === 'w' && !input.shift) return 'close-tile'
     if (key === 'f') return 'fullscreen'
     if (key === '-' || key === 'subtract') return 'shelf-tile'
     if (key === '=' || key === '+' || key === 'add') return 'restore-tile'

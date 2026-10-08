@@ -38,7 +38,7 @@ On Linux, `npm run doctor` checks the installed Electron sandbox helper. If it r
 - Give opaque browser resources a stable local name with the header pencil (e.g. **DM Carl**, **Mail · replies to me**). Search matches the name and original title/URL; browser title changes do not overwrite your name.
 - Workspace numbers stay stable: removing workspace 1 never turns workspace 2 into workspace 1. Empty workspaces disappear when you leave them.
 - Links you open from a session become independent browser tiles linked to that session. Moving or shelving the session takes its previews too. Moving a linked preview also takes its parent; shelving only the preview leaves the session visible.
-- **× shelves a tile.** Closing it with Super+Shift+Q is local too: the OpenCode session continues, its draft remains, and search can reopen it.
+- **× shelves a tile.** Closing it with Cmd+W (Super+W, or Ctrl+Alt+W) is local too: the OpenCode session continues, its draft remains, and search can reopen it.
 - Layout undo restores placement, not old drafts or sent messages. It never undoes server actions.
 - Switching workspaces or shelving keeps mounted tile bodies: chat reading position, partial agent answers and repository review state stay intact during the run.
 
@@ -69,7 +69,7 @@ Browser views have no desktop preload, Node access or app tokens. They use a sha
 | Focus / swap with System keys | System+arrows or H/J/L · System+Shift+arrows |
 | Promote / fullscreen | System+Enter / System+F |
 | Shelf / restore last shelved tile | System+− / System+= |
-| Close | System+Shift+Q / Ctrl+W q |
+| Close tile | Cmd+W (System+W) / Ctrl+W q |
 | Restore last closed tile | Ctrl+Shift+T |
 | Workspace and shelf overview | System+Tab |
 | Go to what is waiting on you | System+U |
@@ -176,7 +176,7 @@ Backups contain private drafts and may retain earlier **encrypted** credentials.
 
 Folders and files are independent native resources, not OpenCode projects or sessions. **Enter navigates the tile in place** (into a subfolder, or into a file), Ctrl+Enter opens beside, and each Files tile has its own Back/Forward history; if the target is already open in another tile, Enter goes there instead. Folder rows support ↑/↓ and Enter, and their filter matches the loaded folder's names. Opening a child or parent goes to its own unique tile; LRU shelving keeps the desktop bounded. Folder tiles offer **Open terminal here**, and, once OpenCode is a source, **Show OpenCode sessions** and **Start OpenCode session here**. OpenCode project tiles offer **Browse files**. Image files (PNG, JPEG, GIF, WebP, AVIF, BMP, ICO, SVG up to 25 MB) open in an image viewer; SVG renders as an image, so scripts never run.
 
-Terminal tiles run your login shell in a real pseudo-terminal via the system `script` command (macOS and Linux; no native modules). Shelving keeps the shell running; closing the tile ends it. After a restart the tile comes back and starts a fresh shell in the same folder. While a terminal has focus, plain Ctrl chords (Ctrl+W, Ctrl+L, Ctrl+K…) go to the shell; Super / Ctrl+Alt chords still manage tiles.
+Terminal tiles run your login shell in a real pseudo-terminal via `@lydell/node-pty` (prebuilt N-API binaries for macOS, Linux and Windows, so nothing is compiled for Electron; packaged builds unpack it from the asar). If it can't load, Linux falls back to the system `script` command; macOS's BSD `script` cannot work without a terminal on its input. Shelving keeps the shell running; closing the tile ends it. After a restart the tile comes back and starts a fresh shell in the same folder. While a terminal has focus, plain Ctrl chords (Ctrl+W, Ctrl+L, Ctrl+K…) go to the shell; Super / Ctrl+Alt chords still manage tiles.
 
 Local file access is read-only, through the main process. Symlink targets resolve to canonical identities before opening. Directory listings are bounded at 1,000 entries; text previews at 256 KiB. Binary/non-UTF-8 files and system pseudo-files are not previewed. HTML/scripts are displayed as inert text, not executed. File content is not stored in desktop persistence; paths and tile ownership survive restart, then contents reload. **Files are local to the desktop machine**; an OpenCode server's remote-only path may not exist locally. This is a navigator/text reader, not a file editor or recursive indexed filesystem search.
 

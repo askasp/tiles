@@ -46,7 +46,11 @@ export function Modal({ title, children, close, wide = false }: { title: string;
       const first = element.querySelector<HTMLElement>('input:not(:disabled), textarea:not(:disabled), select:not(:disabled), button:not(:disabled), [tabindex="0"]')
       ;(first || element).focus()
     }
-    return () => { if (previous.current?.isConnected) previous.current.focus() }
+    // When the window gets the keyboard back (e.g. from a web page), Chromium restores the last
+    // focused element, which may be outside this dialog. The dialog takes it back.
+    const reclaim = () => { const e = dialog.current; if (e && !e.contains(document.activeElement)) (e.querySelector<HTMLElement>('input:not(:disabled), textarea:not(:disabled), select:not(:disabled), button:not(:disabled), [tabindex="0"]') || e).focus() }
+    window.addEventListener('focus', reclaim)
+    return () => { window.removeEventListener('focus', reclaim); if (previous.current?.isConnected) previous.current.focus() }
   }, [])
   return <div className="modal-scrim" onMouseDown={event => { if (event.target === event.currentTarget) close() }}>
     <section ref={dialog} tabIndex={-1} className={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-label={title} onKeyDown={event => {

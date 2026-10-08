@@ -162,7 +162,8 @@ export class OpenCodeBridge {
           throw new Error('Remote servers require HTTPS so credentials and prompts are encrypted.')
         }
         url = parsed.href.replace(/\/$/, '')
-        if (this.settings.token) headers.authorization = `Bearer ${this.settings.token}`
+        // OpenCode servers use Basic auth with the fixed username "opencode" (OPENCODE_SERVER_PASSWORD).
+        if (this.settings.token) headers.authorization = `Basic ${Buffer.from(`opencode:${this.settings.token}`).toString('base64')}`
       }
       const client = OpenCode.make({ baseUrl: url, headers })
       const info = await client.server.info(timeout())

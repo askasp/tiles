@@ -99,7 +99,7 @@ test('clean install: model first, built-ins without any server, OpenCode only on
     await page.keyboard.press('Control+Alt+n')
     await expect(page.locator('[data-kind="terminal"]:visible')).toHaveCount(2)
     await expect(page.locator('[data-kind="terminal"].tile-focused .files-footer')).toContainText(`${home}/code/clean-slate-folder/assets`)
-    await page.keyboard.press('Control+Alt+Shift+q')
+    await page.keyboard.press('Control+Alt+w')
     await expect(page.locator('[data-kind="terminal"]:visible')).toHaveCount(1)
     expect(errors).toEqual([])
 
