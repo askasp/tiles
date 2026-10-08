@@ -16,6 +16,8 @@ export function shortcutFor(input: Input): string | undefined {
     if ((key === 'k' && !input.shift) || key === ' ' || key === 'space') return 'launcher'
     if (key === 'enter') return 'promote'
     if (key === 'n') return 'new-session'
+    if (key === 't') return 'new-terminal'
+    if (key === ',') return 'settings'
     if (key === 'q' && input.shift) return 'close-tile'
     if (key === 'f') return 'fullscreen'
     if (key === '-' || key === 'subtract') return 'shelf-tile'

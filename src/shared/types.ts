@@ -143,8 +143,11 @@ export interface ConnectionInfo {
   version?: string
   error?: string
   automatic: boolean
+  /** OpenCode was added as a source (explicitly, or via CHATOS_SERVER_URL). */
+  enabled?: boolean
   streaming?: boolean
 }
+export interface OpenCodeProbe { binary?: string; version?: string; running?: string; connection: ConnectionInfo }
 
 export interface Snapshot {
   connection: ConnectionInfo
@@ -163,6 +166,8 @@ export type DesktopEvent =
   | { type: 'browser-popup'; workspaceID: string; url: string; tileID?: string }
   | { type: 'tile-focus'; tileID: string }
   | { type: 'shortcut'; action: string }
+  | { type: 'terminal'; id: string; data: string }
+  | { type: 'terminal-exit'; id: string; code: number | null }
 
 export interface BrowserState {
   id: string
@@ -229,6 +234,22 @@ export interface WorkspaceState {
 }
 
 export interface ChatOSAPI {
+  modelInfo(): Promise<import('./model').ModelInfo>
+  saveModel(input: import('./model').ModelSettings & { apiKey?: string }): Promise<import('./model').ModelInfo>
+  forgetModelKey(): Promise<import('./model').ModelInfo>
+  probeModel(input: { baseURL: string; apiKey?: string }): Promise<import('./model').ModelProbe>
+  skipModel(): Promise<import('./model').ModelInfo>
+  discoverSource(turns: import('./model').DiscoveryTurn[]): Promise<import('./model').DiscoveryResult>
+  opencodeProbe(): Promise<OpenCodeProbe>
+  opencodeStart(): Promise<ConnectionInfo>
+  opencodeDisconnect(): Promise<ConnectionInfo>
+  terminalOpen(input: { id: string; cwd: string; cols: number; rows: number }): Promise<{ cwd: string; shell: string; replay: string; alive: boolean }>
+  terminalInput(id: string, data: string): Promise<void>
+  terminalResize(id: string, cols: number, rows: number): Promise<void>
+  terminalClose(id: string): Promise<void>
+  terminalFocus(focused: boolean): Promise<void>
+  findFolders(query: string): Promise<LocalPath[]>
+  readImage(path: string): Promise<{ path: string; size: number; dataURL: string }>
   loadDesktop(legacy?: string | null): string | null
   flushDesktop(raw: string): void
   saveDesktop(raw: string): Promise<void>
@@ -254,6 +275,7 @@ export interface ChatOSAPI {
   saveService(input: { id: ServiceID; url?: string; token?: string; front?: FrontIdentity }): Promise<ServiceInfo>
   validateService(id: ServiceID): Promise<{ ok: boolean; account?: string; error?: string }>
   disconnectService(id: ServiceID): Promise<void>
+  removeService(id: ServiceID): Promise<void>
   bootstrap(): Promise<Snapshot>
   reconnect(settings?: { url?: string; token?: string }): Promise<ConnectionInfo>
   sessions(query?: { directory?: string; project?: string; search?: string; cursor?: string }): Promise<SessionPage>
@@ -287,6 +309,7 @@ export interface TextFile { path: string; text?: string; size: number; truncated
 
 export type ServiceID = 'slack' | 'front' | 'github'
 export interface ServiceInfo {
+  configured?: boolean
   id: ServiceID
   name: string
   url: string

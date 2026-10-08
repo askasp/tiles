@@ -60,7 +60,7 @@ export class Services {
   }
   private info(id: ServiceID): ServiceInfo {
     if (!Object.hasOwn(serviceDefaults, id)) throw new Error('Unknown service')
-    return { id, name: serviceDefaults[id].name, url: this.saved[id]?.url || serviceDefaults[id].url, hasToken: this.tokens.has(id), tokenStorage: this.tokens.has(id) ? this.disk.has(id) ? 'encrypted' : 'session' : 'none', secureStorage: this.secrets.available(), account: this.accounts.get(id), ...(id === 'front' && { front: this.saved[id]?.front || frontIdentity() }) }
+    return { id, name: serviceDefaults[id].name, configured: Boolean(this.saved[id]), url: this.saved[id]?.url || serviceDefaults[id].url, hasToken: this.tokens.has(id), tokenStorage: this.tokens.has(id) ? this.disk.has(id) ? 'encrypted' : 'session' : 'none', secureStorage: this.secrets.available(), account: this.accounts.get(id), ...(id === 'front' && { front: this.saved[id]?.front || frontIdentity() }) }
   }
   async list() { await this.ready; return (Object.keys(serviceDefaults) as ServiceID[]).map(id => this.info(id)) }
   async search(query: string) { await this.ready; return this.searcher.search(query) }
@@ -107,6 +107,15 @@ export class Services {
     this.tokens.delete(id); this.disk.delete(id); this.accounts.delete(id)
     this.searcher.invalidate(id)
     this.saved[id] = { url: this.saved[id]?.url || serviceDefaults[id].url, front: this.saved[id]?.front }
+    await this.persist()
+  }
+  /** Remove the service as a source: token, account and saved settings. Browser cookies are separate. */
+  async remove(id: ServiceID) {
+    await this.ready
+    if (!Object.hasOwn(serviceDefaults, id)) throw new Error('Unknown service')
+    this.tokens.delete(id); this.disk.delete(id); this.accounts.delete(id)
+    this.searcher.invalidate(id)
+    delete this.saved[id]
     await this.persist()
   }
   async validate(id: ServiceID): Promise<{ ok: boolean; account?: string; error?: string }> {

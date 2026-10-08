@@ -35,6 +35,7 @@ export class Storage {
     try { const value = run(); this.db.exec('COMMIT'); return value } catch (e) { this.db.exec('ROLLBACK'); throw e }
   }
   get(key: string): string | null { return this.db.prepare('SELECT value FROM app_state WHERE key=?').get(key)?.value as string || null }
+  delete(key: string) { this.db.prepare('DELETE FROM app_state WHERE key=?').run(key) }
   set(key: string, value: string) { this.db.prepare('INSERT INTO app_state VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at').run(key, value, Date.now()) }
   loadDesktop(legacy?: string | null): string | null {
     const saved = this.get('desktop')
@@ -102,6 +103,9 @@ export class Storage {
       for (const secret of secrets) this.saveSecret(`service:${secret.id}`, secret.encrypted)
       this.set('services', settings)
     })
+  }
+  saveModel(settings: string, encrypted?: Buffer) {
+    this.transaction(() => { this.saveSecret('model:api-key', encrypted); this.set('model', settings) })
   }
   /** Consistent online SQLite backup, including only OS-encrypted credentials. */
   backup(): string {

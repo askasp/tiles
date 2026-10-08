@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { launchDesktop } from './launch'
+import { desktopReady, launchDesktop } from './launch'
 import { fixtureServer } from './fixture'
 
 test('provider results open unique locally named browser tiles and keep owner navigation', async () => {
@@ -17,7 +17,11 @@ test('provider results open unique locally named browser tiles and keep owner na
         resources: [{ service: 'slack', title: 'DM Carl', url: `${url}/preview/opaque-dm`, description: 'Existing DM' }],
       } : { resources: [], error: 'No matching source resources.' })
     }, fixture.url)
-    await expect(page.locator('.project-row').first()).toBeVisible()
+    // Slack is searched only once it was added as a source.
+    await desktopReady(page)
+    await page.evaluate(() => window.chatos.saveService({ id: 'slack', url: 'https://app.slack.com/' }))
+    await page.reload(); await desktopReady(page, { opencode: true })
+    await expect(page.getByRole('button', { name: 'Slack source' })).toBeVisible()
     const open = async (query: string, mode = 'Enter') => {
       await page.getByRole('button', { name: 'Launcher', exact: true }).click()
       const input = page.getByRole('textbox', { name: 'Launcher search' })

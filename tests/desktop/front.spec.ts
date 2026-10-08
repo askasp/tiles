@@ -1,6 +1,6 @@
 import { test, expect, type ElectronApplication } from '@playwright/test'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { launchDesktop } from './launch'
+import { ask, desktopReady, launchDesktop } from './launch'
 import { fixtureServer } from './fixture'
 
 async function mockFront(app: ElectronApplication) {
@@ -28,12 +28,18 @@ test('Front token opens API-native filters, paged conversations and direct messa
   try {
     app = await launchDesktop(env); await mockFront(app)
     let page = await app.firstWindow()
-    await expect(page.locator('.project-row').first()).toBeVisible()
-    await page.getByRole('button', { name: 'Connection settings', exact: true }).click()
+    await desktopReady(page, { opencode: true })
+    // D1: “add front”, paste a token; it is checked (stubbed here) and Front becomes a source.
+    await app.evaluate(({ ipcMain }) => { ipcMain.removeHandler('chatos:validateService'); ipcMain.handle('chatos:validateService', () => ({ ok: true, account: 'me@example.test' })) })
+    await ask(page, 'add front', false)
+    await page.getByRole('textbox', { name: 'Front API token' }).fill('fake-front-private-token')
+    await page.getByRole('textbox', { name: 'Launcher search' }).press('Enter')
+    await expect(page.locator('.k-map')).toContainText('List of conversations')
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('button', { name: 'Front source' })).toBeVisible()
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await page.locator('summary').filter({ hasText: 'Front' }).click()
     const settings = page.locator('.service-card').filter({ has: page.getByRole('textbox', { name: 'Front API token' }) })
-    await settings.getByRole('textbox', { name: 'Front API token' }).fill('fake-front-private-token')
-    await settings.getByRole('button', { name: 'Save token', exact: true }).click()
-    await expect(settings.getByRole('textbox', { name: 'Front API token' })).toHaveValue('')
     await settings.getByRole('textbox', { name: 'Front filter email' }).fill('me@example.test')
     await settings.getByRole('textbox', { name: 'Front teammate ID' }).fill('tea_123')
     await settings.getByRole('textbox', { name: 'Front tag ID' }).fill('tag_abc')
@@ -95,17 +101,19 @@ test('Front token opens API-native filters, paged conversations and direct messa
   } finally { await app?.close(); await fixture.close(); await rm(profile, { recursive: true, force: true }) }
 })
 
-test('Front API inbox gives clear token guidance instead of silently loading a browser', async () => {
+test('Front is not a source until added: mail queries offer setup instead of loading anything', async () => {
   const fixture = await fixtureServer(), profile = await mkdtemp('/tmp/opencode/chatos-front-missing-')
   const env: Record<string, string> = { ...Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => typeof e[1] === 'string')), CHATOS_USER_DATA: profile, CHATOS_SERVER_URL: fixture.url }
   delete env.ELECTRON_RUN_AS_NODE
   const app = await launchDesktop(env), page = await app.firstWindow()
   try {
-    await expect(page.locator('.project-row').first()).toBeVisible()
-    await page.getByRole('button', { name: 'Front · API mail inbox', exact: true }).click()
-    await expect(page.locator('.front-empty')).toContainText('Save your Front token')
-    await expect(page.locator('[data-kind="browser"]')).toHaveCount(0)
-    await page.getByRole('button', { name: 'Front account settings', exact: true }).click()
+    await desktopReady(page, { opencode: true })
+    // Front isn't a source on a clean install: K offers to add it, nothing is loaded.
+    const input = await ask(page, 'mail is:open', false)
+    await expect(page.locator('.launcher-result').first()).toContainText('Add Front')
+    await input.press('Enter')
+    await expect(input).toHaveValue('add front')
     await expect(page.getByRole('textbox', { name: 'Front API token', exact: true })).toBeVisible()
+    await expect(page.locator('[data-kind="browser"], [data-kind="front-list"]')).toHaveCount(0)
   } finally { await app.close(); await fixture.close(); await rm(profile, { recursive: true, force: true }) }
 })

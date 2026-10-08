@@ -1,10 +1,34 @@
 import { OpenCode, type OpenCodeClient } from '@opencode/client'
 import { Service } from '@opencode/client/service'
 import { setTimeout as delay } from 'node:timers/promises'
+import { execFile } from 'node:child_process'
+import { access, constants } from 'node:fs/promises'
+import { delimiter, join } from 'node:path'
+import { homedir } from 'node:os'
 import type {
   ChatOSAPI, ConnectionInfo, DesktopEvent, MessageInfo, MessagePage,
-  SessionDetail, SessionInfo, SessionPage, Snapshot,
+  OpenCodeProbe, SessionDetail, SessionInfo, SessionPage, Snapshot,
 } from '../shared/types'
+
+/** Remembered OpenCode source. Absent means OpenCode is not a source. */
+export interface OpenCodeSettingsStore {
+  load(): { url?: string; token?: string } | undefined
+  save(settings: { url?: string; token?: string } | undefined): void
+}
+
+/** Finds an installed OpenCode 2 CLI without starting anything. */
+export async function findOpenCode(env = process.env): Promise<{ path: string; version: string } | undefined> {
+  const dirs = [...(env.PATH || '').split(delimiter), join(homedir(), '.opencode', 'bin'), join(homedir(), '.local', 'bin'), '/opt/homebrew/bin', '/usr/local/bin'].filter(Boolean)
+  for (const name of ['opencode2', 'opencode']) {
+    for (const dir of [...new Set(dirs)]) {
+      const path = join(dir, name)
+      try { await access(path, constants.X_OK) } catch { continue }
+      const version = await new Promise<string>(resolve => execFile(path, ['--version'], { timeout: 4_000, env: { ...env, NO_COLOR: '1' } }, (error, stdout) => resolve(error ? '' : stdout.trim())))
+      const match = version.match(/(\d+\.\d+\.\d+)/)
+      if (match?.[1].startsWith('2.')) return { path, version: match[1] }
+    }
+  }
+}
 
 const timeout = () => ({ signal: AbortSignal.timeout(20_000) })
 const textLimit = (text: string, max = 60_000) => text.length > max ? `${text.slice(0, max)}\n… (output truncated in ChatOS)` : text
@@ -59,20 +83,55 @@ export class OpenCodeBridge {
   private generation = 0
   private connecting?: Promise<ConnectionInfo>
   private settings: { url?: string; token?: string }
-  connection: ConnectionInfo = { connected: false, automatic: true }
+  private activated: boolean
+  connection: ConnectionInfo = { connected: false, automatic: true, enabled: false }
 
   constructor(
     private readonly emit: (event: DesktopEvent) => void,
     readonly directory: string,
     settings: { url?: string; token?: string } = {},
-  ) { this.settings = settings }
+    private readonly store?: OpenCodeSettingsStore,
+  ) {
+    const saved = settings.url ? undefined : store?.load()
+    this.settings = saved || settings
+    this.activated = Boolean(settings.url || saved)
+    this.connection = { ...this.connection, enabled: this.activated, automatic: !this.settings.url }
+  }
 
   private updateConnection(patch: Partial<ConnectionInfo>) {
     this.connection = { ...this.connection, ...patch }
     this.emit({ type: 'connection', connection: this.connection })
   }
 
+  /** What “add opencode” can offer, without connecting or starting anything. */
+  async probe(): Promise<OpenCodeProbe> {
+    const [binary, running] = await Promise.all([findOpenCode(), Service.discover().catch(() => undefined)])
+    return { binary: binary?.path, version: binary?.version, running: running?.url, connection: this.connection }
+  }
+
+  /** Starts the shared OpenCode background service (the same one the CLI uses), then connects. */
+  async start(): Promise<ConnectionInfo> {
+    const binary = await findOpenCode()
+    if (!binary) throw new Error('OpenCode 2 is not installed. Install it from opencode.ai, then try again.')
+    await Service.ensure({ command: [binary.path, 'serve', '--service'] })
+    return this.connect({})
+  }
+
+  /** Forget OpenCode as a source. The OpenCode service itself keeps running. */
+  disconnect(): ConnectionInfo {
+    this.generation++
+    this.stream?.abort()
+    this.client = undefined
+    this.activated = false
+    this.settings = {}
+    this.store?.save(undefined)
+    this.connection = { connected: false, automatic: true, enabled: false }
+    this.emit({ type: 'connection', connection: this.connection })
+    return this.connection
+  }
+
   connect(settings?: { url?: string; token?: string }): Promise<ConnectionInfo> {
+    this.activated = true
     if (this.connecting && !settings) return this.connecting
     if (settings) this.settings = settings
     const generation = ++this.generation
@@ -84,13 +143,13 @@ export class OpenCodeBridge {
 
   private async connectOnce(generation: number): Promise<ConnectionInfo> {
     const automatic = !this.settings.url
-    this.updateConnection({ connected: false, automatic, error: undefined, streaming: false })
+    this.updateConnection({ connected: false, automatic, enabled: true, error: undefined, streaming: false })
     try {
       let url = this.settings.url
       let headers: Record<string, string> = {}
       if (!url) {
         const endpoint = await Service.discover()
-        if (!endpoint) throw new Error('No running OpenCode 2 service found. Start opencode2, then click Reconnect.')
+        if (!endpoint) throw new Error('No running OpenCode 2 service found. Start it from Super+K → “add opencode”, or enter a server URL.')
         url = endpoint.url
         headers = Service.headers(endpoint) || {}
       } else {
@@ -109,6 +168,8 @@ export class OpenCodeBridge {
       if (!info.version.startsWith('2.')) throw new Error(`This app needs OpenCode 2; the server reports ${info.version}.`)
       if (generation !== this.generation || this.disposed) return this.connection
       this.client = client
+      // Remember the source only once it actually connected.
+      this.store?.save(automatic ? {} : { url, ...(this.settings.token && { token: this.settings.token }) })
       this.updateConnection({ connected: true, url, version: info.version, automatic, error: undefined })
       this.stream = new AbortController()
       void this.consumeEvents(client, generation, this.stream.signal)
@@ -164,9 +225,10 @@ export class OpenCodeBridge {
   }
 
   async bootstrap(home: string, platform: string): Promise<Snapshot> {
-    if (!this.client) await this.connect()
+    // First run is source-neutral. Discovery is an explicit Connect action.
+    if (!this.client && this.activated && !this.connection.error) await this.connect()
     const empty: Snapshot = {
-      connection: this.connection, directory: this.directory, home, platform,
+      connection: this.connection, directory: this.activated ? this.directory : '', home, platform,
       projects: [], sessions: { data: [], cursor: {} }, active: [],
     }
     if (!this.client) return empty
@@ -185,7 +247,10 @@ export class OpenCodeBridge {
     return this.ready().session.list({ ...query, limit: 50, parentID: 'null', ...(!query?.cursor && { order: 'desc' }) }, timeout())
   }
 
-  async activeSessions() { return Object.keys(await this.ready().session.active(timeout())) }
+  async activeSessions() {
+    if (!this.client || !this.connection.connected) return []
+    return Object.keys(await this.client.session.active(timeout()))
+  }
 
   // One-shot generation has no tools and creates/modifies no server sessions.
   async generateText(prompt: string): Promise<string> {

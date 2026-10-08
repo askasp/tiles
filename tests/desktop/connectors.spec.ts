@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { mkdtemp, rm, readFile, stat } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { exampleConnector, type ConnectorDefinition } from '../../src/shared/connectors'
-import { launchDesktop } from './launch'
+import { ask, desktopReady, launchDesktop } from './launch'
 import { fixtureServer } from './fixture'
 
 async function customAPI() {
@@ -26,30 +26,36 @@ async function customAPI() {
 async function launcher(page: Page, query: string) { await page.getByRole('button', { name: 'Launcher', exact: true }).click(); await page.getByRole('textbox', { name: 'Launcher search' }).fill(query) }
 const environment = (profile: string, url: string) => { const env = { ...Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => typeof e[1] === 'string')), CHATOS_USER_DATA: profile, CHATOS_SERVER_URL: url }; delete (env as Record<string, string>).ELECTRON_RUN_AS_NODE; return env }
 
-test('AI proposes an inspectable adapter; reads and writes obey unique identity, approval and durable drafts', async () => {
+test('A0 model setup, then “add helpdesk”: K proposes an inspectable adapter; reads and writes obey unique identity, approval and durable drafts', async () => {
   const api = await customAPI(), profile = await mkdtemp('/tmp/opencode/chatos-generic-ui-')
   const definition = structuredClone(exampleConnector); definition.baseURL = api.url
   definition.operations.push({ id: 'reply', label: 'Send reply', method: 'POST', effect: 'write', path: '/tickets/{id}/reply', body: { text: '{draft}' } })
   definition.recipes[1].actions = [{ label: 'Reply', operation: 'reply' }]
-  const fixture = await fixtureServer({ generate: prompt => prompt.startsWith('Translate') ? '{"searches":[{"connectorID":"helpdesk","recipeID":"inbox","query":"customer"}]}' : JSON.stringify(definition) })
+  const fixture = await fixtureServer({ generate: prompt => prompt.startsWith('Translate') ? '{"searches":[{"connectorID":"helpdesk","recipeID":"inbox","query":"customer"}]}' : prompt.startsWith('You are K') ? JSON.stringify({ kind: 'connector', text: 'Helpdesk has a REST API with bearer tokens. Tickets list and individual conversations.', definition }) : JSON.stringify(definition) })
   const env = environment(profile, fixture.url)
   let app = await launchDesktop(env), page = await app.firstWindow()
   try {
-    await expect(page.locator('.project-row').first()).toBeVisible()
     await app.evaluate(({ dialog, safeStorage }) => { dialog.showMessageBox = (async () => ({ response: 1, checkboxChecked: false })) as typeof dialog.showMessageBox; safeStorage.isEncryptionAvailable = () => false })
-    await page.getByRole('button', { name: 'Add / manage source', exact: true }).click()
-    await page.getByRole('textbox', { name: 'Connector description' }).fill('Helpdesk inbox and tickets')
-    await page.getByRole('textbox', { name: 'Connector API URL' }).fill(api.url)
-    await page.getByRole('textbox', { name: 'Connector API documentation' }).fill('GET /tickets: {data:[{id,subject,status}]}. GET /tickets/{id}: {id,subject,messages:[{body,type,author}]}. POST /tickets/{id}/reply: {text}. Bearer token.')
-    await page.getByRole('button', { name: 'Generate mapping proposal' }).click()
-    await expect(page.getByRole('status')).toContainText('Proposal only')
+    // A0: first launch asks only for a model. A loopback endpoint needs no key.
+    await expect(page.locator('[data-model-setup]')).toBeVisible()
+    await page.getByRole('textbox', { name: 'Model base URL' }).fill(`${fixture.url}/v1`)
+    await expect(page.locator('[data-model-setup]')).toContainText('✓ 2 local models found')
+    await expect(page.getByRole('combobox', { name: 'Model' })).toHaveValue('fixture-chat')
+    await page.getByRole('textbox', { name: 'Launcher search' }).press('Enter')
+    await expect(page.locator('.k-reply')).toContainText('Ready. fixture-chat powers K')
+    await expect(page.getByRole('button', { name: 'Model', exact: true })).toContainText('fixture-chat')
+    // Any API: ask K, inspect the mapping, keep it, then authenticate.
+    const input = await ask(page, 'add helpdesk', false)
+    await expect(page.locator('.launcher-result').first()).toContainText('Add helpdesk')
+    await input.press('Enter')
+    await expect(page.locator('.k-map')).toContainText('Ticket inbox')
     expect(api.requests).toEqual([])
-    await expect(page.locator('.connector-mapping')).toContainText('Separate ticket tile')
-    await page.getByRole('button', { name: 'Keep mapping', exact: false }).click()
-    await expect(page.getByRole('heading', { name: 'Helpdesk · authenticate & open' })).toBeVisible()
+    expect(fixture.requests.filter(r => r.path === '/v1/chat/completions')).toHaveLength(1)
+    await input.press('Enter')
+    await expect(page.locator('[data-connector-setup] p[role="status"]')).toContainText('Mapping kept')
     await page.getByRole('textbox', { name: 'Connector token' }).fill('fake-generic-private-token')
-    await page.getByRole('button', { name: 'Connect token', exact: false }).click()
-    await expect(page.getByRole('textbox', { name: 'Connector token' })).toHaveValue('')
+    await page.getByRole('textbox', { name: 'Connector token' }).press('Enter')
+    await expect(page.locator('[data-connector-setup] p[role="status"]')).toContainText('Token connected')
     await page.getByRole('button', { name: 'Open Ticket inbox', exact: true }).click()
     const list = page.locator('[data-kind="recipe"]:visible').filter({ has: page.locator('.recipe-list-row') })
     await expect(list.locator('.recipe-list-row')).toHaveCount(2)
@@ -66,7 +72,7 @@ test('AI proposes an inspectable adapter; reads and writes obey unique identity,
     await expect(detail.getByRole('textbox', { name: 'Resource action draft' })).toHaveValue('Unsaved customer reply must survive')
     expect(api.requests.filter(r => r.method !== 'GET')).toHaveLength(0)
     await launcher(page, 'find the customer ticket')
-    await page.getByRole('button', { name: 'Ask AI to find…' }).click()
+    await page.getByRole('button', { name: 'Ask K to find…' }).click()
     const found = page.locator('.launcher-result').filter({ has: page.locator('strong', { hasText: /^Private customer thread$/ }) })
     await expect(found).toHaveCount(2) // Ambiguity is shown, not silently resolved.
     await found.first().click()
@@ -75,6 +81,7 @@ test('AI proposes an inspectable adapter; reads and writes obey unique identity,
     expect(fixture.requests.filter(r => r.path.endsWith('/prompt'))).toEqual([])
     await page.screenshot({ path: 'test-results/generated-connector-desktop.png' })
     await app.close(); app = await launchDesktop(env); page = await app.firstWindow()
+    await desktopReady(page)
     detail = page.locator('[data-resource-key="connector:helpdesk:ticket:item:42"]')
     await expect(detail.getByRole('textbox', { name: 'Resource action draft' })).toHaveValue('Unsaved customer reply must survive')
     await expect(detail.getByRole('alert')).toContainText('Connect an API token')
@@ -101,9 +108,10 @@ test('unrelated inventory API uses fixed Table and Timeline renderers and retain
   const app = await launchDesktop(environment(profile, fixture.url)), page = await app.firstWindow()
   const definition: ConnectorDefinition = { version: 1, id: 'inventory', name: 'Inventory', baseURL: api.url, auth: { type: 'none' }, operations: [{ id: 'assets', label: 'Read assets', method: 'GET', effect: 'read', path: '/assets' }, { id: 'asset', label: 'Read asset', method: 'GET', effect: 'read', path: '/assets/{id}' }], recipes: [{ id: 'assets', label: 'Assets', shape: 'collection', view: 'table', operation: 'assets', items: '', idField: 'uuid', titleField: 'name', itemRecipe: 'asset', fields: [{ label: 'Count', path: 'count', kind: 'number' }] }, { id: 'timeline', label: 'Asset timeline', shape: 'collection', view: 'timeline', operation: 'assets', items: '', idField: 'uuid', titleField: 'name', timeField: 'date', itemRecipe: 'asset' }, { id: 'asset', label: 'Asset', shape: 'item', view: 'record', operation: 'asset', idField: 'uuid', titleField: 'name', fields: [{ label: 'Count', path: 'count', kind: 'number' }] }] }
   try {
-    await expect(page.locator('.project-row').first()).toBeVisible()
+    await desktopReady(page)
     await app.evaluate(({ dialog }) => { dialog.showMessageBox = (async () => ({ response: 1, checkboxChecked: false })) as typeof dialog.showMessageBox })
-    await page.getByRole('button', { name: 'Add / manage source', exact: true }).click()
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await page.getByRole('button', { name: 'Write a connector by hand', exact: true }).click()
     await page.getByRole('textbox', { name: 'Connector recipe JSON' }).fill(JSON.stringify(definition))
     await page.getByRole('button', { name: 'Keep mapping', exact: false }).click()
     await page.getByRole('button', { name: 'Open Assets', exact: true }).click()
@@ -126,8 +134,8 @@ test('OpenCode project collection, session collection and session are peer tiles
   const fixture = await fixtureServer(), profile = await mkdtemp('/tmp/opencode/chatos-project-hierarchy-')
   const app = await launchDesktop(environment(profile, fixture.url)), page = await app.firstWindow()
   try {
-    await expect(page.locator('.project-row').first()).toBeVisible()
-    await page.getByRole('button', { name: 'Projects tile', exact: true }).click()
+    await desktopReady(page, { opencode: true })
+    await ask(page, 'opencode projects')
     await page.locator('[data-kind="projects"] .recipe-list-row').filter({ has: page.locator('strong', { hasText: /^chatos$/ }) }).click()
     await page.locator('[data-kind="project"] .session-row').filter({ hasText: 'Consent reload' }).click()
     await expect(page.locator('[data-kind="projects"]:visible')).toHaveCount(1)
@@ -144,12 +152,13 @@ test('registered OAuth connector signs in via PKCE and uses only broker-held cre
   definition.id = 'helpdesk-oauth'; definition.baseURL = api.url
   definition.auth = { type: 'oauth2', oauth: { clientID: 'fake-native-client', authorizationURL: `${api.url}/oauth/authorize`, tokenURL: `${api.url}/oauth/token`, scopes: ['tickets:read'] } }
   try {
-    await expect(page.locator('.project-row').first()).toBeVisible()
+    await desktopReady(page)
     await app.evaluate(({ dialog, shell }) => {
       dialog.showMessageBox = (async () => ({ response: 1, checkboxChecked: false })) as typeof dialog.showMessageBox
       shell.openExternal = async raw => { const auth = new URL(raw), callback = new URL(auth.searchParams.get('redirect_uri')!); callback.searchParams.set('state', auth.searchParams.get('state')!); callback.searchParams.set('code', 'private-fixture-code'); await fetch(callback) }
     })
-    await page.getByRole('button', { name: 'Add / manage source', exact: true }).click()
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await page.getByRole('button', { name: 'Write a connector by hand', exact: true }).click()
     await page.getByRole('textbox', { name: 'Connector recipe JSON' }).fill(JSON.stringify(definition))
     await page.getByRole('button', { name: 'Keep mapping', exact: false }).click()
     await page.getByRole('button', { name: 'Sign in with OAuth', exact: false }).click()

@@ -1,5 +1,6 @@
 @import './chat.css';
 @import './tiles.css';
+@import './k.css';
 
 :root {
   font-family: 'Geist Variable', -apple-system, BlinkMacSystemFont, sans-serif;

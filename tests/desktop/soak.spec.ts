@@ -1,7 +1,7 @@
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtemp, rm, mkdir, appendFile } from 'node:fs/promises'
 import { fixtureServer } from './fixture'
-import { launchDesktop } from './launch'
+import { desktopReady, launchDesktop } from './launch'
 import type { TileDesktop } from '../../src/shared/tiles'
 
 const hours = Number(process.env.CHATOS_SOAK_HOURS || '0')
@@ -21,7 +21,7 @@ test('extended sandboxed workflow soak with continuous UI actions and periodic r
   async function launch() {
     app = await launchDesktop(env); page = await app.firstWindow()
     page.setDefaultTimeout(10_000); page.on('pageerror', e => errors.push(e.message))
-    await expect(page.getByRole('button', { name: 'Launcher', exact: true })).toBeVisible()
+    await desktopReady(page, { opencode: true })
   }
   async function open(query: string, mode = 'Enter') {
     await page.getByRole('button', { name: 'Launcher', exact: true }).click()

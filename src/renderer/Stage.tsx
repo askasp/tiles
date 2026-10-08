@@ -1,9 +1,9 @@
-import { ArrowLeft, ArrowRight, Camera, Check, Columns2, Expand, ExternalLink, Globe, Info, Minus, PanelTop, Plus, RefreshCw, Rows2, Send, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Camera, Check, ExternalLink, Globe, Info, RefreshCw, Send } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { BrowserState, FileDiff, SessionDetail, StageTab, Workspace } from '../shared/types'
-import { basename, normalizeURL, uid } from '../shared/workspaces'
+import type { BrowserState, FileDiff, StageTab } from '../shared/types'
+import { normalizeURL } from '../shared/workspaces'
 import { api, friendlyError } from './data'
-import { IconButton, Status, shortPath } from './ui'
+import { IconButton, Status } from './ui'
 
 export function BrowserPane({ tab, state, openAddress, attachPage, screenshot, standalone, reportError, navigate }: {
   tab: Extract<StageTab, { kind: 'browser' }>; state?: BrowserState; openAddress: (id: string) => void;
@@ -70,71 +70,5 @@ export function Review({ directory, reportError }: { directory: string; reportEr
         <button className={`review-checkbox ${reviewed.includes(file.file) ? 'checked' : ''}`} aria-label={`Mark ${file.file} reviewed`} onClick={() => toggleReviewed(file.file)}>{reviewed.includes(file.file) && <Check size={10} />}</button>
         <button className="review-file-name truncate" title={file.file} onClick={() => setSelected(file.file)}>{file.file}</button><span className="additions">+{file.additions}</span><span className="deletions">−{file.deletions}</span>
       </div>)}</div><div className="diff-content"><div className="diff-file-header">{file?.file}</div><div className="diff-lines">{file?.patch.split('\n').map((line, index) => <div key={index} className={`diff-line ${line.startsWith('+') && !line.startsWith('+++') ? 'added' : line.startsWith('-') && !line.startsWith('---') ? 'removed' : line.startsWith('@@') ? 'hunk' : ''}`}><span className="line-index">{index + 1}</span><code>{line || ' '}</code></div>)}</div></div></div>}
-  </div>
-}
-
-function Details({ detail, workspace, home }: { detail?: SessionDetail; workspace: Workspace; home: string }) {
-  const session = detail?.session
-  return <div className="session-details"><h2>Session details</h2><p className="muted">One session, one workspace. OpenCode keeps running independently of this window.</p>
-    <dl><dt>Project folder</dt><dd>{shortPath(workspace.directory || '', home)}</dd><dt>Agent</dt><dd>{session?.agent || 'Server default'}</dd><dt>Model</dt><dd>{session?.model ? `${session.model.providerID} / ${session.model.id}${session.model.variant ? ` · ${session.model.variant}` : ''}` : 'Server default'}</dd><dt>Created</dt><dd>{session ? new Date(session.time.created).toLocaleString() : '—'}</dd><dt>Session ID</dt><dd>{workspace.sessionID}</dd><dt>Total cost</dt><dd>${(session?.cost || 0).toFixed(4)}</dd><dt>Output tokens</dt><dd>{(session?.tokens.output || 0).toLocaleString()}</dd></dl>
-    <div className="detail-note">Close this workspace with its × button. Reopen it from Home or the launcher—your draft, tabs and layout will still be here.</div>
-  </div>
-}
-
-interface StageProps {
-  workspace: Workspace
-  update: (change: (workspace: Workspace) => Workspace) => void
-  browserStates: Record<string, BrowserState>
-  detail?: SessionDetail
-  home: string
-  newBrowser: () => void
-  openAddress: (id?: string) => void
-  addUtility: (kind: 'review' | 'details') => void
-  selectTab: (id: string) => void
-  closeTab: (id: string) => void
-  split: (direction: 'vertical' | 'horizontal') => void
-  move: () => void
-  attachPage: (id: string) => void
-  screenshot: (id: string) => void
-  reportError: (message: string) => void
-  onPopoverChange: (open: boolean) => void
-}
-
-export function Stage(props: StageProps) {
-  const { workspace } = props
-  const [menu, setMenu] = useState<0 | 1 | null>(null)
-  useEffect(() => { props.onPopoverChange(menu !== null); return () => props.onPopoverChange(false) }, [menu, props.onPopoverChange])
-  const panes = workspace.split ? [0, 1] as const : [0] as const
-  return <div className={`stage ${workspace.split || ''}`}>
-    {panes.filter(pane => !workspace.fullscreen || pane === workspace.focusedPane).map(pane => {
-      const tab = workspace.tabs.find(tab => tab.id === workspace.panes[pane])
-      const tabs = workspace.tabs.filter(tab => (workspace.tabPane[tab.id] ?? 0) === pane)
-      return <section className={`stage-pane ${workspace.focusedPane === pane && workspace.split ? 'focused-pane' : ''}`} key={pane} onMouseDown={() => props.update(w => w.focusedPane === pane ? w : { ...w, focusedPane: pane })}>
-        <header className="stage-tabs">
-          <div className="stage-tab-list">{tabs.map(item => <div className={`stage-tab ${item.id === tab?.id ? 'selected' : ''}`} key={item.id}>
-            <button className="stage-tab-select" onClick={() => props.selectTab(item.id)} title={item.title}>{item.kind === 'browser' ? <Globe size={13} /> : item.kind === 'review' ? <Minus size={13} /> : <Info size={13} />}<span className="truncate">{item.kind === 'browser' ? props.browserStates[item.id]?.title || item.title : item.title}</span></button>
-            <IconButton label={`Close ${item.title} tab`} className="tab-close" onClick={() => props.closeTab(item.id)}><X size={11} /></IconButton>
-          </div>)}</div>
-          <div className="tab-add"><IconButton label="Open a stage tab" onClick={() => setMenu(menu === pane ? null : pane)}><Plus size={15} /></IconButton>
-            {menu === pane && <><div className="menu-dismiss" onClick={() => setMenu(null)} /><div className="popover tab-menu">
-              <button aria-label="Browser" onClick={() => { setMenu(null); props.newBrowser() }}><Globe size={14} />Browser<span>Ctrl+T</span></button>
-              {workspace.kind === 'session' && <><button onClick={() => { setMenu(null); props.addUtility('review') }}><Minus size={14} />Review changes</button><button onClick={() => { setMenu(null); props.addUtility('details') }}><Info size={14} />Session details</button></>}
-            </div></>}
-          </div>
-          <div className="stage-window-controls">
-            {workspace.split && <IconButton label="Move tab to other pane" onClick={props.move}><ArrowRight size={14} /></IconButton>}
-            <IconButton label={workspace.split === 'vertical' ? 'Unsplit stage' : 'Split stage side by side'} className={workspace.split === 'vertical' ? 'active-icon' : ''} onClick={() => props.split('vertical')}><Columns2 size={14} /></IconButton>
-            <IconButton label={workspace.split === 'horizontal' ? 'Unsplit stage' : 'Split stage stacked'} className={workspace.split === 'horizontal' ? 'active-icon' : ''} onClick={() => props.split('horizontal')}><Rows2 size={14} /></IconButton>
-            <IconButton label={workspace.fullscreen ? 'Exit pane fullscreen' : 'Fullscreen pane'} onClick={() => props.update(w => ({ ...w, fullscreen: !w.fullscreen }))}><Expand size={14} /></IconButton>
-          </div>
-        </header>
-        <div className="stage-pane-content">
-          {!tab ? <div className="stage-empty"><PanelTop size={29} strokeWidth={1.2} /><strong>Nothing on the stage yet</strong><span>Keep your conversation on the left.<br />Open a browser or review changes here.</span><div className="button-row"><button className="pill" onClick={props.newBrowser}><Globe size={13} />Open URL<kbd>Ctrl+L</kbd></button>{workspace.kind === 'session' && <button className="pill" onClick={() => props.addUtility('review')}><Minus size={13} />Review changes</button>}</div></div>
-            : tab.kind === 'browser' ? <BrowserPane tab={tab} state={props.browserStates[tab.id]} openAddress={props.openAddress} attachPage={props.attachPage} screenshot={props.screenshot} standalone={workspace.kind === 'web'} reportError={props.reportError} />
-            : tab.kind === 'review' ? <Review directory={workspace.directory || ''} reportError={props.reportError} />
-            : <Details detail={props.detail} workspace={workspace} home={props.home} />}
-        </div>
-      </section>
-    })}
   </div>
 }

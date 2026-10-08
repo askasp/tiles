@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { launchDesktop } from './launch'
+import { ask, desktopReady, launchDesktop } from './launch'
 
 test('live OpenCode: one session tile, shelf, and reopen without changing the session', async () => {
   const profile = await mkdtemp('/tmp/opencode/chatos-desktop-')
@@ -11,8 +11,12 @@ test('live OpenCode: one session tile, shelf, and reopen without changing the se
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   try {
-    await expect(page.getByRole('button', { name: 'Connection settings', exact: true })).toBeVisible()
-    await expect(page.locator('.project-row').first()).toBeVisible()
+    await desktopReady(page)
+    await ask(page, 'add opencode', false)
+    await page.getByRole('button', { name: 'Connect to the running service' }).click()
+    await expect(page.locator('[data-opencode-setup="connected"]')).toBeVisible({ timeout: 20_000 })
+    await page.keyboard.press('Enter')
+    await desktopReady(page, { opencode: true })
     const snapshot = await page.evaluate(() => window.chatos.bootstrap())
     expect(snapshot.connection.connected).toBe(true)
     const idle = snapshot.sessions.data.find(session => !snapshot.active.includes(session.id))!

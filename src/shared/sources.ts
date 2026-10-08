@@ -1,13 +1,30 @@
 import type { TileInput } from './tiles'
 
+/** Browser, Files and Terminal ship with ChatOS. Everything else is a source
+ * the person adds by asking K; until then it is never listed or contacted. */
 export const sources = [
-  { id: 'opencode', name: 'OpenCode', hint: 'Projects and sessions', prefix: 'opencode', kinds: ['projects', 'project', 'session', 'review', 'details'], hosts: [] },
-  { id: 'files', name: 'Files', hint: 'Folders and text files', prefix: 'files', kinds: ['folder', 'file'], hosts: [] },
-  { id: 'front', name: 'Front', hint: 'Inboxes and conversations', prefix: 'mail', kinds: ['front-list', 'front-conversation'], hosts: ['frontapp.com', 'front.com'] },
-  { id: 'slack', name: 'Slack', hint: 'DMs and mentions', prefix: 'slack', kinds: [], hosts: ['slack.com'] },
-  { id: 'github', name: 'GitHub', hint: 'Repositories and PRs', prefix: 'pr', kinds: [], hosts: ['github.com'] },
-  { id: 'web', name: 'Web', hint: 'One tile per URL', prefix: 'web', kinds: ['browser'], hosts: [] },
+  { id: 'web', name: 'Browser', hint: 'One tile per URL', prefix: 'web', kinds: ['browser'], hosts: [], builtin: true },
+  { id: 'files', name: 'Files', hint: 'Folders, text and images', prefix: 'files', kinds: ['folder', 'file'], hosts: [], builtin: true },
+  { id: 'terminal', name: 'Terminal', hint: 'A shell in any folder', prefix: 'terminal', kinds: ['terminal'], hosts: [], builtin: true },
+  { id: 'opencode', name: 'OpenCode', hint: 'Projects and sessions', prefix: 'opencode', kinds: ['projects', 'project', 'session', 'review', 'details'], hosts: [], builtin: false },
+  { id: 'front', name: 'Front', hint: 'Inboxes and conversations', prefix: 'mail', kinds: ['front-list', 'front-conversation'], hosts: ['frontapp.com', 'front.com'], builtin: false },
+  { id: 'slack', name: 'Slack', hint: 'DMs and mentions', prefix: 'slack', kinds: [], hosts: ['slack.com'], builtin: false },
+  { id: 'github', name: 'GitHub', hint: 'Repositories and PRs', prefix: 'pr', kinds: [], hosts: ['github.com'], builtin: false },
 ] as const
+export const builtinSources = sources.filter(s => s.builtin).map(s => s.id)
+/** Sources with a ChatOS adapter; “add <name>” sets them up without AI. */
+export const knownSources = { opencode: 'opencode', front: 'front', frontapp: 'front', slack: 'slack', github: 'github' } as const
+export type KnownSource = typeof knownSources[keyof typeof knownSources]
+
+/** “add front”, “connect github”, “set up linear” → the requested service. */
+export function addIntent(value: string): { name: string; known?: KnownSource } | undefined {
+  const match = value.trim().match(/^(?:add|connect|set ?up|install)(?:\s+(?:a|an|the|my))?\s+(.+?)(?:\s+(?:source|account|connector))?\.?$/i)
+  if (!match || /^(?:a\s+)?model$/i.test(match[1])) return undefined
+  const name = match[1].trim()
+  return { name, known: knownSources[name.toLowerCase().replace(/[^a-z]/g, '') as keyof typeof knownSources] }
+}
+export const modelIntent = (value: string) => /^(?:model|ai model|connect (?:a |the )?model|change (?:the )?model|set ?up (?:a |the )?model)$/i.test(value.trim())
+export const terminalIntent = (value: string) => value.trim().match(/^(?:terminal|shell|term|open (?:a )?terminal|new terminal)(?:\s+(?:in|at|here)\s*(.*))?$/i)
 export type SourceID = typeof sources[number]['id'] | `connector:${string}`
 
 /** Source, resource and action are separate from tile ownership and layout. */
@@ -24,14 +41,14 @@ export function resourceSource(tile: TileInput): SourceID {
 export function resourceAction(tile: TileInput) {
   if (tile.kind === 'recipe') return `${tile.sourceName || tile.resource?.connectorID || 'Connector'} · ${tile.resource?.resourceID ? 'Resource · Open detail' : 'Collection · Browse items'}`
   const source = sources.find(s => s.id === resourceSource(tile))!.name
-  const actions = { folder: 'Folder · Browse files', file: 'File · Read text', projects: 'Projects · Browse projects', project: 'Project · Show sessions', session: 'Session · Open conversation', review: 'Changes · Review diff', details: 'Session · Show details', 'front-list': 'Inbox · Read conversations', 'front-conversation': 'Conversation · Read messages', browser: 'Web page · Open browser' }
+  const actions = { terminal: 'Shell · Open terminal', folder: 'Folder · Browse files', file: 'File · Open', projects: 'Projects · Browse projects', project: 'Project · Show sessions', session: 'Session · Open conversation', review: 'Changes · Review diff', details: 'Session · Show details', 'front-list': 'Inbox · Read conversations', 'front-conversation': 'Conversation · Read messages', browser: 'Web page · Open browser' }
   return `${source} · ${actions[tile.kind]}`
 }
 export function launcherIntent(value: string, selected?: SourceID) {
   let query = value.trim(), source = selected
-  const prefix = query.match(/^(opencode|files|front|mail|slack|dm|github|pr|web)(?:\s+|:\s*)(.*)$/i)
+  const prefix = query.match(/^(opencode|files|front|mail|slack|dm|github|pr|web|browser)(?:\s+|:\s*)(.*)$/i)
   if (prefix) {
-    const aliases: Record<string, SourceID> = { mail: 'front', dm: 'slack', pr: 'github' }
+    const aliases: Record<string, SourceID> = { mail: 'front', dm: 'slack', pr: 'github', browser: 'web' }
     source = aliases[prefix[1].toLowerCase()] || prefix[1].toLowerCase() as SourceID
     query = prefix[2]
   }

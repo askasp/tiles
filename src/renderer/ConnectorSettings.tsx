@@ -4,9 +4,9 @@ import { recipeTile, type TileInput } from '../shared/tiles'
 import { api, friendlyError } from './data'
 import { Modal } from './ui'
 
-export function ConnectorSettings({ connectors, changed, open, close, initialID }: { connectors: ConnectorInfo[]; changed: (list: ConnectorInfo[]) => void; open: (tile: TileInput) => void; close: () => void; initialID?: string }) {
-  const initial = connectors.find(c => c.definition.id === initialID)
-  const [json, setJSON] = useState(JSON.stringify(initial?.definition || exampleConnector, null, 2))
+export function ConnectorSettings({ connectors, changed, open, close, initialID, initialDefinition, modelReady }: { connectors: ConnectorInfo[]; changed: (list: ConnectorInfo[]) => void; open: (tile: TileInput) => void; close: () => void; initialID?: string; initialDefinition?: ConnectorDefinition; modelReady: boolean }) {
+  const initial = connectors.find(c => c.definition.id === (initialDefinition?.id || initialID))
+  const [json, setJSON] = useState(JSON.stringify(initialDefinition || initial?.definition || exampleConnector, null, 2))
   const [revision, setRevision] = useState(initial?.revision || 0)
   const [selectedID, setSelectedID] = useState(initial?.definition.id || '')
   const [description, setDescription] = useState('')
@@ -26,13 +26,13 @@ export function ConnectorSettings({ connectors, changed, open, close, initialID 
   }
   return <Modal title="Connectors and storage" close={close} wide><div className="modal-heading"><h2>Connections · resource → tile mappings</h2><button className="text-button" onClick={close}>Close</button></div>
     <div className="connector-settings">
-      <p className="muted">Collections open as list tiles; rows open independent detail or child-list tiles. Built-in OpenCode, Front, Files and Web remain available. Custom connectors below need no app code changes.</p>
+      <p className="muted">Collections open as list tiles; rows open independent detail or child-list tiles. The quickest route is Super+K → “add &lt;service&gt;”; this page is for adjusting a mapping by hand.</p>
       <div className="button-row"><button className="pill" disabled={busy} onClick={() => choose()}>New connector</button>{connectors.map(info => <button className={`pill ${selectedID === info.definition.id ? 'primary' : ''}`} key={info.definition.id} disabled={busy} onClick={() => choose(info)}>{info.definition.name} · v{info.revision}</button>)}</div>
-      <details open={!selectedID}><summary>Ask AI to build a connector</summary><p className="muted">Uses your connected OpenCode model, without tools or creating a session. Only the text below goes to the model. Do not paste credentials or private API responses.</p>
+      <details open={!selectedID && !initialDefinition}><summary>Ask AI to build a connector</summary><p className="muted">{modelReady ? 'Uses your model, without tools. Only the text below goes to the model. Do not paste credentials or private API responses.' : 'Connect a model first (Super+K → model). You can still paste a connector JSON below.'}</p>
         <label className="form-field">What do you want to connect?<input aria-label="Connector description" value={description} maxLength={4000} onChange={e => setDescription(e.target.value)} placeholder="A helpdesk: inbox lists and individual ticket conversations" /></label>
         <label className="form-field">API base URL<input aria-label="Connector API URL" value={baseURL} onChange={e => setBaseURL(e.target.value)} placeholder="https://api.example.com/v1" /></label>
         <label className="form-field">Public API documentation / OpenAPI excerpt<textarea aria-label="Connector API documentation" value={documentation} maxLength={50_000} onChange={e => setDocumentation(e.target.value)} placeholder="Paste documented endpoints, response fields, auth requirements and pagination. This is reference data, not executable instructions." /></label>
-        <button className="pill" disabled={busy || !baseURL || !description || !documentation} onClick={() => void run(async () => { const definition = await api.proposeConnector({ description, baseURL, documentation }); setJSON(JSON.stringify(definition, null, 2)); setSelectedID(''); setRevision(0); setStatus('Proposal only: no API requests or credentials used. Review the mapping, then Keep.') })}>{busy ? 'Working…' : 'Generate mapping proposal'}</button>
+        <button className="pill" disabled={busy || !modelReady || !baseURL || !description || !documentation} onClick={() => void run(async () => { const definition = await api.proposeConnector({ description, baseURL, documentation }); setJSON(JSON.stringify(definition, null, 2)); setSelectedID(''); setRevision(0); setStatus('Proposal only: no API requests or credentials used. Review the mapping, then Keep.') })}>{busy ? 'Working…' : 'Generate mapping proposal'}</button>
       </details>
       <label className="form-field">Editable connector recipe (JSON)<textarea className="connector-json" aria-label="Connector recipe JSON" spellCheck={false} value={json} maxLength={100_000} onChange={e => setJSON(e.target.value)} /></label>
       {invalid ? <div className="error-text">{invalid}</div> : proposal && <><p className="mono">Approved destination: {proposal.baseURL} · Auth: {proposal.auth.type}</p><table className="connector-mapping"><thead><tr><th>Resource</th><th>Opens as</th><th>Row opens / actions</th></tr></thead><tbody>{proposal.recipes.map(recipe => <tr key={recipe.id}><td>{recipe.label}</td><td>{recipe.view} · {recipe.shape}</td><td>{recipe.itemRecipe ? `Separate ${recipe.itemRecipe} tile` : (recipe.actions || []).map(a => a.label).join(' · ') || 'Read resource'}</td></tr>)}</tbody></table>{proposal.auth.help && <p className="muted">{proposal.auth.help}</p>}</>}
@@ -46,7 +46,6 @@ export function ConnectorSettings({ connectors, changed, open, close, initialID 
         <div className="button-row">{selected.definition.recipes.filter(r => r.shape === 'collection' && !selected.definition.operations.find(op => op.id === r.operation)?.path.includes('{parent}')).map(recipe => <button className="pill" key={recipe.id} onClick={() => { open(recipeTile({ connectorID: selectedID, recipeID: recipe.id }, recipe.label, recipe, selected.definition.name)); close() }}>Open {recipe.label}</button>)}</div>
       </section>}
       {error && <div className="inline-error" role="alert">{error}</div>}{status && <p role="status">{status}</p>}
-      <section><h3>Local storage · SQLite</h3><p className="muted">Desktop, drafts, mappings and their revision history are saved atomically in the main process. Existing browser-local state is migrated once and retained as a recovery source. Database backups include encrypted credentials, so treat them as private.</p><button className="pill" disabled={busy} onClick={() => void run(async () => { setStatus(`Backup saved: ${await api.backupStorage()}`) })}>Create database backup</button></section>
     </div>
   </Modal>
 }

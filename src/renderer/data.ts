@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ConnectionInfo, SessionDetail, SessionInfo, SessionPage, Snapshot } from '../shared/types'
 
 export const api = window.chatos
+/** A folder that can be browsed, and an OpenCode project when OpenCode is a source. */
+export interface ProjectEntry { id: string; directory: string; name: string; projectID?: string; vcs?: string }
 export const friendlyError = (error: unknown) => error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(error)
 
 export function useDesktopData(onError: (message: string) => void) {
@@ -19,6 +21,7 @@ export function useDesktopData(onError: (message: string) => void) {
   const revisions = useRef(new Map<string, number>())
   const mounted = useRef(true)
   const errorRef = useRef(onError)
+  const connected = useRef(false)
   errorRef.current = onError
 
   const ingest = useCallback((items: SessionInfo[]) => {
@@ -30,13 +33,14 @@ export function useDesktopData(onError: (message: string) => void) {
     try {
       const data = await api.bootstrap()
       if (!mounted.current) return
+      connected.current = data.connection.connected
       setSnapshot(data); setConnection(data.connection); setActive(data.active); ingest(data.sessions.data)
     } catch (error) { errorRef.current(friendlyError(error)) }
     finally { if (mounted.current) setLoading(false) }
   }, [ingest])
 
   const refreshSession = useCallback(async (id: string, foreground = false) => {
-    if (busy.current.has(id)) return
+    if (!connected.current || busy.current.has(id)) return
     busy.current.add(id)
     const revision = revisions.current.get(id) || 0
     if (foreground) setLoadingSession(id)
@@ -97,7 +101,15 @@ export function useDesktopData(onError: (message: string) => void) {
     mounted.current = true
     void load()
     const unsubscribe = api.onEvent(event => {
-      if (event.type === 'connection') { setConnection(event.connection); return }
+      if (event.type === 'connection') {
+        connected.current = event.connection.connected; setConnection(event.connection)
+        if (!event.connection.connected) {
+          setActive([]); setWaiting([])
+          for (const timer of pending.current.values()) clearTimeout(timer)
+          pending.current.clear()
+        }
+        return
+      }
       if (event.type !== 'server') return
       const type = String(event.event.type)
       const payload = event.event.data as Record<string, unknown> | undefined
@@ -120,7 +132,7 @@ export function useDesktopData(onError: (message: string) => void) {
       }
     })
     const reconcile = setInterval(() => {
-      if (!document.hidden) {
+      if (connected.current && !document.hidden) {
         void api.activeSessions().then(setActive).catch(() => {})
         for (const id of watched.current) void refreshSession(id)
       }
@@ -131,6 +143,10 @@ export function useDesktopData(onError: (message: string) => void) {
       pending.current.clear()
     }
   }, [load, refreshSession])
+
+  useEffect(() => {
+    if (connection.connected) for (const id of watched.current) void refreshSession(id)
+  }, [connection.connected, refreshSession])
 
   return { snapshot, connection, sessions, active, waiting, details, loading, loadingSession, ingest, load, refreshSession, watchSessions, olderMessages }
 }

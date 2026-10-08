@@ -3,7 +3,8 @@ import { basename, normalizeURL, restoreState, sessionTitle, uid } from './works
 import { frontConversationID, frontURL } from './front'
 import { resourceKey, validateRef, type ResourceRef, type TileRecipe } from './connectors'
 
-export type TileKind = 'session' | 'projects' | 'project' | 'recipe' | 'browser' | 'review' | 'details' | 'front-list' | 'front-conversation' | 'folder' | 'file'
+export type TileKind = 'session' | 'projects' | 'project' | 'recipe' | 'browser' | 'review' | 'details' | 'front-list' | 'front-conversation' | 'folder' | 'file' | 'terminal'
+const tileKinds: TileKind[] = ['session', 'projects', 'project', 'recipe', 'browser', 'review', 'details', 'front-list', 'front-conversation', 'folder', 'file', 'terminal']
 export type OpenMode = 'here' | 'new' | 'move'
 export type Direction = 'left' | 'right' | 'up' | 'down'
 export interface Tile {
@@ -66,6 +67,11 @@ export const fileTile = (path: string, kind: 'folder' | 'file' = 'folder', title
   if (typeof path !== 'string' || !path.startsWith('/') || path.includes('\0')) throw new Error('Use an absolute local path')
   // Real paths are resolved in the main process before opening a Files tile.
   return { key: `${kind}:${path}`, kind, title: title || '/', path, ...(kind === 'folder' && { directory: path }) }
+}
+/** Every terminal is its own resource: a shell started in a folder. */
+export const terminalTile = (directory: string, id: string = uid()): TileInput => {
+  if (typeof directory !== 'string' || !directory.startsWith('/') || directory.includes('\0')) throw new Error('Use an absolute local folder')
+  return { id, key: `terminal:${id}`, kind: 'terminal', title: 'Terminal', directory, path: directory }
 }
 export const browserTile = (url: string, linkID?: string): TileInput => {
   const normalized = normalizeURL(url)
@@ -295,7 +301,7 @@ export function restoreDesktop(raw: string | null, directory = ''): TileDesktop 
     if (parsed.version !== 2 || !Array.isArray(parsed.tiles) || !Array.isArray(parsed.workspaces)) return desktopInitial(directory)
     let s: TileDesktop = { ...desktopInitial(directory), ...parsed, history: [], clock: Number.isFinite(parsed.clock) ? parsed.clock : 0 }
     const keys = new Set<string>(), ids = new Set<string>()
-    s.tiles = s.tiles.filter(t => t && typeof t.id === 'string' && typeof t.key === 'string' && typeof t.title === 'string' && ['session', 'projects', 'project', 'recipe', 'browser', 'review', 'details', 'front-list', 'front-conversation', 'folder', 'file'].includes(t.kind) && ['visible', 'shelf', 'closed'].includes(t.status) && typeof t.draft === 'string' && Array.isArray(t.context)).filter(t => {
+    s.tiles = s.tiles.filter(t => t && typeof t.id === 'string' && typeof t.key === 'string' && typeof t.title === 'string' && tileKinds.includes(t.kind) && ['visible', 'shelf', 'closed'].includes(t.status) && typeof t.draft === 'string' && Array.isArray(t.context)).filter(t => {
       if (t.kind === 'projects') t.key = 'opencode:projects'
       if (t.kind === 'recipe') { try { const input = recipeTile(t.resource!, t.title, { shape: t.resource?.resourceID ? 'item' : 'collection', identity: typeof t.recipeIdentity === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(t.recipeIdentity) ? t.recipeIdentity : undefined, identityScope: t.recipeIdentityScope === 'parent' ? 'parent' : undefined }, typeof t.sourceName === 'string' ? t.sourceName.slice(0, 300) : undefined); Object.assign(t, input) } catch { return false } }
       if (t.kind === 'session') { if (typeof t.sessionID !== 'string' || !t.sessionID) return false; t.key = `session:${t.sessionID}` }
@@ -305,6 +311,7 @@ export function restoreDesktop(raw: string | null, directory = ''): TileDesktop 
       if (t.kind === 'front-list') { if (typeof t.frontQuery !== 'string') return false; try { t.key = frontInboxTile(t.frontQuery).key } catch { return false } }
       if (t.kind === 'front-conversation') { try { const input = frontConversationTile(t.conversationID!); t.key = input.key; t.url = input.url } catch { return false } }
       if (t.kind === 'folder' || t.kind === 'file') { try { const input = fileTile(t.path!, t.kind); t.key = input.key; t.directory = input.directory } catch { return false } }
+      if (t.kind === 'terminal') { try { const input = terminalTile(t.directory!, t.id); t.key = input.key; t.path = input.path } catch { return false } }
       if (ids.has(t.id) || keys.has(t.key)) return false
       ids.add(t.id); keys.add(t.key); return true
     }).map(t => ({ ...t, label: typeof t.label === 'string' ? t.label : undefined,

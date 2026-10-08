@@ -10,6 +10,8 @@ import { Services } from './services'
 import { Files } from './files'
 import { Storage } from './storage'
 import { Connectors } from './connectors'
+import { ModelBroker } from './model'
+import { Terminals } from './terminal'
 
 const here = dirname(fileURLToPath(import.meta.url))
 let window: BrowserWindow | undefined
@@ -18,6 +20,10 @@ let browsers: Browsers | undefined
 let services: Services | undefined
 let storage: Storage | undefined
 let connectors: Connectors | undefined
+let model: ModelBroker | undefined
+let terminals: Terminals | undefined
+// While a terminal has focus, plain Ctrl chords (Ctrl+W, Ctrl+L, Ctrl+K…) belong to the shell.
+let terminalFocused = false
 
 // Tests use an isolated profile; never overwrite the user's desktop state.
 if (process.env.CHATOS_USER_DATA) app.setPath('userData', process.env.CHATOS_USER_DATA)
@@ -47,6 +53,27 @@ function registerIPC() {
   const files = new Files()
   const database = () => { if (!storage) throw new Error('Storage is unavailable'); return storage }
   const recipes = () => { if (!connectors) throw new Error('Connectors are unavailable'); return connectors }
+  const ai = () => { if (!model) throw new Error('AI model is unavailable'); return model }
+  handle('modelInfo', () => ai().info())
+  handle('saveModel', input => ai().save(input))
+  handle('forgetModelKey', () => ai().forget())
+  handle('probeModel', input => ai().probe(input))
+  handle('skipModel', () => ai().skip())
+  handle('discoverSource', turns => ai().discover(turns))
+  handle('opencodeProbe', () => server().probe())
+  handle('opencodeStart', () => server().start())
+  handle('opencodeDisconnect', () => server().disconnect())
+  const shells = () => { if (!terminals) throw new Error('Not ready'); return terminals }
+  handle('terminalOpen', async input => {
+    const folder = await files.inspect(input?.cwd || homedir())
+    return shells().open({ ...input, cwd: folder.kind === 'folder' ? folder.path : dirname(folder.path) })
+  })
+  handle('terminalInput', (id, data) => shells().input(id, data))
+  handle('terminalResize', (id, cols, rows) => shells().resize(id, cols, rows))
+  handle('terminalClose', id => shells().close(id))
+  handle('terminalFocus', focused => { terminalFocused = focused === true })
+  handle('readImage', path => files.image(path))
+  handle('findFolders', query => files.findFolders(query, homedir()))
   for (const channel of ['storage-load', 'storage-flush']) {
     ipcMain.removeAllListeners(`chatos:${channel}`)
     ipcMain.on(`chatos:${channel}`, (event, input) => {
@@ -79,6 +106,7 @@ function registerIPC() {
   handle('saveService', input => integrations().save(input))
   handle('validateService', id => integrations().validate(id))
   handle('disconnectService', id => integrations().disconnect(id))
+  handle('removeService', id => integrations().remove(id))
   handle('bootstrap', () => server().bootstrap(homedir(), process.platform))
   handle('reconnect', settings => server().connect(settings))
   handle('sessions', query => server().sessions(query))
@@ -123,39 +151,63 @@ async function createWindow() {
       webSecurity: true, spellcheck: false,
     },
   })
-  bridge = new OpenCodeBridge(emit, process.env.CHATOS_DIRECTORY || process.cwd(), {
-    url: process.env.CHATOS_SERVER_URL, token: process.env.CHATOS_SERVER_TOKEN,
-  })
-  browsers = new Browsers(window, emit)
   storage ||= new Storage(app.getPath('userData'))
   const secrets = {
     available: () => safeStorage.isEncryptionAvailable() && (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text'),
     encrypt: (value: string) => safeStorage.encryptString(value), decrypt: (value: Buffer) => safeStorage.decryptString(value),
   }
+  const store = storage
+  // OpenCode is a source only once added; the setting survives restarts.
+  bridge = new OpenCodeBridge(emit, process.env.CHATOS_DIRECTORY || process.cwd(), {
+    url: process.env.CHATOS_SERVER_URL, token: process.env.CHATOS_SERVER_TOKEN,
+  }, {
+    load: () => {
+      const raw = store.get('opencode-source')
+      if (!raw) return undefined
+      const saved = JSON.parse(raw) as { url?: string }
+      const secret = store.secret('opencode:token')
+      let token: string | undefined
+      if (secret && secrets.available()) { try { token = secrets.decrypt(secret) } catch { /* Locked keychain: reconnect without the token. */ } }
+      return { ...(typeof saved.url === 'string' && { url: saved.url }), ...(token && { token }) }
+    },
+    save: settings => {
+      if (!settings) { store.saveSecret('opencode:token'); store.delete('opencode-source'); return }
+      store.saveSecret('opencode:token', settings.token && secrets.available() ? secrets.encrypt(settings.token) : undefined)
+      store.set('opencode-source', JSON.stringify({ ...(settings.url && { url: settings.url }) }))
+    },
+  })
+  browsers = new Browsers(window, emit)
+  terminals = new Terminals(emit)
   services ||= new Services(app.getPath('userData'), secrets, fetch, storage)
-  connectors ||= new Connectors(storage, secrets, async (title, detail) => {
+  const confirm = async (title: string, detail: string) => {
     if (!window) return false
     return (await dialog.showMessageBox(window, { type: 'question', title, message: title, detail, buttons: ['Cancel', 'Approve'], defaultId: 0, cancelId: 0, noLink: true })).response === 1
-  }, prompt => { if (!bridge) throw new Error('Connect OpenCode to use its model for proposals'); return bridge.generateText(prompt) }, undefined, undefined, url => shell.openExternal(url))
+  }
+  model ||= new ModelBroker(storage, secrets, confirm)
+  connectors ||= new Connectors(storage, secrets, confirm, prompt => model!.generate(prompt), undefined, undefined, url => shell.openExternal(url))
   registerIPC()
   window.on('ready-to-show', () => window?.show())
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', event => event.preventDefault())
   window.webContents.on('before-input-event', (event, input) => {
     const action = shortcutFor(input)
+    const system = input.meta || (input.control && input.alt)
+    if (action && terminalFocused && !system && action !== 'attach-selection') return
     if (action) { event.preventDefault(); emit({ type: 'shortcut', action }) }
   })
   window.on('closed', () => {
     connectors?.dispose()
     bridge?.dispose()
     browsers?.dispose()
-    window = undefined; bridge = undefined; browsers = undefined
+    terminals?.dispose()
+    window = undefined; bridge = undefined; browsers = undefined; terminals = undefined
   })
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     ...(process.platform === 'darwin' ? [{ label: 'ChatOS', submenu: [{ role: 'about' as const }, { type: 'separator' as const }, { role: 'hide' as const }, { role: 'quit' as const }] }] : []),
     { label: 'File', submenu: [
-      { label: 'New session', click: () => emit({ type: 'shortcut', action: 'new-session' }) },
-      { label: 'Open launcher', click: () => emit({ type: 'shortcut', action: 'launcher' }) },
+      { label: 'Ask or open… (K)', click: () => emit({ type: 'shortcut', action: 'launcher' }) },
+      { label: 'New terminal', click: () => emit({ type: 'shortcut', action: 'new-terminal' }) },
+      { label: 'Settings', click: () => emit({ type: 'shortcut', action: 'settings' }) },
       { label: 'Shelf focused tile (session keeps running)', click: () => emit({ type: 'shortcut', action: 'shelf-tile' }) },
       { type: 'separator' }, { role: 'quit' },
     ] },

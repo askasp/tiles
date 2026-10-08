@@ -1,7 +1,7 @@
 import { test, expect, type ElectronApplication } from '@playwright/test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { fixtureServer } from './fixture'
-import { launchDesktop } from './launch'
+import { desktopReady, launchDesktop, startSession } from './launch'
 
 test('V3 messages, permissions, questions, unique browser, linked move, and restart', async () => {
   const fixture = await fixtureServer()
@@ -15,9 +15,8 @@ test('V3 messages, permissions, questions, unique browser, linked move, and rest
     page.setDefaultTimeout(10_000)
     const errors: string[] = []
     page.on('pageerror', error => errors.push(error.message))
-    await expect(page.locator('.project-row').first()).toBeVisible()
-    await page.getByRole('textbox', { name: 'New session prompt' }).fill('Test the API round trip')
-    await page.getByRole('button', { name: 'Start session', exact: true }).click()
+    await desktopReady(page, { opencode: true })
+    await startSession(page, 'chatos', 'Test the API round trip')
     await expect(page.locator('.assistant-message')).toContainText('Fixture response')
     const id = fixture.sessions[0].id
     expect(fixture.requests.find(r => r.path.endsWith('/prompt'))?.body.text).toBe('Test the API round trip')
@@ -61,7 +60,7 @@ test('V3 messages, permissions, questions, unique browser, linked move, and rest
     await page.getByRole('button', { name: 'Go to waiting session' }).click()
     await expect(page.locator('.resource-tile:visible')).toHaveCount(2)
     await page.getByRole('button', { name: 'Allow once', exact: true }).click()
-    await expect(page.getByRole('button', { name: 'Go to waiting session' })).toContainText('All clear')
+    await expect(page.getByRole('button', { name: 'Go to waiting session' })).toHaveCount(0)
     await page.screenshot({ path: 'test-results/workflow-v3.png' })
     expect(errors).toEqual([])
     await app.close()

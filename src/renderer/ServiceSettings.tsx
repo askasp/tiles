@@ -14,7 +14,7 @@ export function ServiceSettings({ openURL, onChange, openFront }: { openURL: (ur
     <p className="auth-scope-note">App-level OAuth needs registered Slack/Front/GitHub apps, client IDs and redirect URLs. Front lists and messages can use API-native tiles with a token, without browser login. Slack/GitHub bodies and external replies still use web tiles. Verification only checks account identity, not every required read scope.</p>
   </div>
 }
-function ServiceCard({ service, openURL, update, openFront }: { service: ServiceInfo; openURL: (url: string) => void; update: () => Promise<void>; openFront?: () => void }) {
+export function ServiceCard({ service, openURL, update, openFront }: { service: ServiceInfo; openURL: (url: string) => void; update: () => Promise<void>; openFront?: () => void }) {
   const [url, setURL] = useState(service.url)
   const [token, setToken] = useState('')
   const [status, setStatus] = useState('')

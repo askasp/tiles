@@ -3,7 +3,7 @@ import { createServer } from 'vite'
 import { mkdtemp, rm } from 'node:fs/promises'
 import config from '../../electron.vite.config'
 import { fixtureServer } from './fixture'
-import { launchDesktop } from './launch'
+import { desktopReady, launchDesktop } from './launch'
 
 test('development renderer loads with React Fast Refresh and sandboxed preload', async () => {
   const fixture = await fixtureServer()
@@ -18,8 +18,9 @@ test('development renderer loads with React Fast Refresh and sandboxed preload',
     const page = await app.firstWindow()
     const errors: string[] = []
     page.on('pageerror', error => errors.push(error.message))
-    await expect(page.locator('.project-row').first()).toBeVisible()
-    await expect(page.getByRole('textbox', { name: 'New session prompt' })).toBeVisible()
+    await expect(page.locator('[data-model-setup]')).toBeVisible()
+    await desktopReady(page, { opencode: true })
+    await expect(page.getByRole('region', { name: 'Empty desktop' })).toBeVisible()
     await page.screenshot({ path: 'test-results/dev-home.png' })
     expect(errors).toEqual([])
   } finally {

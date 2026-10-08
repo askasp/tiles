@@ -5,6 +5,11 @@ const invoke = <K extends keyof ChatOSAPI>(name: K) =>
   (...args: Parameters<ChatOSAPI[K]>) => ipcRenderer.invoke(`chatos:${name}`, ...args)
 
 const api: ChatOSAPI = {
+  modelInfo: invoke('modelInfo'), saveModel: invoke('saveModel'), forgetModelKey: invoke('forgetModelKey'), discoverSource: invoke('discoverSource'),
+  probeModel: invoke('probeModel'), skipModel: invoke('skipModel'),
+  opencodeProbe: invoke('opencodeProbe'), opencodeStart: invoke('opencodeStart'), opencodeDisconnect: invoke('opencodeDisconnect'),
+  terminalOpen: invoke('terminalOpen'), terminalInput: invoke('terminalInput'), terminalResize: invoke('terminalResize'), terminalClose: invoke('terminalClose'), terminalFocus: invoke('terminalFocus'),
+  readImage: invoke('readImage'), findFolders: invoke('findFolders'),
   loadDesktop: legacy => { const result = ipcRenderer.sendSync('chatos:storage-load', legacy); if (result.error) throw new Error(result.error); return result.value },
   flushDesktop: raw => { const result = ipcRenderer.sendSync('chatos:storage-flush', raw); if (result.error) throw new Error(result.error) },
   saveDesktop: invoke('saveDesktop'), backupStorage: invoke('backupStorage'),
@@ -12,7 +17,7 @@ const api: ChatOSAPI = {
   connectorToken: invoke('connectorToken'), connectorOAuth: invoke('connectorOAuth'), disconnectConnector: invoke('disconnectConnector'), proposeConnector: invoke('proposeConnector'),
   searchConnectors: invoke('searchConnectors'), planConnectorSearch: invoke('planConnectorSearch'), readRecipe: invoke('readRecipe'), recipeAction: invoke('recipeAction'),
   inspectPath: invoke('inspectPath'), listFolder: invoke('listFolder'), readTextFile: invoke('readTextFile'),
-  services: invoke('services'), saveService: invoke('saveService'), validateService: invoke('validateService'), disconnectService: invoke('disconnectService'),
+  services: invoke('services'), saveService: invoke('saveService'), validateService: invoke('validateService'), disconnectService: invoke('disconnectService'), removeService: invoke('removeService'),
   searchServices: invoke('searchServices'),
   frontConversations: invoke('frontConversations'), frontConversation: invoke('frontConversation'),
   bootstrap: invoke('bootstrap'), reconnect: invoke('reconnect'),

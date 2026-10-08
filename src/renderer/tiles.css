@@ -29,7 +29,12 @@
 .shelf-chip:hover { background: #fff; }
 .empty-workspace { height: 100%; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 15px; color: var(--muted); }
 .empty-workspace h2 { color: var(--ink); font-size: 21px; font-weight: 500; }
-.tile-app .home-chat { width: 380px; }
+.desktop-home { height: 100%; overflow: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; padding: 40px; }
+.desktop-home .home-welcome { flex: 0; padding: 24px; }
+.desktop-home .home-welcome h2 { font-size: 26px; }
+.desktop-home .button-row { justify-content: center; flex-wrap: wrap; }
+.desktop-sources { max-width: 680px; width: 100%; display: flex; flex-direction: column; gap: 8px; }
+.desktop-sources h3 { text-align: center; font-size: 12px; font-weight: 500; color: var(--muted); }
 .source-shortcut { display: flex; align-items: center; gap: 8px; padding: 9px; font-size: 12px; text-align: left; border-radius: 8px; }
 .source-shortcut:hover { background: var(--canvas); }
 .folder-control select { appearance: none; background: none; border: 0; font-size: 11px; max-width: 220px; }
@@ -99,9 +104,7 @@
 .front-identity h4 { font-size: 12px; font-weight: 500; }
 .launcher-sources { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 16px; border-bottom: 1px solid var(--divider); }
 .launcher-sources .pill { font-size: 11px; }
-.home-source-search { position: absolute; top: 8px; left: 18px; z-index: 1; display: flex; gap: 8px; }
 .tile-app .workspace-content { position: relative; }
-.tile-app .home-layout { padding-top: 38px; }
 .files-body { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .files-toolbar { display: flex; gap: 8px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--divider); }
 .files-toolbar strong { font-size: 12px; font-weight: 500; flex: 1; }

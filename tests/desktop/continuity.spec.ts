@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { launchDesktop } from './launch'
+import { desktopReady, launchDesktop } from './launch'
 import { fixtureServer } from './fixture'
 
 async function open(page: Page, query: string, mode = 'Enter') {
@@ -10,14 +10,14 @@ async function open(page: Page, query: string, mode = 'Enter') {
   await input.press(mode); await expect(input).toHaveCount(0)
 }
 
-test('reading position and partial agent answers survive workspace/Home/shelf switching', async () => {
+test('reading position and partial agent answers survive workspace/empty desktop/shelf switching', async () => {
   const fixture = await fixtureServer(), profile = await mkdtemp('/tmp/opencode/chatos-continuity-')
   fixture.seedHistory('ses_fixture_1', 60)
   const env: Record<string, string> = { ...Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => typeof e[1] === 'string')), CHATOS_USER_DATA: profile, CHATOS_SERVER_URL: fixture.url }
   delete env.ELECTRON_RUN_AS_NODE
   const app = await launchDesktop(env), page = await app.firstWindow()
   try {
-    await expect(page.locator('.project-row').first()).toBeVisible()
+    await desktopReady(page, { opencode: true })
     await open(page, 'Consent reload')
     const session = page.locator('[data-tile-id="ses_fixture_1"]'), scroll = session.locator('.chat-scroll')
     await expect(session.locator('.assistant-message')).toHaveCount(60)
@@ -26,7 +26,8 @@ test('reading position and partial agent answers survive workspace/Home/shelf sw
     await scroll.evaluate(e => { e.scrollTop = 220; e.dispatchEvent(new Event('scroll')) })
     await open(page, 'Health sources', 'Control+Enter')
     await expect(session).not.toBeVisible()
-    await page.getByRole('button', { name: 'Home', exact: true }).click()
+    await page.keyboard.press('Control+Alt+0')
+    await expect(page.getByRole('region', { name: 'Empty desktop' })).toBeVisible()
     await open(page, 'Consent reload')
     await expect(session.locator('.question-card select')).toHaveValue('device')
     await expect.poll(() => scroll.evaluate(e => e.scrollTop)).toBe(220)
@@ -44,7 +45,7 @@ test('browser popup reuses URL owner and native browser shortcuts open the launc
   delete env.ELECTRON_RUN_AS_NODE
   const app = await launchDesktop(env), page = await app.firstWindow()
   try {
-    await expect(page.locator('.project-row').first()).toBeVisible()
+    await desktopReady(page, { opencode: true })
     await open(page, `${fixture.url}/preview/dm-carl`)
     await open(page, `${fixture.url}/preview/front-inbox`, 'Control+Enter')
     await expect.poll(() => app.evaluate(({ webContents }) => webContents.getAllWebContents().filter(c => c.getURL().includes('/preview/')).length)).toBe(2)
@@ -88,7 +89,7 @@ test('attention navigation cycles through every waiting session, not just the fi
   delete env.ELECTRON_RUN_AS_NODE
   const app = await launchDesktop(env), page = await app.firstWindow()
   try {
-    await expect(page.locator('.project-row').first()).toBeVisible()
+    await desktopReady(page, { opencode: true })
     await open(page, 'Consent reload')
     await open(page, 'Health sources')
     await open(page, 'Consent tests')
