@@ -27,6 +27,8 @@ export async function desktopReady(page: Page, options: { opencode?: boolean } =
 
 /** K: type, wait for the first result, run it. */
 export async function ask(page: Page, query: string, press = true) {
+  // A K that is still running its last action closes on its own; don't type into it.
+  await expect(page.locator('.k-status').filter({ hasText: 'Opening' })).toHaveCount(0)
   if (!await page.getByRole('textbox', { name: 'Launcher search' }).isVisible()) await page.getByRole('button', { name: 'Launcher', exact: true }).click()
   const input = page.getByRole('textbox', { name: 'Launcher search' })
   await input.fill(query)

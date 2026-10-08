@@ -90,7 +90,11 @@ export class Browsers {
 
   layout(placements: BrowserPlacement[]) {
     const ids = new Set(placements.map(p => p.id))
-    for (const [id, record] of this.tabs) if (!ids.has(id)) record.view.setVisible(false)
+    for (const [id, record] of this.tabs) if (!ids.has(id)) {
+      // A hidden page must not keep the keyboard: workspace keys (Cmd+1…) would never reach ChatOS.
+      if (record.view.webContents.isFocused()) this.window.webContents.focus()
+      record.view.setVisible(false)
+    }
     const area = this.window.getContentBounds()
     for (const placement of placements.slice(0, 4)) {
       if (!placement.id || !placement.workspaceID) throw new Error('Invalid browser placement')

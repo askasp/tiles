@@ -12,7 +12,7 @@ const api: ChatOSAPI = {
   ...sourceAPIs,
   modelInfo: invoke('modelInfo'), saveModel: invoke('saveModel'), forgetModelKey: invoke('forgetModelKey'), discoverSource: invoke('discoverSource'),
   probeModel: invoke('probeModel'), skipModel: invoke('skipModel'),
-  terminalOpen: invoke('terminalOpen'), terminalInput: invoke('terminalInput'), terminalResize: invoke('terminalResize'), terminalClose: invoke('terminalClose'), keyMode: invoke('keyMode'), environment: invoke('environment'),
+  terminalOpen: invoke('terminalOpen'), terminalInput: invoke('terminalInput'), terminalResize: invoke('terminalResize'), terminalClose: invoke('terminalClose'), keyMode: invoke('keyMode'), environment: invoke('environment'), theme: invoke('theme'),
   readImage: invoke('readImage'), findPaths: invoke('findPaths'),
   loadDesktop: legacy => { const result = ipcRenderer.sendSync('chatos:storage-load', legacy); if (result.error) throw new Error(result.error); return result.value },
   flushDesktop: raw => { const result = ipcRenderer.sendSync('chatos:storage-flush', raw); if (result.error) throw new Error(result.error) },

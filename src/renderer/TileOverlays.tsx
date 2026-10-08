@@ -154,7 +154,7 @@ export function TileLauncher(props: LauncherProps) {
   const move = (delta: number) => setIndex(i => Math.max(0, Math.min(shown.length - 1, i + delta)))
   const scopeName = scope && scopes.find(s => s.id === scope)?.name
   const knownState = known ? stateOf(states, known) : undefined
-  const foot = panel || add ? ['↵ continue', 'esc cancel'] : expandedRow ? ['↑↓ ⌃J ⌃K choose', '↵ run here', '← back'] : ['↑↓ ⌃J ⌃K choose', '↵ open here', '⌃↵ new workspace', '→ other actions', scope ? '⌫ widen to everything' : 'Tab narrow to a source']
+  const foot = panel || add ? ['↵ continue', 'esc cancel'] : expandedRow ? ['↑↓ ⌃J ⌃K choose', '↵ run here', '← back'] : ['↑↓ ⌃J ⌃K choose', '↵ open here', '⌃↵ or ⌘↵ new workspace', '→ other actions', scope ? '⌫ widen to everything' : 'Tab narrow to a source']
   return <Modal title="Launcher" close={close}>
     <div className="launcher-input k-input-row"><span className="k-logo">K</span>{scopeName && <button className="k-scope" onClick={() => { setScope(undefined); input.current?.focus() }} title="Widen to all sources">{scopeName}<span>›</span></button>}<input ref={input} autoFocus aria-label="Launcher search" placeholder={props.firstRun ? 'Connect a model to get started' : scopeName ? `Search ${scopeName.toLowerCase()}…` : 'Ask or open… a page, folder, terminal, or “add …”'} value={query} onChange={e => { setQuery(e.target.value); setIndex(0); setOpenError('') }} onKeyDown={e => {
       if (e.nativeEvent.isComposing) return
@@ -177,7 +177,8 @@ export function TileLauncher(props: LauncherProps) {
         else setScope(scopes[at + 1].id)
         setIndex(0)
       }
-      if (e.key === 'Enter') { e.preventDefault(); void execute(e.shiftKey ? 'move' : e.ctrlKey ? 'new' : 'here') }
+      // Ctrl+Enter (or Cmd+Enter on a Mac): in a new workspace. Shift+Enter: move here.
+      if (e.key === 'Enter') { e.preventDefault(); void execute(e.shiftKey ? 'move' : e.ctrlKey || e.metaKey ? 'new' : 'here') }
       if (e.key === 'Backspace' && !query && scope) { e.preventDefault(); setScope(undefined); setIndex(0) }
       if (e.key === 'z' && e.ctrlKey && !query) { e.preventDefault(); undo() }
     }} /><kbd>esc</kbd><IconButton label="Close launcher" onClick={close}><X size={15} /></IconButton></div>
@@ -189,7 +190,7 @@ export function TileLauncher(props: LauncherProps) {
     {!panel && <FirstMessageChips rows={rows} />}
     {openError && <div className="inline-error" role="alert">{openError}</div>}
     {!panel && !!asked.errors.length && <div className="inline-error">{asked.errors.slice(0, 2).join(' · ')}</div>}
-    {!panel && <div className="tile-launcher-results" ref={list}>{expandedRow && <span className="k-head">Other actions · {expandedRow.title}</span>}{shown.map((row, i) => <KRow key={row.key} icon={row.icon} title={row.title} label={`${row.title} · ${row.source} · ${row.action}`} source={row.source} subtitle={row.subtitle} action={row.action} hint={i === chosen && !row.disabled ? '↵' : row.others?.length && !expandedRow ? '→' : ''} selected={i === chosen} disabled={opening || row.disabled} onClick={() => { setIndex(i); void execute('here', i) }} />)}
+    {!panel && <div className="tile-launcher-results" ref={list}>{expandedRow && <span className="k-head">Other actions · {expandedRow.title}</span>}{shown.map((row, i) => <KRow key={row.key} icon={row.icon} title={row.title} label={`${row.title} · ${row.source} · ${row.action}`} source={row.source} subtitle={row.subtitle} action={row.action} hint={i === chosen && !row.disabled ? '↵' : row.others?.length && !expandedRow ? '→' : ''} selected={i === chosen} disabled={opening || row.disabled} onClick={e => { setIndex(i); void execute(e.shiftKey ? 'move' : e.ctrlKey || e.metaKey ? 'new' : 'here', i) }} />)}
       {!shown.length && <div className="empty-list">{found.busy ? 'Searching… ↵ won’t create anything.' : 'Nothing matches. Try a title, folder, URL, or “add …” for a new source.'}</div>}
       {rows.some(r => r.waiting) && <span className="k-head"><Status waiting /> waiting on you</span>}
     </div>}

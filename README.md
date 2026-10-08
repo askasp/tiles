@@ -55,7 +55,7 @@ Browser views have no desktop preload, Node access or app tokens. They use a sha
 | Find or open anything (K) | Ctrl+K / System+K / System+Space |
 | Choose a result in K | ↑↓ / Ctrl+J or Ctrl+N down / Ctrl+K or Ctrl+P up |
 | K: open here, or go to the existing tile | Enter |
-| K: move here, with linked tiles / in a new workspace | Shift+Enter / Ctrl+Enter |
+| K: move here, with linked tiles / in a new workspace | Shift+Enter / Ctrl+Enter or Cmd+Enter (also with a click) |
 | K: other actions for a result / back | → or Ctrl+L / ← or Ctrl+H |
 | K: narrow to a source, then Add source | Tab (Backspace in an empty K widens again) |
 | **Window keys (vim): Ctrl+W, then…** | h j k l focus · H J K L swap · w / W next / previous · o fullscreen · x promote · − shelf · = restore · q close |
@@ -75,8 +75,8 @@ Browser views have no desktop preload, Node access or app tokens. They use a sha
 | Go to what is waiting on you | System+U |
 | Undo arrangement | System+Z |
 | Cycle tiles | Ctrl+Tab / Ctrl+Shift+Tab |
-| Terminal in the focused folder | System+T |
-| New item in the focused source (e.g. an OpenCode session) | System+N |
+| Terminal in the focused folder (home if none) | System+T, or K → Tab to Terminal → Enter |
+| New item like the focused tile: a session next to a session, a terminal in a terminal's folder, a page in a browser | System+N |
 | Settings | System+, |
 | Browser address / new browser tile | Ctrl+L, Alt+D or F6 / Ctrl+T |
 | Selection or page as context to another tile (never sends) | Ctrl+. |
@@ -84,6 +84,14 @@ Browser views have no desktop preload, Node access or app tokens. They use a sha
 Buttons are icons that show their key; the key does the same thing. Ctrl+W shows a short hint while it waits for its second key (1.5 s), in a page too.
 
 While a **terminal** has focus, plain Ctrl keys (Ctrl+W, Ctrl+L, Ctrl+K…) belong to the shell, so vim in a terminal keeps its own Ctrl+W; use System or Ctrl+Alt chords to manage tiles from there. While a dialog such as K is open, plain Ctrl keys belong to it. In web pages, Ctrl+K opens K and Ctrl+W starts the window chord. Text undo remains Ctrl+Z; Ctrl+Z in an **empty launcher** undoes an arrangement.
+
+### Appearance
+
+Settings → Appearance: System (follows the OS, live), Light or Dark. The choice is saved, applied before the first frame, and also sets Electron's theme so web pages in Browser tiles follow it. Light mode uses a darker desktop so white tiles stand out; dark mode lifts tiles off a near-black desktop. All colours are tokens in `src/renderer/styles.css`.
+
+### Finding folders and paths
+
+K finds files and folders by name (Spotlight on macOS, falling back to an index of your home folder when Spotlight returns nothing) and completes paths like a shell: `~/git`, `~/git/ch`, `/Users/me/…`. Narrowed to Terminal, a name or path offers a terminal there; with nothing typed, a terminal in the focused folder or at home.
 
 ### How sources plug in
 

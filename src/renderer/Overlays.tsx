@@ -1,5 +1,5 @@
 import { ArrowUpRight, Globe, Keyboard, Plus, RefreshCw, Settings2, X } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { BrowserContext } from '../shared/types'
 import type { ModelInfo } from '../shared/model'
 import { sources as catalogue } from '../shared/sources'
@@ -22,6 +22,12 @@ export function AddressDialog({ initial, submit, close }: { initial?: string; su
   </form></Modal>
 }
 
+function Appearance() {
+  const [mode, setMode] = useState<'system' | 'light' | 'dark'>()
+  useEffect(() => { void api.theme().then(setMode).catch(() => {}) }, [])
+  return <div className="appearance" role="group" aria-label="Theme">{(['system', 'light', 'dark'] as const).map(m => <button key={m} aria-pressed={mode === m} onClick={() => { void api.theme(m).then(saved => { setMode(saved); window.dispatchEvent(new CustomEvent('chatos-theme', { detail: saved })) }) }}>{m === 'system' ? 'System' : m === 'light' ? 'Light' : 'Dark'}</button>)}</div>
+}
+
 export function Settings({ model, modelChanged, env, states, close, platform }: {
   model?: ModelInfo; modelChanged: (info: ModelInfo) => void; env: Env; states: Map<string, unknown>; close: () => void; platform: string;
 }) {
@@ -30,6 +36,7 @@ export function Settings({ model, modelChanged, env, states, close, platform }: 
   const run = async (action: () => Promise<void>) => { setPending(true); setError(''); try { await action() } catch (e) { setError(friendlyError(e)) } finally { setPending(false) } }
   return <Modal title="Settings" close={close} wide><div className="modal-heading"><Settings2 size={18} /><h2>Settings</h2><span className="muted">Super+,</span><IconButton label="Close settings" onClick={close}><X size={16} /></IconButton></div>
     <div className="settings-grid">
+      <section className="settings-section" aria-label="Appearance"><h3>Appearance</h3><Appearance /></section>
       <section className="settings-section" aria-label="Model"><h3>Model</h3><p className="muted">Powers K: understanding requests, building connectors and mapping tiles. Independent of every source.</p><ModelSetup embedded info={model} firstRun={false} saved={info => { modelChanged(info); setStatus(info.ready ? `Model saved: ${info.model}` : 'Model key forgotten.') }} /></section>
       <section className="settings-section" aria-label="Sources"><h3>Sources</h3>
         <div className="source-list">

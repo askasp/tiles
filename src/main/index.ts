@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, safeStorage, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, safeStorage, shell } from 'electron'
 import { dirname, join, basename } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { homedir } from 'node:os'
@@ -71,8 +71,20 @@ function registerIPC() {
   handle('terminalInput', (id, data) => shells().input(id, data))
   handle('terminalResize', (id, cols, rows) => shells().resize(id, cols, rows))
   handle('terminalClose', id => shells().close(id))
-  handle('keyMode', (mode, active) => { if (mode !== 'terminal' && mode !== 'overlay') return; if (active === true) keyModes.add(mode); else keyModes.delete(mode) })
+  handle('keyMode', (mode, active) => {
+    if (mode !== 'terminal' && mode !== 'overlay') return
+    if (active === true) keyModes.add(mode); else keyModes.delete(mode)
+    // A web page in a Browser tile may hold the keyboard; a dialog takes it back so typing lands in K.
+    if (mode === 'overlay' && active === true && window && !window.webContents.isFocused()) window.webContents.focus()
+  })
   handle('environment', () => ({ home: homedir(), platform: process.platform }))
+  handle('theme', mode => {
+    if (mode !== undefined) {
+      if (!['system', 'light', 'dark'].includes(mode)) throw new Error('Unknown theme')
+      nativeTheme.themeSource = mode; database().set('theme', mode)
+    }
+    return nativeTheme.themeSource
+  })
   handle('readImage', path => files.image(path))
   handle('findPaths', query => files.findPaths(query, homedir()))
   for (const channel of ['storage-load', 'storage-flush']) {
@@ -125,9 +137,12 @@ function registerIPC() {
 }
 
 async function createWindow() {
+  // The theme is applied before the window exists, so the first frame already matches.
+  const savedTheme = (storage ||= new Storage(app.getPath('userData'))).get('theme')
+  if (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'system') nativeTheme.themeSource = savedTheme
   window = new BrowserWindow({
     title: 'ChatOS', width: 1440, height: 940, minWidth: 950, minHeight: 620,
-    backgroundColor: '#f4f4f2', show: false,
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0f0f0e' : '#e4e2dc', show: false,
     ...(process.platform === 'darwin' && { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 18 } }),
     autoHideMenuBar: process.platform !== 'darwin',
     webPreferences: {

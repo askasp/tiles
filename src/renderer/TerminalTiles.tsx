@@ -21,6 +21,8 @@ export function TerminalBody({ tile, visible, focused, focusKey, consumeDraft }:
     })
     const fitter = new FitAddon()
     terminal.loadAddon(fitter); terminal.open(host.current)
+    // Window-manager chords (Super, Ctrl+Alt) belong to ChatOS, not the shell.
+    terminal.attachCustomKeyEventHandler(event => !(event.metaKey || (event.ctrlKey && event.altKey)))
     term.current = terminal; fit.current = fitter
     try { fitter.fit() } catch { /* Hidden tiles have no size yet. */ }
     let alive = true

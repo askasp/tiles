@@ -59,6 +59,8 @@ export interface CoreAPI {
   /** While a terminal has focus or a dialog is open, plain Ctrl keys go to it instead of tile management. */
   keyMode(mode: 'terminal' | 'overlay', active: boolean): Promise<void>
   environment(): Promise<{ home: string; platform: string }>
+  /** System, light or dark. Also applies to web pages in Browser tiles. */
+  theme(mode?: 'system' | 'light' | 'dark'): Promise<'system' | 'light' | 'dark'>
   findPaths(query: string): Promise<LocalPath[]>
   readImage(path: string): Promise<{ path: string; size: number; dataURL: string }>
   loadDesktop(legacy?: string | null): string | null

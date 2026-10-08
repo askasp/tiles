@@ -17,8 +17,8 @@ export function KMap({ rows }: { rows: { resource: string; tile: string; kind: '
   return <div className="k-map" role="table" aria-label="How this source shows up"><div className="k-map-row head" role="row"><span>Resource</span><span>Opens as</span><span>Actions</span></div>
     {rows.map(r => <div className="k-map-row" role="row" key={r.resource}><strong>{r.resource}</strong><span>{r.tile}<i className={r.kind}>{r.kind}</i></span><span className="muted">{r.actions}</span></div>)}</div>
 }
-export function KRow({ icon, title, source, subtitle, action, hint, selected, disabled, onClick, label }: { icon: string; title: string; source: string; subtitle?: string; action: string; hint?: string; selected?: boolean; disabled?: boolean; onClick: () => void; label?: string }) {
-  return <button type="button" aria-label={label || title} className={`launcher-result k-row ${selected ? 'selected' : ''}`} disabled={disabled} onClick={onClick}>
+export function KRow({ icon, title, source, subtitle, action, hint, selected, disabled, onClick, label }: { icon: string; title: string; source: string; subtitle?: string; action: string; hint?: string; selected?: boolean; disabled?: boolean; onClick: (event: React.MouseEvent) => void; label?: string }) {
+  return <button type="button" aria-label={label || title} className={`launcher-result k-row ${selected ? 'selected' : ''}`} disabled={disabled} onClick={e => onClick(e)}>
     <span className={`k-icon k-icon-${icon}`}>{iconText[icon] || icon.slice(0, 2)}</span>
     <span className="launcher-result-copy"><strong className="truncate">{title}</strong><span className="k-meta"><span className="k-source">{source}</span>{subtitle && <small className="truncate">{subtitle}</small>}</span></span>
     <span className="k-action">{action}</span><kbd className="k-key">{hint || ''}</kbd>

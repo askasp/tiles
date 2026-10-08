@@ -186,9 +186,12 @@ export const opencodeSource = source<OpenCodeState>({
   tileStatus: (tile, state) => tile.sessionID ? { running: state.data.active.includes(tile.sessionID), waiting: state.data.waiting.includes(tile.sessionID) } : undefined,
   waiting: (state, env) => state.data.waiting.map(id => ({ key: `session:${id}`, open: () => { const session = state.data.sessions[id]; if (session) env.open(sessionTile(session)); else void opencode.session(id).then(d => { state.data.ingest([d.session]); env.open(sessionTile(d.session)) }).catch(e => env.reportError(friendlyError(e))) } })),
   onShortcut(action, state, env) {
+    // Only called when an OpenCode tile is focused.
     if (action !== 'new') return false
     const focused = env.desktop.tiles.find(t => t.id === env.desktop.workspaces.find(w => w.id === env.desktop.activeID)?.focusedID)
-    env.ask(state.connection.connected ? `start session in ${focused?.directory ? basename(focused.directory) : ''}` : 'add opencode')
+    if (!state.connection.connected) env.ask('add opencode')
+    else if (focused?.directory) void state.newSession(focused.directory)
+    else env.ask('start session in ')
     return true
   },
   contextTargets: state => state.connection.connected ? state.sessions.map(s => ({ id: s.id, title: sessionTitle(s), subtitle: basename(directoryOf(s)), input: sessionTile(s) })) : [],

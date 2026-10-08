@@ -171,8 +171,9 @@ export default function App() {
     const tile = focusedTile(ref.current), ws = activeWorkspace(ref.current)
     if (action.startsWith('workspace:')) { go(Number(action.split(':')[1])); return }
     if (action.startsWith('move-workspace:') && tile) { move(tile.id, Number(action.split(':')[1])); return }
+    // Cmd+N means “new” in the focused tile's source: a session next to a session, a shell next to a shell.
+    if (action === 'new') { const owner = tile && sourceFor(tile.kind); if (!owner?.onShortcut?.('new', stateOf(owner.id), env)) ask(); return }
     if (registry.some(s => s.onShortcut?.(action, stateOf(s.id), env))) return
-    if (action === 'new') { ask(); return }
     if (action === 'new-browser') { setOverlay('address'); return }
     if (action === 'address') {
       const input = tile?.kind === 'browser' ? document.querySelector<HTMLInputElement>(`[data-address-for="${tile.id}"]`) : null

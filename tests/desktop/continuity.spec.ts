@@ -55,6 +55,9 @@ test('browser popup reuses URL owner and native browser shortcuts open the launc
     await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children.filter(v => v.getVisible() && 'webContents' in v && (v as Electron.WebContentsView).webContents.getURL().includes('/preview/')).length)).toBe(1)
     await app.evaluate(({ webContents }) => { const contents = webContents.getAllWebContents().find(c => c.getURL().endsWith('/dm-carl'))!; contents.focus(); contents.sendInputEvent({ type: 'keyDown', keyCode: 'K', modifiers: ['control'] }); contents.sendInputEvent({ type: 'keyUp', keyCode: 'K', modifiers: ['control'] }) })
     await expect(page.getByRole('textbox', { name: 'Launcher search' })).toBeVisible()
+    // Opened from inside a web page, K still gets the keyboard.
+    await expect(page.getByRole('textbox', { name: 'Launcher search' })).toBeFocused()
+    expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.isFocused())).toBe(true)
     await page.getByRole('textbox', { name: 'Launcher search' }).press('Shift+Tab')
     await expect(page.locator('[role="dialog"] .launcher-result').last()).toBeFocused()
     await page.keyboard.press('Tab')
@@ -101,5 +104,30 @@ test('attention navigation cycles through every waiting session, not just the fi
       visited.add((await page.locator('.resource-tile.tile-focused:visible').getAttribute('data-tile-id'))!)
     }
     expect([...visited].sort()).toEqual(['ses_fixture_1', 'ses_fixture_2', 'ses_fixture_3'])
+  } finally { await app.close(); await fixture.close(); await rm(profile, { recursive: true, force: true }) }
+})
+
+test('switching workspaces from a focused web page keeps the workspace keys working', async () => {
+  const fixture = await fixtureServer(), profile = await mkdtemp('/tmp/opencode/chatos-page-focus-')
+  const env: Record<string, string> = { ...Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => typeof e[1] === 'string')), CHATOS_USER_DATA: profile, CHATOS_SERVER_URL: fixture.url }
+  delete env.ELECTRON_RUN_AS_NODE
+  const app = await launchDesktop(env), page = await app.firstWindow()
+  // Keys typed like a person: delivered to whichever web contents has the keyboard.
+  const press = (keyCode: string, modifiers: string[]) => app.evaluate(({ webContents }, [code, mods]) => {
+    const target = webContents.getFocusedWebContents() || webContents.getAllWebContents()[0]
+    target.sendInputEvent({ type: 'keyDown', keyCode: code as string, modifiers: mods as Electron.InputEvent['modifiers'] }); target.sendInputEvent({ type: 'keyUp', keyCode: code as string, modifiers: mods as Electron.InputEvent['modifiers'] })
+  }, [keyCode, modifiers] as const)
+  try {
+    await desktopReady(page, { opencode: true })
+    await open(page, `${fixture.url}/preview/focus-test`)
+    await expect.poll(() => app.evaluate(({ webContents }) => webContents.getAllWebContents().filter(c => c.getURL().endsWith('/focus-test')).length)).toBe(1)
+    await app.evaluate(({ webContents }) => webContents.getAllWebContents().find(c => c.getURL().endsWith('/focus-test'))!.focus())
+    await press('3', ['control', 'alt'])
+    await expect(page.locator('.workspace-button.selected')).toContainText('3')
+    // The hidden page gave the keyboard back, so the next workspace key works.
+    await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.isFocused())).toBe(true)
+    await press('1', ['control', 'alt'])
+    await expect(page.locator('.workspace-button.selected')).toContainText('1')
+    await expect(page.locator('[data-kind="browser"]:visible')).toHaveCount(1)
   } finally { await app.close(); await fixture.close(); await rm(profile, { recursive: true, force: true }) }
 })

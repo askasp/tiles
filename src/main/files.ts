@@ -46,9 +46,9 @@ export class Files {
     return this.index?.root === root ? this.index.entries : this.building
   }
   private spotlight(query: string, root: string): Promise<Entry[] | undefined> {
-    return new Promise(resolve => execFile('mdfind', ['-onlyin', root, '-name', query], { timeout: 3_000, maxBuffer: 4_000_000 }, async (error, stdout) => {
+    return new Promise(resolve => execFile('/usr/bin/mdfind', ['-onlyin', root, '-name', query], { timeout: 6_000, maxBuffer: 8_000_000 }, async (error, stdout) => {
       if (error && !stdout) { resolve(undefined); return }
-      const paths = stdout.split('\n').filter(p => p.startsWith(root) && !hidden(p, root)).slice(0, 300)
+      const paths = stdout.split('\n').filter(p => p.startsWith(root) && !hidden(p, root)).sort((a, b) => a.split('/').length - b.split('/').length).slice(0, 300)
       const entries: Entry[] = []
       for (const path of paths) { try { const info = await stat(path); if (info.isDirectory() || info.isFile()) entries.push({ path, folder: info.isDirectory() }) } catch { /* Gone since indexing. */ } }
       resolve(entries)
@@ -58,7 +58,9 @@ export class Files {
     if (typeof query !== 'string' || query.length > 200 || !isAbsolute(root)) return []
     const needle = query.trim().toLowerCase()
     if (needle.length < 2 || needle.includes('/')) return []
-    const entries = (this.platform === 'darwin' && await this.spotlight(query.trim(), root)) || await this.indexed(root)
+    // macOS: Spotlight first (fast, no privacy prompts); if it has nothing, the home index.
+    const spotlight = this.platform === 'darwin' ? await this.spotlight(query.trim(), root) : undefined
+    const entries = spotlight?.length ? spotlight : await this.indexed(root)
     const scored = entries.map(entry => { const name = basename(entry.path).toLowerCase(), stem = name.replace(/\.[^.]+$/, ''); return { ...entry, score: (name === needle || stem === needle ? 4 : name.startsWith(needle) ? 3 : name.includes(needle) ? 1 : 0) + (entry.folder ? 0.5 : 0) } })
       .filter(f => f.score >= 1).sort((a, b) => b.score - a.score || a.path.split('/').length - b.path.split('/').length || a.path.localeCompare(b.path))
     return scored.slice(0, 8).map(f => ({ path: f.path, kind: f.folder ? 'folder' as const : 'file' as const, name: basename(f.path) }))

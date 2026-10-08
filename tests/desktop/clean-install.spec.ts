@@ -41,6 +41,17 @@ test('clean install: model first, built-ins without any server, OpenCode only on
     await expect(page.locator('.launcher-result').filter({ hasText: 'Add OpenCode' })).toHaveCount(1)
     await page.keyboard.press('Escape')
 
+    // Paths complete like a shell: ~/code/cl → the folder.
+    k = await ask(page, '~/code/cl', false)
+    await expect(page.locator('.launcher-result').filter({ hasText: 'clean-slate-folder' }).first()).toBeVisible()
+    await expect(page.locator('.launcher-result').first()).toContainText(`${home}/code/cl`)
+    // Narrowed to Terminal with nothing typed: a terminal at home, no folder needed.
+    await k.fill('')
+    for (const name of ['Browser', 'Files', 'Terminal']) { await k.press('Tab'); await expect(page.locator('.k-scope')).toContainText(name) }
+    await expect(page.locator('.launcher-result').first()).toContainText('Terminal')
+    await expect(page.locator('.launcher-result').first()).toContainText('in ~')
+    await page.keyboard.press('Escape')
+
     // A3: before any service is connected, the name finds the folder; → offers a terminal there.
     let input = await ask(page, 'clean-slate', false)
     const folder = page.locator('.launcher-result').first()
@@ -84,6 +95,11 @@ test('clean install: model first, built-ins without any server, OpenCode only on
     await page.keyboard.type('echo one two'); await page.keyboard.press('Control+w'); await page.keyboard.press('Enter')
     await expect(terminal.locator('.xterm-rows')).toContainText('echo one')
     await expect(terminal.locator('.xterm-rows')).not.toContainText('two')
+    // Cmd+N in a terminal: another terminal in the same folder (not OpenCode).
+    await page.keyboard.press('Control+Alt+n')
+    await expect(page.locator('[data-kind="terminal"]:visible')).toHaveCount(2)
+    await expect(page.locator('[data-kind="terminal"].tile-focused .files-footer')).toContainText(`${home}/code/clean-slate-folder/assets`)
+    await page.keyboard.press('Control+Alt+Shift+q')
     await expect(page.locator('[data-kind="terminal"]:visible')).toHaveCount(1)
     expect(errors).toEqual([])
 

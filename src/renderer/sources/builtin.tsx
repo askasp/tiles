@@ -51,10 +51,24 @@ export const browserSource = source<{ states: Record<string, BrowserState> }>({
       screenshot={id => { void api.browserScreenshot(id).then(uri => { const owner = tile.linkID && env.desktop.tiles.find(t => t.id === tile.linkID); if (owner) env.changeTile(owner.id, { context: [...owner.context, { id: uid(), kind: 'image', name: 'Browser screenshot', uri }] }); else env.notify('Link this page to a tile that takes context to attach screenshots.') }).catch(e => env.reportError(friendlyError(e))) }}
       standalone={!tile.linkID} reportError={env.reportError} />
   },
+  onShortcut: (action, _state, env) => { if (action !== 'new') return false; env.address(); return true },
   closed: tile => { void api.browserClose(tile.id).catch(() => {}) },
 })
 
-/** Files: folders and files on this machine. K finds them by name. */
+/** “~/git/ch” → the home-relative path. Paths are how people name folders. */
+export const expandPath = (text: string, home: string) => text === '~' ? home : text.startsWith('~/') && home ? `${home}${text.slice(1)}` : text
+const pathLike = (text: string) => text.startsWith('/') || text === '~' || text.startsWith('~/')
+/** Path completion: list the folder a partial path points into, filtered by what follows the last “/”. */
+async function completePath(text: string, home: string): Promise<Candidate[]> {
+  const full = expandPath(text, home)
+  const cut = full.endsWith('/') ? full.length : full.lastIndexOf('/') + 1
+  const folder = full.slice(0, cut) || '/', prefix = full.slice(cut).toLowerCase()
+  const page = await api.listFolder(folder.length > 1 ? folder.replace(/\/$/, '') : folder)
+  return page.entries.filter(e => (e.kind === 'folder' || e.kind === 'file') && e.name.toLowerCase().startsWith(prefix) && (prefix.startsWith('.') || !e.name.startsWith('.')))
+    .slice(0, 20).map((e, n) => ({ input: fileTile(e.path, e.kind === 'folder' ? 'folder' : 'file', e.name), score: 60 - n / 100 + (e.kind === 'folder' ? 1 : 0) }))
+}
+
+/** Files: folders and files on this machine. K finds them by name or path. */
 export const filesSource = source<null>({
   id: 'files', badge: 'files', kinds: ['folder', 'file'],
   use: () => null,
@@ -63,38 +77,56 @@ export const filesSource = source<null>({
     const known = [...new Set([...env.desktop.folders, ...env.desktop.tiles.filter(t => t.kind === 'folder').map(t => t.path!)])].filter(f => f && f !== '/')
     return known.map(directory => { const input = fileTile(directory, 'folder'); return { input, score: q.rank(`${input.title} ${directory}`) } })
   },
-  search(q) {
-    if (q.text.length < 2 || urlLike(q.text) || q.text.includes('/') || (q.scope && !['files', 'terminal'].includes(q.scope))) return undefined
+  search(q, _state, env) {
+    if (q.scope && !['files', 'terminal'].includes(q.scope)) return undefined
+    if (pathLike(q.text)) return completePath(q.text, env.home).catch(() => [])
+    if (q.text.length < 2 || urlLike(q.text) || q.text.includes('/')) return undefined
     return api.findPaths(q.text).then(paths => paths.map((p): Candidate => ({ input: fileTile(p.path, p.kind, p.name), score: p.kind === 'folder' ? Math.max(q.rank(p.name), 5) : Math.max(q.rank(p.name), 4) })))
   },
   commands(q, _state, env) {
-    if (!q.text.startsWith('/') || (q.scope && q.scope !== 'files')) return []
-    const path = q.text
-    return [{ key: 'local-path', icon: 'files', title: path, source: 'Local path', subtitle: 'folder, text or image · read-only', action: 'Open', first: true, others: [{ label: 'Open terminal here', run: mode => env.openTerminal(path, mode) }], run: async mode => { const target = await api.inspectPath(path); env.open(fileTile(target.path, target.kind), mode) } }]
+    if (!pathLike(q.text) || (q.scope && q.scope !== 'files')) return []
+    const path = expandPath(q.text, env.home).replace(/(.)\/$/, '$1')
+    return [{ key: 'local-path', icon: 'files', title: q.text, source: 'Local path', subtitle: path === q.text ? 'folder, text or image · read-only' : path, action: 'Open', first: true, others: [{ label: 'Open terminal here', key: 't', icon: 'terminal', run: mode => env.openTerminal(path, mode) }], run: async mode => { const target = await api.inspectPath(path); env.open(fileTile(target.path, target.kind), mode) } }]
   },
   others: (input, _state, env) => input.kind === 'file' ? [{ label: 'Show in folder', icon: 'folder' as const, run: async mode => { const target = await api.inspectPath(parentOf(input.path!)); env.open(fileTile(target.path, target.kind), mode) } }] : [],
+  onShortcut: (action, _state, env) => { if (action !== 'new') return false; env.ask('', 'files'); return true },
   Tile: ({ tile, env }) => <FileBody tile={tile} open={env.open} replace={input => env.replaceTile(tile.id, input)} actions={env.othersFor(tile).filter(a => a.label !== 'Show in folder')} />,
 })
 
-/** Terminal: a shell in a folder. */
+/** Terminal: a shell in a folder, or at home when there is none. */
 export const terminalSource = source<null>({
   id: 'terminal', badge: 'terminal', kinds: ['terminal'],
   use: () => null,
   added: () => true,
   commands(q, _state, env) {
     const shell = terminalIntent(q.raw)
-    if (!shell) return []
+    const scoped = q.scope === 'terminal'
+    if (!shell && !scoped) return []
     const focused = env.desktop.tiles.find(t => t.id === env.desktop.workspaces.find(w => w.id === env.desktop.activeID)?.focusedID)
     const focusedDirectory = focused?.kind === 'file' ? parentOf(focused.path!) : focused?.directory
-    const asked = shell[1]?.trim()
-    const dir = asked?.startsWith('/') ? asked : env.desktop.folders.find(f => asked && f.toLowerCase().includes(asked.toLowerCase())) || focusedDirectory || env.home
-    return [{ key: 'terminal', icon: 'terminal', title: 'Terminal', source: 'Terminal', subtitle: `in ${dir === env.home ? '~' : dir}${!asked && focusedDirectory ? ', the focused folder' : ''}`, action: 'Open terminal', first: true, run: mode => env.openTerminal(dir, mode) }]
+    const asked = (shell ? shell[1] : q.text)?.trim()
+    const where = (dir: string) => dir === env.home ? '~' : env.home && dir.startsWith(`${env.home}/`) ? `~${dir.slice(env.home.length)}` : dir
+    // A path is used as typed; a name is searched (async) below. With nothing typed: the focused folder, or home.
+    const dir = asked && pathLike(asked) ? expandPath(asked, env.home).replace(/(.)\/$/, '$1') : !asked ? focusedDirectory || env.home : undefined
+    if (!dir) return []
+    return [{ key: 'terminal', icon: 'terminal', title: 'Terminal', source: 'Terminal', subtitle: `in ${where(dir)}${!asked && focusedDirectory ? ', the focused folder' : ''}`, action: 'Open terminal', first: true, run: mode => env.openTerminal(dir, mode) }]
+  },
+  search(q, _state, env) {
+    // Narrowed to Terminal, a folder name or partial path offers terminals in the matching folders.
+    if (q.scope !== 'terminal' || !q.text) return undefined
+    const folders = pathLike(q.text) ? completePath(q.text, env.home).catch(() => []) : q.text.length < 2 ? Promise.resolve([]) : api.findPaths(q.text).then(paths => paths.map(p => ({ input: fileTile(p.path, p.kind, p.name), score: Math.max(q.rank(p.name), 5) })))
+    return folders.then(found => found.filter(c => c.input.kind === 'folder').map(c => ({ input: { ...terminalTile(c.input.path!), title: `Terminal in ${c.input.title}` }, score: c.score })))
   },
   others(input: TileInput, _state, env) {
     const dir = input.kind === 'file' ? parentOf(input.path!) : input.kind === 'terminal' ? undefined : input.path || input.directory
     return dir?.startsWith('/') ? [{ label: 'Open terminal here', key: 't', icon: 'terminal' as const, run: mode => env.openTerminal(dir, mode) }] : []
   },
-  onShortcut: (action, _state, env) => { if (action !== 'new-terminal') return false; env.openTerminal(); return true },
+  onShortcut: (action, _state, env) => {
+    if (action !== 'new-terminal' && action !== 'new') return false
+    const focused = env.desktop.tiles.find(t => t.id === env.desktop.workspaces.find(w => w.id === env.desktop.activeID)?.focusedID)
+    env.openTerminal(action === 'new' ? focused?.directory : undefined)
+    return true
+  },
   Tile: ({ tile, env, visible, focused, focusKey }) => <TerminalBody tile={tile} visible={visible} focused={focused} focusKey={focusKey} consumeDraft={() => env.changeTile(tile.id, { draft: '' })} />,
   closed: tile => { void api.terminalClose(tile.id).catch(() => {}) },
 })
