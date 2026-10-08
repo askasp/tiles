@@ -3,25 +3,27 @@ import type { Input } from 'electron'
 export function shortcutFor(input: Input): string | undefined {
   if (input.type !== 'keyDown') return
   const key = input.key.toLowerCase()
-  // Super/Cmd follows the design. Ctrl+Alt is an app-local alternative for
-  // Linux window managers that reserve Super for their own workspaces.
+  // Three layers, none of them taken by macOS or Linux desktops:
+  // ⌘ / Super (Ctrl+Alt on Linux, where Super belongs to the window manager) for the app,
+  // the vim Ctrl+W chord for tiles, and plain keys inside the focused tile.
+  // Never used: ⌘/Super+Tab and +Space (app switcher, Spotlight, layouts), ⌘+H (hide),
+  // Super+L (lock), Super+arrows (window snapping), ⌘+Shift+3/4/5 (screenshots),
+  // Ctrl+Alt+T and Ctrl+Alt+arrows (Ubuntu terminal, workspace switching).
   const system = input.meta || (input.control && input.alt)
-  if (system) {
-    // Shift+2 can report “@”, depending on the keyboard layout/platform.
-    // Numbered workspace controls refer to the physical number row.
-    const digit = input.code?.match(/^Digit([0-9])$/)?.[1]
-    if (digit) return `${input.shift ? 'move-workspace' : 'workspace'}:${digit}`
-    if (/^[0-9]$/.test(key)) return `${input.shift ? 'move-workspace' : 'workspace'}:${key}`
-    if (key === 'tab') return 'overview'
-    if ((key === 'k' && !input.shift) || key === ' ' || key === 'space') return 'launcher'
-    // Cmd+[ / Cmd+]: back and forward in this tile (a list ↔ what you opened from it).
+  if (system && !input.shift) {
+    // The physical number row, whatever the layout prints on it.
+    const digit = input.code?.match(/^Digit([0-9])$/)?.[1] || (/^[0-9]$/.test(key) ? key : undefined)
+    if (digit) return `workspace:${digit}`
+    if (key === 'k') return 'launcher'
+    if (key === 'o') return 'overview'
+    // ⌘[ / ⌘]: back and forward in this tile (a list ↔ what you opened from it).
     if (key === '[' || input.code === 'BracketLeft') return 'tile-back'
     if (key === ']' || input.code === 'BracketRight') return 'tile-forward'
     if (key === 'n') return 'new'
-    if (key === 't') return 'new-terminal'
+    if (key === 't' && input.meta) return 'new-terminal'
     if (key === ',') return 'settings'
-    // Cmd+W / Super+W / Ctrl+Alt+W closes a tile, like a tab. (Cmd+Shift+Q belongs to macOS.)
-    if (key === 'w' && !input.shift) return 'close-tile'
+    // ⌘W closes a tile, like a tab.
+    if (key === 'w') return 'close-tile'
     if (key === 'f') return 'fullscreen'
     if (key === '-' || key === 'subtract') return 'shelf-tile'
     if (key === '=' || key === '+' || key === 'add') return 'restore-tile'
@@ -29,12 +31,9 @@ export function shortcutFor(input: Input): string | undefined {
     if (key === '.') return 'actions'
     if (key === '/' || input.code === 'Slash') return 'keys'
     if (key === 'z') return 'undo-arrangement'
-    const directions: Record<string, string> = { arrowleft: 'left', h: 'left', arrowright: 'right', l: 'right', arrowup: 'up', k: 'up', arrowdown: 'down', j: 'down' }
-    // Super+K is reserved for the launcher; use the up arrow for upward focus.
-    if (directions[key]) return `${input.shift ? 'swap' : 'focus'}:${directions[key]}`
   }
   if (input.control && !input.alt && !input.meta) {
-    if (key === 'k' || key === ' ' || key === 'space') return 'launcher'
+    if (key === 'k') return 'launcher'
     if (key === 'l') return 'address'
     if (key === '.') return 'attach-selection'
     if (key === 't') return input.shift ? 'restore-closed' : 'new-browser'
@@ -55,6 +54,8 @@ export const windowChord: Record<string, string> = {
   arrowleft: 'focus:left', arrowdown: 'focus:down', arrowup: 'focus:up', arrowright: 'focus:right',
   w: 'next-tile', W: 'previous-tile', p: 'previous-tile',
   q: 'close-tile', c: 'close-tile', o: 'fullscreen', '-': 'shelf-tile', '=': 'restore-tile', '+': 'restore-tile', x: 'promote',
+  // Ctrl+W, then a digit: move the tile to that workspace.
+  ...Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => [String(n), `move-workspace:${n}`])),
 }
 /** Reads keys including the Ctrl+W chord. One reader per window, shared with its pages,
  * so Ctrl+W pressed in a web page and h pressed after still pair up. */
