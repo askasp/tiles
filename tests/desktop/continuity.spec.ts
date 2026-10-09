@@ -54,6 +54,10 @@ test('browser popup reuses URL owner and native browser shortcuts open the launc
     expect(await app.evaluate(({ webContents }) => webContents.getAllWebContents().filter(c => c.getURL().includes('/preview/')).length)).toBe(2)
     await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children.filter(v => v.getVisible() && 'webContents' in v && (v as Electron.WebContentsView).webContents.getURL().includes('/preview/')).length)).toBe(1)
     await app.evaluate(({ webContents }) => { const contents = webContents.getAllWebContents().find(c => c.getURL().endsWith('/dm-carl'))!; contents.focus(); contents.sendInputEvent({ type: 'keyDown', keyCode: 'K', modifiers: ['control'] }); contents.sendInputEvent({ type: 'keyUp', keyCode: 'K', modifiers: ['control'] }) })
+    // Ctrl+K belongs to the page (Slack, GitHub); ⌘K / Ctrl+Alt+K opens K from inside it.
+    await page.waitForTimeout(300)
+    await expect(page.getByRole('textbox', { name: 'Launcher search' })).toHaveCount(0)
+    await app.evaluate(({ webContents }) => { const contents = webContents.getAllWebContents().find(c => c.getURL().endsWith('/dm-carl'))!; contents.sendInputEvent({ type: 'keyDown', keyCode: 'K', modifiers: ['control', 'alt'] }); contents.sendInputEvent({ type: 'keyUp', keyCode: 'K', modifiers: ['control', 'alt'] }) })
     await expect(page.getByRole('textbox', { name: 'Launcher search' })).toBeVisible()
     // Opened from inside a web page, K still gets the keyboard.
     await expect(page.getByRole('textbox', { name: 'Launcher search' })).toBeFocused()

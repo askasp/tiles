@@ -81,14 +81,22 @@ export const rowSelector = '.session-row, .file-entry, .recipe-list-row, .recipe
 /** Keys of the focused tile, never while typing: ␣ action menu, ? key sheet, / filter,
  * the tile's own action letters, j/k through rows, l opens, h goes back. */
 export function listKeys(event: KeyboardEvent, open: { menu(): void; keys(): void }) {
+  // Delete (⌘⌫ on a Mac) is the tile's D action: delete or trash, always confirmed.
+  const remove = (event.key === 'Delete' && !event.ctrlKey && !event.altKey && !event.metaKey) || (event.key === 'Backspace' && event.metaKey)
+  if (remove && !(event.target as HTMLElement | null)?.closest('input, textarea, select, [contenteditable="true"]')) {
+    const tile = document.querySelector<HTMLElement>('.resource-tile.tile-focused'), action = tile && actionForKey(tile.dataset.tileId!, 'D')
+    if (action) { event.preventDefault(); void action.run() }
+    return
+  }
   if (event.ctrlKey || event.altKey || event.metaKey || event.key.length !== 1) return
   const target = event.target as HTMLElement | null
   if (!target || target.closest('input, textarea, select, [contenteditable="true"]')) return
   if (event.key === '?') { event.preventDefault(); open.keys(); return }
+  // The leader needs no tile: its g, n, s and z work on an empty desktop too.
+  if (event.key === ' ') { event.preventDefault(); open.menu(); return }
   // The focused tile wins over stale DOM focus left in the tile focus came from.
   const tile = document.querySelector<HTMLElement>('.resource-tile.tile-focused') || target.closest<HTMLElement>('[data-tile-id]')
   if (!tile) return
-  if (event.key === ' ') { event.preventDefault(); open.menu(); return }
   if (event.key === '/') {
     const filter = tile.querySelector<HTMLInputElement>('[data-filter]')
     if (filter) { event.preventDefault(); filter.focus(); filter.select() }

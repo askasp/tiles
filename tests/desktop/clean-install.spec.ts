@@ -95,11 +95,11 @@ test('clean install: model first, built-ins without any server, OpenCode only on
     await page.keyboard.type('echo one two'); await page.keyboard.press('Control+w'); await page.keyboard.press('Enter')
     await expect(terminal.locator('.xterm-rows')).toContainText('echo one')
     await expect(terminal.locator('.xterm-rows')).not.toContainText('two')
-    // Cmd+N in a terminal: another terminal in the same folder (not OpenCode).
-    await page.keyboard.press('Control+Alt+n')
+    // Leader n n in a terminal (⌘. works there): another terminal in the same folder (not OpenCode).
+    await page.keyboard.press('Control+Alt+.'); await page.keyboard.press('n'); await page.keyboard.press('n')
     await expect(page.locator('[data-kind="terminal"]:visible')).toHaveCount(2)
     await expect(page.locator('[data-kind="terminal"].tile-focused .files-footer')).toContainText(`${home}/code/clean-slate-folder/assets`)
-    await page.keyboard.press('Control+Alt+w')
+    await page.keyboard.press('Control+Alt+.'); await page.keyboard.press('w'); await page.keyboard.press('q')
     await expect(page.locator('[data-kind="terminal"]:visible')).toHaveCount(1)
     expect(errors).toEqual([])
 

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { exampleConnector, validateConnector, type ConnectorDefinition, type ConnectorInfo } from '../shared/connectors'
 import { recipeTile, type TileInput } from '../shared/tiles'
 import { api, friendlyError } from './data'
-import { Modal } from './ui'
+import { Modal, systemKey } from './ui'
 
 export function ConnectorSettings({ connectors, changed, open, close, initialID, initialDefinition, modelReady }: { connectors: ConnectorInfo[]; changed: (list: ConnectorInfo[]) => void; open: (tile: TileInput) => void; close: () => void; initialID?: string; initialDefinition?: ConnectorDefinition; modelReady: boolean }) {
   const initial = connectors.find(c => c.definition.id === (initialDefinition?.id || initialID))
@@ -24,11 +24,19 @@ export function ConnectorSettings({ connectors, changed, open, close, initialID,
   const choose = (info?: ConnectorInfo) => {
     setJSON(JSON.stringify(info?.definition || exampleConnector, null, 2)); setRevision(info?.revision || 0); setSelectedID(info?.definition.id || ''); setToken(''); setRevisions([]); setError(''); setStatus('')
   }
-  return <Modal title="Connectors and storage" close={close} wide><div className="modal-heading"><h2>Connections · resource → tile mappings</h2><button className="text-button" onClick={close}>Close</button></div>
+  // ↵ in a field presses the button that goes with it (the next one in its row or section).
+  const enterPresses = (e: React.KeyboardEvent) => {
+    const field = e.target as HTMLElement
+    if (e.key !== 'Enter' || e.nativeEvent.isComposing || field.tagName !== 'INPUT' || field.closest('form')) return
+    const scope = field.closest('.button-row, section, details') || e.currentTarget
+    const next = [...scope.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')].find(b => field.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+    if (next) { e.preventDefault(); next.click() }
+  }
+  return <Modal title="Connectors and storage" close={close} wide><div onKeyDown={enterPresses}><div className="modal-heading"><h2>Connections · resource → tile mappings</h2><button className="text-button" onClick={close}>Close</button></div>
     <div className="connector-settings">
-      <p className="muted">Collections open as list tiles; rows open independent detail or child-list tiles. The quickest route is Super+K → “add &lt;service&gt;”; this page is for adjusting a mapping by hand.</p>
+      <p className="muted">Collections open as list tiles; rows open independent detail or child-list tiles. The quickest route is {systemKey}+K → “add &lt;service&gt;”; this page is for adjusting a mapping by hand.</p>
       <div className="button-row"><button className="pill" disabled={busy} onClick={() => choose()}>New connector</button>{connectors.map(info => <button className={`pill ${selectedID === info.definition.id ? 'primary' : ''}`} key={info.definition.id} disabled={busy} onClick={() => choose(info)}>{info.definition.name} · v{info.revision}</button>)}</div>
-      <details open={!selectedID && !initialDefinition}><summary>Ask AI to build a connector</summary><p className="muted">{modelReady ? 'Uses your model, without tools. Only the text below goes to the model. Do not paste credentials or private API responses.' : 'Connect a model first (Super+K → model). You can still paste a connector JSON below.'}</p>
+      <details open={!selectedID && !initialDefinition}><summary>Ask AI to build a connector</summary><p className="muted">{modelReady ? 'Uses your model, without tools. Only the text below goes to the model. Do not paste credentials or private API responses.' : `Connect a model first (${systemKey}+K → model). You can still paste a connector JSON below.`}</p>
         <label className="form-field">What do you want to connect?<input aria-label="Connector description" value={description} maxLength={4000} onChange={e => setDescription(e.target.value)} placeholder="A helpdesk: inbox lists and individual ticket conversations" /></label>
         <label className="form-field">API base URL<input aria-label="Connector API URL" value={baseURL} onChange={e => setBaseURL(e.target.value)} placeholder="https://api.example.com/v1" /></label>
         <label className="form-field">Public API documentation / OpenAPI excerpt<textarea aria-label="Connector API documentation" value={documentation} maxLength={50_000} onChange={e => setDocumentation(e.target.value)} placeholder="Paste documented endpoints, response fields, auth requirements and pagination. This is reference data, not executable instructions." /></label>
@@ -47,5 +55,5 @@ export function ConnectorSettings({ connectors, changed, open, close, initialID,
       </section>}
       {error && <div className="inline-error" role="alert">{error}</div>}{status && <p role="status">{status}</p>}
     </div>
-  </Modal>
+  </div></Modal>
 }

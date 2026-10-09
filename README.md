@@ -38,7 +38,7 @@ On Linux, `npm run doctor` checks the installed Electron sandbox helper. If it r
 - Give opaque browser resources a stable local name with the header pencil (e.g. **DM Carl**, **Mail · replies to me**). Search matches the name and original title/URL; browser title changes do not overwrite your name.
 - Workspace numbers stay stable: removing workspace 1 never turns workspace 2 into workspace 1. Empty workspaces disappear when you leave them.
 - Links you open from a session become independent browser tiles linked to that session. Moving or shelving the session takes its previews too. Moving a linked preview also takes its parent; shelving only the preview leaves the session visible.
-- **× shelves a tile.** Closing it with Cmd+W (Super+W, or Ctrl+Alt+W) is local too: the OpenCode session continues, its draft remains, and search can reopen it.
+- **Shelving keeps a tile live.** Ctrl+W − shelves it; Ctrl+W q (or ␣ w q) closes it, and that is local too: the OpenCode session continues, its draft remains, and search can reopen it.
 - Layout undo restores placement, not old drafts or sent messages. It never undoes server actions.
 - Switching workspaces or shelving keeps mounted tile bodies: chat reading position, partial agent answers and repository review state stay intact during the run.
 
@@ -48,42 +48,31 @@ Browser views have no desktop preload, Node access or app tokens. They use a sha
 
 ## Keyboard workflow
 
-“System” means **Cmd on macOS**, **Super on Linux**, or **Ctrl+Alt** if i3 captures Super. Shortcuts are app-local; ChatOS does not take over your window manager’s global bindings.
+ChatOS needs no mouse. Every action has one home; other keys for it are aliases. Press **?** (or ⌘/ · Super+/) for the full list. It's generated from the same table the shortcuts use (`keyHelp()` in `src/shared/shortcuts.ts`), so it is always complete.
 
-| Action | Shortcut |
+“System” means **⌘ on macOS**, **Super on Linux**, or **Ctrl+Alt** where the window manager owns Super (i3, GNOME's dock). ChatOS never binds keys the OS takes: ⌘/Super+Tab and +Space, ⌘H, Super+L, Super+arrows, ⌘⇧3/4/5, ⌘F/⌘−/⌘= (find, zoom), Ctrl+Alt+T and Ctrl+Alt+arrows.
+
+**1. Leader: ␣ in a tile, or System+. anywhere** (typing, terminals and web pages too). It opens a which-key menu that stays open until you press a key or Esc; ⌫ goes up a level.
+
+| Keys | Does |
 | --- | --- |
-| Find or open anything (K) | Ctrl+K / System+K / System+Space |
-| Choose a result in K | ↑↓ / Ctrl+J or Ctrl+N down / Ctrl+K or Ctrl+P up |
-| K: open here, or go to the existing tile | Enter |
-| K: move here, with linked tiles / in a new workspace | Shift+Enter / Ctrl+Enter or Cmd+Enter (also with a click) |
-| K: other actions for a result / back | → or Ctrl+L / ← or Ctrl+H |
-| K: narrow to a source, then Add source | Tab (Backspace in an empty K widens again) |
-| **Window keys (vim): Ctrl+W, then…** | h j k l focus · H J K L swap · w / W next / previous · o fullscreen · x promote · − shelf · = restore · q close |
-| Inside a list (files, sessions, inbox, rows) | j / k down / up · l open · h back |
-| Files: open here / beside / new workspace | Enter / Ctrl+Enter / Ctrl+Shift+Enter |
-| Files: back / forward / up / refresh | Backspace or h or Alt+← / Alt+→ / - / r |
-| Files: actions on this folder | t terminal · s OpenCode sessions · n new session |
-| Rename focused tile | F2 |
-| Empty desktop / workspace 1–9 | System+0 / 1–9 |
-| Move tile and linked tiles to a workspace | System+Shift+1–9 |
-| Focus / swap with System keys | System+arrows or H/J/L · System+Shift+arrows |
-| Promote / fullscreen | System+Enter / System+F |
-| Shelf / restore last shelved tile | System+− / System+= |
-| Close tile | Cmd+W (System+W) / Ctrl+W q |
-| Restore last closed tile | Ctrl+Shift+T |
-| Workspace and shelf overview | System+Tab |
-| Go to what is waiting on you | System+U |
-| Undo arrangement | System+Z |
-| Cycle tiles | Ctrl+Tab / Ctrl+Shift+Tab |
-| Terminal in the focused folder (home if none) | System+T, or K → Tab to Terminal → Enter |
-| New item like the focused tile: a session next to a session, a terminal in a terminal's folder, a page in a browser | System+N |
-| Settings | System+, |
-| Browser address / new browser tile | Ctrl+L, Alt+D or F6 / Ctrl+T |
-| Selection or page as context to another tile (never sends) | Ctrl+. |
+| ␣ g 1–9 · 0 · o · u | Go to workspace · home · overview · what's waiting on you |
+| ␣ n t · b · n · r | New terminal (in the focused folder) · browser tile · item like this tile · reopen the last closed |
+| ␣ w … | The tile keys below (same as Ctrl+W) |
+| ␣ t … | This tile's own actions, with their letters: everything that used to be a button |
+| ␣ s · z · ? | Settings · undo what K arranged · every key |
 
-Buttons are icons that show their key; the key does the same thing. Ctrl+W shows a short hint while it waits for its second key (1.5 s), in a page too.
+When something waits on you, such as a permission, its keys come first: **y** allow once · **a** always · **d** deny.
 
-While a **terminal** has focus, plain Ctrl keys (Ctrl+W, Ctrl+L, Ctrl+K…) belong to the shell, so vim in a terminal keeps its own Ctrl+W; use System or Ctrl+Alt chords to manage tiles from there. While a dialog such as K is open, plain Ctrl keys belong to it. In web pages, Ctrl+K opens K and Ctrl+W starts the window chord. Text undo remains Ctrl+Z; Ctrl+Z in an **empty launcher** undoes an arrangement.
+**2. Tiles: Ctrl+W, then one key** (vim). h j k l focus · H J K L swap · 1–9 move to that workspace · w / W next / previous · o fullscreen · x make main · − shelf · = bring back · q close. A hint lists them while Ctrl+W waits (1.5 s), in a web page too.
+
+**3. In the focused tile: bare keys, never while typing.** j / k down / up · l open · h back · / filter (Esc or ↓ returns to the list) · the tile's letters (␣ t lists them, e.g. Files: − up, r refresh; a project: s start session, d review, f files, t terminal; D or Delete deletes, always after asking) · Ctrl+O / Ctrl+I or System+[ / ] back / forward in the tile · F2 rename · Esc leaves a text field, so letters are keys again. In a list, ↵ opens in place, Ctrl+↵ beside, Ctrl+Shift+↵ in a new workspace.
+
+**Accelerators (the top few only):** System+K or Ctrl+K opens K · System+1–9 workspaces · System+, settings · Ctrl+L, Alt+D or F6 address · Ctrl+. sends a selection as context (never sends it).
+
+**In K:** ↑↓ or Ctrl+J/K/N/P choose · ↵ open here · Ctrl+↵ new workspace · Shift+↵ move here · → / ← other actions · Tab / ⌫ narrow / widen · Alt+↵ ask K to find it · Esc close. Ctrl+Z in an empty K undoes an arrangement.
+
+A **terminal** keeps plain Ctrl keys, Alt keys and F-keys (Ctrl+W deletes a word, Alt+D, mc's F2), so manage tiles from it with System+. (the leader). A **web page** keeps Ctrl+K, Ctrl+I, Ctrl+O and Ctrl+Tab (Slack, GitHub, Docs); System+K still opens K there, Alt+← / → and Ctrl+R / F5 navigate. A **dialog** keeps plain Ctrl keys too. On Linux, Ctrl+Q does not quit (it belongs to terminals).
 
 ### Appearance
 

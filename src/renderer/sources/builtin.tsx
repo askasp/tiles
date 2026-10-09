@@ -90,6 +90,7 @@ export const filesSource = source<null>({
   },
   others: (input, _state, env) => input.kind === 'file' ? [{ label: 'Show in folder', icon: 'folder' as const, run: async mode => { const target = await api.inspectPath(parentOf(input.path!)); env.open(fileTile(target.path, target.kind), mode) } }] : [],
   onShortcut: (action, _state, env) => { if (action !== 'new') return false; env.ask('', 'files'); return true },
+  isList: tile => tile.kind === 'folder',
   Tile: ({ tile, env }) => <FileBody tile={tile} env={env} others={env.othersFor(tile).filter(a => a.label !== 'Show in folder')} />,
 })
 

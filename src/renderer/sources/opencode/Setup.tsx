@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { ConnectionInfo, OpenCodeProbe } from '../../../shared/sources/opencode/types'
 import { KChips, KMap, KReply, KRow, ModelRowKeys, type EnterRef } from '../../Setup'
 import { friendlyError, opencode } from './state'
+import { systemKey } from '../../ui'
 
 const opencodeMap = [
   { resource: 'Project', tile: 'List of sessions', kind: 'built-in' as const, actions: 'Show sessions · Start session · Review changes · Browse files' },
@@ -22,7 +23,7 @@ export function OpenCodeSetup({ connection, projects, reconnect, done, openProje
     return <div className="k-panel" data-opencode-setup="connected">
       <KReply>Connected to OpenCode on {where(connection.url)}. It has {projects} project{projects === 1 ? '' : 's'}. This is how it will show up:</KReply>
       <KMap rows={opencodeMap} />
-      <div className="button-row k-buttons"><button className="pill primary" onClick={done}>Keep<kbd>↵</kbd></button><button className="pill" onClick={openProjects}>Open projects</button><span className="muted">Change later in Super+, → Sources</span></div>
+      <div className="button-row k-buttons"><button className="pill primary" onClick={done}>Keep<kbd>↵</kbd></button><button className="pill" onClick={openProjects}>Open projects</button><span className="muted">Change later in {systemKey}+, → Sources</span></div>
     </div>
   }
   const rows = [

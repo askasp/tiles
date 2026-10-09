@@ -6,7 +6,7 @@ import type { ConnectorSearch } from '../shared/connectors'
 import { addIntent, launcherIntent, launcherScope, modelIntent, resourceAction, resourceLabel, resourceSource, sources as catalogue, terminalIntent, type SourceID } from '../shared/sources'
 import type { ModelInfo } from '../shared/model'
 import { api, friendlyError } from './data'
-import { IconButton, Modal, Status } from './ui'
+import { IconButton, Modal, Status, systemKey } from './ui'
 import { BuiltinSetup, ConnectorSetup, KChips, KReply, KRow, ModelSetup, iconText } from './Setup'
 import { registry, sourceByID, sourceFor } from './sources/registry'
 import type { AnySource, Candidate, Env, Query, Row } from './sources/types'
@@ -93,7 +93,7 @@ export function TileLauncher(props: LauncherProps) {
   const scopes = addedSources.flatMap(s => s.scopes?.(stateOf(states, s)) || [{ id: s.id, name: catalogue.find(c => c.id === s.id)?.name || s.id }])
   const rows = useMemo<Row[]>(() => {
     if (panel) return []
-    if (add) return [{ key: 'add-ai', icon: 'add', title: `Add ${add.name}`, source: 'K', subtitle: model?.ready ? 'K looks up its API and proposes how it shows up · nothing is kept until you approve' : 'needs a model · Super+K → model', action: 'Ask K', run: () => setCommitted(add.name.toLowerCase()) }]
+    if (add) return [{ key: 'add-ai', icon: 'add', title: `Add ${add.name}`, source: 'K', subtitle: model?.ready ? 'K looks up its API and proposes how it shows up · nothing is kept until you approve' : `needs a model · ${systemKey}+K → model`, action: 'Ask K', run: () => setCommitted(add.name.toLowerCase()) }]
     if (/^(?:add|connect)\s*$/i.test(query)) {
       return [...catalogue.filter(c => !c.builtin && (c.connector ? !env.connectors.some(x => x.definition.id === c.id) : !addedSources.some(s => s.id === c.id) && sourceByID(c.id)?.Setup)).map(c => ({ key: `add:${c.id}`, icon: sourceByID(c.id)?.badge || c.id, title: `Add ${c.name}`, source: 'Source', subtitle: c.hint, action: 'Set up', fill: `add ${c.id}`, run: () => {} })),
         { key: 'add:any', icon: 'add', title: 'Add anything with an API', source: 'K', subtitle: 'type its name, e.g. “add linear” · K builds a connector', action: 'Type a name', fill: 'add ', run: () => {} },
@@ -161,7 +161,8 @@ export function TileLauncher(props: LauncherProps) {
   const move = (delta: number) => setIndex(i => Math.max(0, Math.min(shown.length - 1, i + delta)))
   const scopeName = scope && scopes.find(s => s.id === scope)?.name
   const knownState = known ? stateOf(states, known) : undefined
-  const foot = panel || add ? ['↵ continue', 'esc cancel'] : expandedRow ? ['↑↓ ⌃J ⌃K choose', '↵ run here', '← back'] : ['↑↓ ⌃J ⌃K choose', '↵ open here', '⌃↵ or ⌘↵ new workspace', '→ other actions', scope ? '⌫ widen to everything' : 'Tab narrow to a source']
+  const canAsk = !!env.connectors.length && !!model?.ready && !!query.trim()
+  const foot = panel || add ? ['↵ continue', 'esc cancel'] : expandedRow ? ['↑↓ ⌃J ⌃K choose', '↵ run here', '← back'] : ['↑↓ ⌃J ⌃K choose', '↵ open here', '⌃↵ or ⌘↵ new workspace', '→ other actions', scope ? '⌫ widen to everything' : 'Tab narrow to a source', ...(canAsk ? ['Alt+↵ ask K to find it'] : [])]
   return <Modal title="Launcher" close={close}>
     <div className="launcher-input k-input-row"><span className="k-logo">K</span>{scopeName && <button className="k-scope" onClick={() => { setScope(undefined); input.current?.focus() }} title="Widen to all sources">{scopeName}<span>›</span></button>}<input ref={input} autoFocus aria-label="Launcher search" placeholder={props.firstRun ? 'Connect a model to get started' : scopeName ? `Search ${scopeName.toLowerCase()}…` : 'Ask or open… a page, folder, terminal, or “add …”'} value={query} onChange={e => { setQuery(e.target.value); setIndex(0); setOpenError('') }} onKeyDown={e => {
       if (e.nativeEvent.isComposing) return
@@ -185,11 +186,13 @@ export function TileLauncher(props: LauncherProps) {
         setIndex(0)
       }
       // Ctrl+Enter (or Cmd+Enter on a Mac): in a new workspace. Shift+Enter: move here.
+      // Alt+Enter: ask K (the model) to find it in the connected services.
+      if (e.key === 'Enter' && e.altKey) { e.preventDefault(); if (canAsk) void askAI(); return }
       if (e.key === 'Enter') { e.preventDefault(); void execute(e.shiftKey ? 'move' : e.ctrlKey || e.metaKey ? 'new' : 'here') }
       if (e.key === 'Backspace' && !query && scope) { e.preventDefault(); setScope(undefined); setIndex(0) }
       if (e.key === 'z' && e.ctrlKey && !query) { e.preventDefault(); undo() }
     }} /><kbd>esc</kbd><IconButton label="Close launcher" onClick={close}><X size={15} /></IconButton></div>
-    {!panel && !add && <nav className="launcher-sources" aria-label="Search sources"><button className={`pill ${!q.scope ? 'primary' : ''}`} aria-pressed={!q.scope} onClick={() => { setScope(undefined); setQuery(q.text); setIndex(0) }}>All sources</button>{scopes.map(s => <button key={s.id} className={`pill ${q.scope === s.id ? 'primary' : ''}`} aria-pressed={q.scope === s.id} onClick={() => { setScope(s.id); setQuery(q.text); setIndex(0); setOpenError('') }}>{s.name}</button>)}<button className="pill" onClick={() => { setScope(undefined); setQuery('add '); input.current?.focus() }}>Add source</button>{!!env.connectors.length && model?.ready && <button className="pill" disabled={!query.trim()} onClick={() => void askAI()}>Ask K to find…</button>}</nav>}
+    {!panel && !add && <nav className="launcher-sources" aria-label="Search sources"><button className={`pill ${!q.scope ? 'primary' : ''}`} aria-pressed={!q.scope} onClick={() => { setScope(undefined); setQuery(q.text); setIndex(0); input.current?.focus() }}>All sources</button>{scopes.map(s => <button key={s.id} className={`pill ${q.scope === s.id ? 'primary' : ''}`} aria-pressed={q.scope === s.id} onClick={() => { setScope(s.id); setQuery(q.text); setIndex(0); setOpenError(''); input.current?.focus() }}>{s.name}</button>)}<button className="pill" onClick={() => { setScope(undefined); setQuery('add '); input.current?.focus() }}>Add source</button>{!!env.connectors.length && model?.ready && <button className="pill" disabled={!query.trim()} onClick={() => void askAI()}>Ask K to find…<kbd aria-hidden>Alt+↵</kbd></button>}</nav>}
     {panel === 'model' && <ModelSetup info={model} firstRun={props.firstRun} enter={enter} saved={info => { props.modelChanged(info); setQuery(''); input.current?.focus(); setGreeting(`Ready. ${info.model} powers K. Browser, Files and Terminal are built in; anything else with an API you can add by asking.`) }} skip={props.firstRun ? () => { void api.skipModel().then(info => { props.modelChanged(info); setQuery(''); input.current?.focus(); setGreeting('Browser, Files and Terminal are ready. Type “model” here whenever you want K to add services for you.') }).catch(e => setOpenError(friendlyError(e))) } : undefined} />}
     {panel === 'source' && known?.Setup && <known.Setup key={known.id} state={knownState} env={env} name={add!.name} done={close} enter={enter} />}
     {panel === 'builtin' && builtin && <BuiltinSetup key={builtin} id={builtin} connectors={env.connectors} changed={env.setConnectors} enter={enter} open={i => env.open(i, 'here')} done={close} />}
@@ -216,15 +219,21 @@ export function TileOverview({ desktop, waiting, focus, move, go, close }: { des
   const [destination, setDestination] = useState(desktop.workspaces.find(w => w.id === desktop.activeID)?.slot || 1)
   return <Modal title="Workspace overview" close={close} wide>
     <div className="modal-heading"><LayoutGrid size={18} /><h2>Workspaces & shelf</h2><span className="muted">One tile, one place</span><IconButton label="Close overview" onClick={close}><X size={15} /></IconButton></div>
-    <div className="tile-overview"><div className="tile-workspace-cards">{desktop.workspaces.map(w => <section className={`tile-workspace-card ${desktop.activeID === w.id ? 'selected' : ''}`} key={w.id} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); move(e.dataTransfer.getData('text/chatos-tile'), w.slot); close() }}>
-      <button className="overview-workspace-heading" onClick={() => { go(w.slot); close() }}><kbd>{w.slot}</kbd><strong>{w.title}</strong><span>{w.tileIDs.length}/4</span></button>
-      {w.tileIDs.map(id => { const t = desktop.tiles.find(t => t.id === id)!; return <button className="overview-tile-row" key={id} draggable onDragStart={e => e.dataTransfer.setData('text/chatos-tile', id)} onClick={() => { focus(id); close() }}><Badge icon={tileBadge(t)} size="sm" /><span className="truncate">{tileTitle(t)}</span>{waiting(t) && <Status waiting />}</button> })}
-      {!w.tileIDs.length && <p className="muted">Empty · open something with Super+K</p>}
-    </section>)}{!desktop.workspaces.length && <p className="muted">No workspaces yet. Super+K opens the first tile.</p>}</div>
+    <div className="tile-overview" onKeyDown={e => {
+      // j/k or ↑↓ through every tile (shelf included), ↵ goes there, a digit moves it to that workspace.
+      if (e.ctrlKey || e.altKey || e.metaKey || (e.target as HTMLElement).tagName === 'INPUT') return
+      const rows = [...e.currentTarget.querySelectorAll<HTMLElement>('[data-overview-tile]')], at = rows.indexOf(e.target as HTMLElement)
+      if (['j', 'k', 'ArrowDown', 'ArrowUp'].includes(e.key)) { e.preventDefault(); e.stopPropagation(); rows[Math.max(0, Math.min(rows.length - 1, at < 0 ? 0 : at + (e.key === 'j' || e.key === 'ArrowDown' ? 1 : -1)))]?.focus() }
+      if (/^[1-9]$/.test(e.key) && at >= 0) { e.preventDefault(); e.stopPropagation(); move(rows[at].dataset.overviewTile!, Number(e.key)); close() }
+    }}><div className="tile-workspace-cards">{desktop.workspaces.map(w => <section className={`tile-workspace-card ${desktop.activeID === w.id ? 'selected' : ''}`} key={w.id} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); move(e.dataTransfer.getData('text/chatos-tile'), w.slot); close() }}>
+      <button className="overview-workspace-heading" onClick={() => { go(w.slot); close() }}><kbd>{systemKey === '⌘' ? `⌘${w.slot}` : `Ctrl+Alt+${w.slot}`}</kbd><strong>{w.title}</strong><span>{w.tileIDs.length}/4</span></button>
+      {w.tileIDs.map(id => { const t = desktop.tiles.find(t => t.id === id)!; return <button className="overview-tile-row" data-overview-tile={id} key={id} draggable onDragStart={e => e.dataTransfer.setData('text/chatos-tile', id)} onClick={() => { focus(id); close() }}><Badge icon={tileBadge(t)} size="sm" /><span className="truncate">{tileTitle(t)}</span>{waiting(t) && <Status waiting />}</button> })}
+      {!w.tileIDs.length && <p className="muted">Empty · open something with {systemKey}+K</p>}
+    </section>)}{!desktop.workspaces.length && <p className="muted">No workspaces yet. {systemKey}+K opens the first tile.</p>}</div>
     <aside className="overview-shelf"><h3>Shelf · {shelfTiles(desktop).length}</h3><label className="form-field">Move selected tile to workspace<input aria-label="Shelf destination workspace" type="number" min={1} value={destination} onChange={e => setDestination(Math.max(1, Number(e.target.value)))} /></label>
-      {shelfTiles(desktop).map(t => <div className="overview-shelf-row" key={t.id} draggable onDragStart={e => e.dataTransfer.setData('text/chatos-tile', t.id)}><button onClick={() => { focus(t.id); close() }}><Badge icon={tileBadge(t)} size="sm" /><span className="truncate">{tileTitle(t)}</span>{waiting(t) && <Status waiting />}</button><button className="text-button" aria-label={`Move ${tileTitle(t)} to workspace ${destination}`} onClick={() => { move(t.id, destination); close() }}>Move</button></div>)}
+      {shelfTiles(desktop).map(t => <div className="overview-shelf-row" key={t.id} draggable onDragStart={e => e.dataTransfer.setData('text/chatos-tile', t.id)}><button data-overview-tile={t.id} onClick={() => { focus(t.id); close() }}><Badge icon={tileBadge(t)} size="sm" /><span className="truncate">{tileTitle(t)}</span>{waiting(t) && <Status waiting />}</button><button className="text-button" aria-label={`Move ${tileTitle(t)} to workspace ${destination}`} onClick={() => { move(t.id, destination); close() }}>Move</button></div>)}
       {!shelfTiles(desktop).length && <p className="muted">Hidden tiles stay live here. Search finds closed tiles too.</p>}
     </aside></div>
-    <footer className="modal-footer"><span>Drag a tile onto a workspace, or use Move. Sessions and shells keep running.</span></footer>
+    <footer className="modal-footer"><span><kbd>j k</kbd> choose a tile · <kbd>↵</kbd> go there · <kbd>1–9</kbd> move it to that workspace · or drag. Sessions and shells keep running.</span></footer>
   </Modal>
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { activeWorkspace, browserTile, desktopInitial, directionTile, focusTile, focusedTile, fullscreenTile, goWorkspace, moveTile, neighbourIndex, openTile, promoteTile, reconcileBrowser, restoreLast, serializeDesktop, shelfTile, tidyAround, undoArrangement, updateTile, type TileDesktop } from '../src/shared/tiles'
+import { activeWorkspace, browserTile, desktopInitial, directionTile, focusTile, focusedTile, fullscreenTile, goWorkspace, moveTile, neighbourIndex, openTile, promoteTile, reconcileBrowser, restoreLast, serializeDesktop, shelfTile, tidyAround, tileLayout, undoArrangement, updateTile, type TileDesktop } from '../src/shared/tiles'
 import type { SessionInfo } from '../src/shared/sources/opencode/types'
 import { projectTile, sessionTile } from '../src/shared/sources/opencode'
 import { restore as restoreDesktop } from '../src/shared/registry'
@@ -142,6 +142,25 @@ describe('V3 arrangement and persistence', () => {
     s = promoteTile(s); expect(activeWorkspace(s)?.fullscreenID).toBeNull()
     expect(neighbourIndex(3, 0, 'right')).toBe(1)
     expect(neighbourIndex(3, 1, 'down')).toBe(2)
+  })
+  it('gives lists a narrow column beside work tiles, and moves focus by that layout', () => {
+    expect(tileLayout([true])).toBeUndefined()
+    expect(tileLayout([true, true])).toBeUndefined()
+    expect(tileLayout([false, false])).toBeUndefined()
+    // A project list and two sessions: list, then two equal columns.
+    expect(tileLayout([true, false, false])).toEqual({ columns: ['list', 1, 1], rows: 1, cells: [{ column: 0, row: 0, rows: 1 }, { column: 1, row: 0, rows: 1 }, { column: 2, row: 0, rows: 1 }] })
+    // Three sessions keep their tall-plus-stacked arrangement; the list spans both rows.
+    expect(tileLayout([false, true, false, false])).toEqual({ columns: [3, 'list', 2], rows: 2, cells: [{ column: 0, row: 0, rows: 2 }, { column: 1, row: 0, rows: 2 }, { column: 2, row: 0, rows: 1 }, { column: 2, row: 1, rows: 1 }] })
+    // Two lists stack in the one narrow column.
+    expect(tileLayout([true, false, true])).toEqual({ columns: ['list', 1], rows: 2, cells: [{ column: 0, row: 0, rows: 1 }, { column: 1, row: 0, rows: 2 }, { column: 0, row: 1, rows: 1 }] })
+    expect(neighbourIndex(3, 0, 'right', [true, false, false])).toBe(1)
+    expect(neighbourIndex(3, 1, 'right', [true, false, false])).toBe(2)
+    expect(neighbourIndex(3, 1, 'down', [true, false, false])).toBe(1)
+    expect(neighbourIndex(3, 2, 'right', [true, false, true])).toBe(1)
+    expect(neighbourIndex(3, 2, 'up', [true, false, true])).toBe(0)
+    // Two stacked lists, equally close: back to the one used last.
+    expect(neighbourIndex(3, 1, 'left', [true, false, true], i => [5, 9, 1][i])).toBe(0)
+    expect(neighbourIndex(3, 1, 'left', [true, false, true], i => [1, 9, 5][i])).toBe(2)
   })
   it('focus change while fullscreen reveals the chosen tile and exits cleanly', () => {
     let s = openTile(desktopInitial(), sessionTile(session(1)))

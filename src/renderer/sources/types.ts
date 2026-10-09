@@ -97,6 +97,8 @@ export interface Source<S = unknown> {
   Setup?(props: SetupProps<S>): ReactNode
   Settings?(props: { state: S; env: Env }): ReactNode
   Tile?(props: TileProps<S>): ReactNode
+  /** Lists (sessions, a folder, an inbox) take a narrow column beside work tiles. Work tiles are the default. */
+  isList?(tile: Tile): boolean
   tileStatus?(tile: Tile, state: S): { running?: boolean; waiting?: boolean } | undefined
   headerActions?(tile: Tile, state: S, env: Env): ReactNode
   /** Resources waiting on the person, in order. */

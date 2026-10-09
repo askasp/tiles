@@ -33,7 +33,7 @@ test('V3 messages, permissions, questions, unique browser, linked move, and rest
     await page.getByRole('button', { name: 'Reply', exact: true }).click()
     await expect(page.locator('.question-card')).toHaveCount(0)
     await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Survives a desktop restart')
-    await page.keyboard.press('Control+t')
+    await page.keyboard.press('Control+Alt+.'); await page.keyboard.press('n'); await page.keyboard.press('b')
     await page.getByRole('textbox', { name: 'URL', exact: true }).fill(`${fixture.url}/preview`)
     await page.getByRole('button', { name: 'Open', exact: true }).click()
     await expect(page.locator('.resource-tile:visible')).toHaveCount(2)

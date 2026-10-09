@@ -1,6 +1,6 @@
 import { test, expect, type ElectronApplication } from '@playwright/test'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { approvals, ask, desktopReady, fakeServices, launchDesktop } from './launch'
+import { approvals, ask, desktopReady, fakeServices, launchDesktop, tileAction } from './launch'
 import { fixtureServer } from './fixture'
 
 /** Front is a built-in connector, pointed at the fixture's fake Front API. No real account. */
@@ -39,7 +39,7 @@ test('add Front from K, read filtered mail, comment and reply with confirmation,
     await page.getByRole('textbox', { name: 'Launcher search' }).press('Enter')
     const inbox = page.locator('[data-kind="recipe"].tile-focused')
     await expect(inbox.locator('.recipe-list-row')).toHaveCount(3)
-    await inbox.getByRole('button', { name: 'Addressed to me', exact: true }).click()
+    await tileAction(page, inbox, /^Show Addressed to me/)
     const addressed = page.locator('[data-kind="recipe"].tile-focused')
     await expect(addressed.locator('.recipe-list-row')).toHaveCount(1)
     await addressed.locator('.recipe-list-row').filter({ hasText: 'Lab reply' }).click()
@@ -51,11 +51,11 @@ test('add Front from K, read filtered mail, comment and reply with confirmation,
     await expect(reader.locator('script, img, iframe')).toHaveCount(0)
     const draft = reader.getByRole('textbox', { name: 'Resource action draft' })
     await draft.fill('Called Carl, all good.')
-    await reader.getByRole('button', { name: /^Comment/ }).click()
+    await tileAction(page, reader, /^Comment/)
     await expect(draft).toHaveValue('')
     await expect(reader.locator('.recipe-message-note')).toContainText('Called Carl, all good.')
     await draft.fill('Thanks, the results look fine.')
-    await reader.getByRole('button', { name: /^Reply/ }).click()
+    await tileAction(page, reader, /^Reply/)
     await expect(draft).toHaveValue('')
     expect(fixture.frontWrites).toEqual([{ id: 'cnv_123', kind: 'comment', body: 'Called Carl, all good.' }, { id: 'cnv_123', kind: 'reply', body: 'Thanks, the results look fine.' }])
     // Each write asked first and showed the exact body, sent as you.

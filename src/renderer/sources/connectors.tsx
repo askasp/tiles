@@ -5,6 +5,7 @@ import { api, friendlyError } from '../data'
 import { RecipeBody } from '../RecipeTiles'
 import { iconText } from '../Setup'
 import { source, type Candidate } from './types'
+import { systemKey } from '../ui'
 
 const collections = (c: ConnectorInfo) => c.definition.recipes.filter(r => r.shape === 'collection' && !c.definition.operations.find(op => op.id === r.operation)?.path.includes('{parent}'))
 const badge = (c: ConnectorInfo) => iconText[c.definition.id] ? c.definition.id : 'connector'
@@ -54,7 +55,9 @@ export const connectorsSource = source<{ connectors: ConnectorInfo[] }>({
   },
   Settings: ({ state, env }) => <>{state.connectors.map(c => c.builtin ? <BuiltinRow key={c.definition.id} connector={c} changed={env.setConnectors} />
     : <div className="source-row" key={c.definition.id}><span className="k-icon k-icon-connector md" aria-hidden>◇</span><span><strong>{c.definition.name}</strong><small>{c.definition.baseURL} · v{c.revision} · {c.hasToken ? 'connected' : c.definition.auth.type === 'none' ? 'no auth' : 'needs a token'}</small></span><em>generated</em><button className="text-button" onClick={() => env.editConnector({ id: c.definition.id })}>Mapping & auth</button></div>)}</>,
-  Tile: ({ tile, state, env, visible }) => <RecipeBody tile={tile} connectors={state.connectors} visible={visible} open={env.open} change={patch => env.changeTile(tile.id, patch)} settings={() => { const c = state.connectors.find(x => x.definition.id === tile.resource?.connectorID); if (c?.builtin || !c) env.ask(`add ${tile.resource?.connectorID || ''}`); else env.editConnector({ id: c.definition.id }) }} />,
+  // A collection (an inbox, a channel list) is a list; one item (a conversation) is work.
+  isList: tile => !tile.resource?.resourceID,
+  Tile: ({ tile, state, env, visible }) => <RecipeBody tile={tile} connectors={state.connectors} visible={visible} open={env.open} openFrom={(input, how) => env.openFrom(tile.id, input, how)} change={patch => env.changeTile(tile.id, patch)} settings={() => { const c = state.connectors.find(x => x.definition.id === tile.resource?.connectorID); if (c?.builtin || !c) env.ask(`add ${tile.resource?.connectorID || ''}`); else env.editConnector({ id: c.definition.id }) }} />,
 })
 
 /** A built-in connector in Settings: its token, the values it asks for, and Remove. */
@@ -73,7 +76,7 @@ function BuiltinRow({ connector: c, changed }: { connector: ConnectorInfo; chang
       <label className="k-field"><span>API token</span><span className="k-input"><input aria-label={`${name} API token`} type="password" autoComplete="off" spellCheck={false} value={token} placeholder={c.hasToken ? 'Saved · paste a new token to replace it' : 'Paste a token'} onChange={e => setToken(e.target.value)} /></span></label>
       {c.definition.auth.help && <p className="k-note">{c.definition.auth.help}</p>}
     </form>
-    {!!c.settings?.length && <form className="k-fields" onSubmit={e => { e.preventDefault(); void run(() => api.connectorSettings(c.definition.id, values), 'Saved. Filters that use these are ready in Super+K.') }}>
+    {!!c.settings?.length && <form className="k-fields" onSubmit={e => { e.preventDefault(); void run(() => api.connectorSettings(c.definition.id, values), `Saved. Filters that use these are ready in ${systemKey}+K.`) }}>
       {c.settings.map(s => <label className="k-field" key={s.key}><span>{s.label}</span><span className="k-input"><input aria-label={`${name} ${s.label}`} value={values[s.key] || ''} placeholder={s.placeholder} spellCheck={false} onChange={e => setValues(v => ({ ...v, [s.key]: e.target.value }))} /></span></label>)}
       <div className="button-row"><button className="pill" disabled={busy} type="submit">Save</button></div>
     </form>}

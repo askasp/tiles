@@ -219,27 +219,65 @@ export function promoteTile(s: TileDesktop): TileDesktop {
     fullscreenID: w.tileIDs.length === 4 ? w.fullscreenID ? null : w.focusedID : null,
   } : x) }
 }
-export function tileRects(count: number): { x: number; y: number; width: number; height: number }[] {
+/** Where each visible tile sits when lists share a workspace with work tiles. */
+export interface TileCell { column: number; row: number; rows: number }
+export interface TileLayout { columns: ('list' | number)[]; rows: number; cells: TileCell[] }
+/**
+ * Lists (a project's sessions, a folder, an inbox) take one narrow column, stacked when there are
+ * several; work tiles share the rest as they would alone. Undefined when every tile is the same role.
+ */
+export function tileLayout(lists: boolean[]): TileLayout | undefined {
+  const l = lists.filter(Boolean).length, a = lists.length - l
+  if (!l || !a) return undefined
+  const rows = Math.max(l, a === 3 ? 2 : 1)
+  const columns: TileLayout['columns'] = [], cells: TileCell[] = []
+  let listColumn = -1, listIndex = 0, actionIndex = 0
+  lists.forEach((list, i) => {
+    if (list) {
+      if (listColumn < 0) { listColumn = columns.length; columns.push('list') }
+      cells[i] = { column: listColumn, row: listIndex++ * rows / l, rows: rows / l }
+      return
+    }
+    const n = actionIndex++
+    // Three work tiles: the first takes a tall column, the other two stack beside it.
+    if (a === 3 && n === 2) { cells[i] = { column: columns.lastIndexOf(2), row: 1, rows: 1 }; return }
+    columns.push(a === 3 ? n ? 2 : 3 : 1)
+    cells[i] = { column: columns.length - 1, row: 0, rows: a === 3 && n === 1 ? 1 : rows }
+  })
+  return { columns, rows, cells }
+}
+/** A list column's nominal share of the width, for moving focus between tiles. */
+const LIST_SHARE = .25
+export function tileRects(count: number, lists: boolean[] = []): { x: number; y: number; width: number; height: number }[] {
+  const layout = tileLayout(lists.length === count ? lists : [])
+  if (layout) {
+    const weight = layout.columns.reduce<number>((sum, c) => sum + (c === 'list' ? 0 : c), 0)
+    const widths = layout.columns.map(c => c === 'list' ? LIST_SHARE : (1 - LIST_SHARE) * c / weight)
+    const xs = widths.map((_, i) => widths.slice(0, i).reduce((sum, w) => sum + w, 0))
+    return layout.cells.map(c => ({ x: xs[c.column], y: c.row / layout.rows, width: widths[c.column], height: c.rows / layout.rows }))
+  }
   if (count === 1) return [{ x: 0, y: 0, width: 1, height: 1 }]
   if (count === 2) return [0, 1].map(i => ({ x: i / 2, y: 0, width: .5, height: 1 }))
   if (count === 3) return [{ x: 0, y: 0, width: .6, height: 1 }, { x: .6, y: 0, width: .4, height: .5 }, { x: .6, y: .5, width: .4, height: .5 }]
   return [0, 1, 2, 3].map(i => ({ x: i % 2 / 2, y: Math.floor(i / 2) / 2, width: .5, height: .5 }))
 }
-export function neighbourIndex(count: number, index: number, direction: Direction): number {
-  const rects = tileRects(count), origin = rects[index]
+/** `recent` breaks ties (two stacked lists beside one tile): the higher one wins, as in i3 and vim. */
+export function neighbourIndex(count: number, index: number, direction: Direction, lists: boolean[] = [], recent: (i: number) => number = () => 0): number {
+  const rects = tileRects(count, lists), origin = rects[index]
   if (!origin) return index
   const horizontal = direction === 'left' || direction === 'right'
   const sign = direction === 'right' || direction === 'down' ? 1 : -1
   const center = (r: typeof origin) => [r.x + r.width / 2, r.y + r.height / 2]
   const [ox, oy] = center(origin)
-  const candidates = rects.map((r, i) => { const [x, y] = center(r); const forward = horizontal ? (x - ox) * sign : (y - oy) * sign; return { i, forward, distance: Math.abs(horizontal ? y - oy : x - ox) * 2 + forward } }).filter(c => c.i !== index && c.forward > .01).sort((a, b) => a.distance - b.distance)
+  const candidates = rects.map((r, i) => { const [x, y] = center(r); const forward = horizontal ? (x - ox) * sign : (y - oy) * sign; return { i, forward, distance: Math.abs(horizontal ? y - oy : x - ox) * 2 + forward } }).filter(c => c.i !== index && c.forward > .01).sort((a, b) => Math.abs(a.distance - b.distance) > 1e-9 ? a.distance - b.distance : recent(b.i) - recent(a.i))
   return candidates[0]?.i ?? index
 }
-export function directionTile(s: TileDesktop, direction: Direction, swap = false): TileDesktop {
+export function directionTile(s: TileDesktop, direction: Direction, swap = false, isList: (tile: Tile) => boolean = () => false): TileDesktop {
   const w = activeWorkspace(s)
   if (!w) return s
   const index = w.tileIDs.indexOf(w.focusedID || '')
-  const to = neighbourIndex(w.tileIDs.length, index, direction)
+  const tiles = w.tileIDs.map(id => s.tiles.find(t => t.id === id))
+  const to = neighbourIndex(w.tileIDs.length, index, direction, tiles.map(t => !!t && isList(t)), i => tiles[i]?.lastUsed || 0)
   if (to === index || to < 0) return s
   if (!swap) return focusTile(s, w.tileIDs[to])
   const next = checkpoint(s), ids = [...w.tileIDs]; [ids[index], ids[to]] = [ids[to], ids[index]]

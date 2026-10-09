@@ -50,7 +50,7 @@ function Permission({ request, pending }: { request: PermissionRequest; pending:
   return <section className="permission-card" aria-label={`Permission · ${request.action}`}>
     <div className="card-label"><ShieldCheck size={14} /> Permission · {request.action}</div>
     <pre>{request.resources.join('\n')}</pre>{request.message && <p>{request.message}</p>}
-    <div className="permission-keys">{pending ? 'Answering…' : <><span><kbd>y</kbd> Allow once</span><span><kbd>a</kbd> Always allow</span><span><kbd>n</kbd> Deny</span><span className="muted">from the message box: Esc first, or {systemKey}+.</span></>}</div>
+    <div className="permission-keys">{pending ? 'Answering…' : <><span><kbd>y</kbd> Allow once</span><span><kbd>a</kbd> Always allow</span><span><kbd>d</kbd> Deny</span><span className="muted">from the message box: Esc first, or {systemKey}+.</span></>}</div>
   </section>
 }
 
@@ -122,7 +122,7 @@ export function Chat({ tileID, detail, running, loading, older, refresh, reportE
     ...(permission ? [
       { id: 'allow', label: `Allow once · ${permission.action}`, key: 'y', urgent: true, disabled: !!answering, run: () => void reply(permission, 'once') },
       { id: 'always', label: `Always allow · ${permission.action}`, key: 'a', urgent: true, disabled: !!answering, run: () => void reply(permission, 'always') },
-      { id: 'deny', label: `Deny · ${permission.action}`, key: 'n', urgent: true, disabled: !!answering, run: () => void reply(permission, 'reject') },
+      { id: 'deny', label: `Deny · ${permission.action}`, key: 'd', urgent: true, disabled: !!answering, run: () => void reply(permission, 'reject') },
     ] : []),
     ...(form ? [{ id: 'form', label: `Answer · ${form.title || 'the agent’s question'}`, key: 'r', urgent: true, run: () => scroll.current?.querySelector<HTMLElement>(`[data-form-id="${form.id}"] input, [data-form-id="${form.id}"] select, [data-form-id="${form.id}"] button`)?.focus() }] : []),
     ...(detail?.messages.cursor.next ? [{ id: 'older', label: 'Load earlier messages', key: 'e', disabled: loadingOlder, run: () => void loadOlder() }] : []),

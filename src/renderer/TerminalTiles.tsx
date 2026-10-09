@@ -4,6 +4,8 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import type { Tile } from '../shared/tiles'
 import { api, friendlyError } from './data'
+import { useTileActions } from './actions'
+import { systemKey } from './ui'
 
 /** A shell in a folder. The process lives in the main process, so shelving
  * the tile keeps it running; reopening replays recent output. */
@@ -53,8 +55,10 @@ export function TerminalBody({ tile, visible, focused, focusKey, consumeDraft }:
     return () => observer.disconnect()
   }, [visible, generation])
   useEffect(() => { if (visible && focused) term.current?.focus() }, [visible, focused, focusKey, generation])
+  // A terminal owns its letters, so its actions are reached with ⌘. t (the leader works inside it).
+  useTileActions(tile.id, 'terminal', state.error ? [{ id: 'restart', label: 'Restart the shell', key: 'r', run: () => setGeneration(g => g + 1) }] : [])
   return <div className="terminal-body">
-    {state.error && <div className="inline-error" role="alert">{state.error}<button className="text-button" onClick={() => setGeneration(g => g + 1)}>Retry</button></div>}
+    {state.error && <div className="inline-error" role="alert">{state.error}<span className="muted">{systemKey}+. t r restarts the shell</span></div>}
     <div className="terminal-host" ref={host} data-terminal-id={tile.id} />
     <footer className="files-footer">{tile.directory}{state.shell && ` · ${state.shell}`}{!state.alive && !state.error && ' · ended'} · Closing the tile ends the shell; shelving keeps it running</footer>
   </div>

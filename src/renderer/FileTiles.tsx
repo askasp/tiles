@@ -55,12 +55,12 @@ export function FileBody({ tile, env, others }: { tile: Tile; env: Env; others: 
     ...others.map((action, index) => ({ id: `other-${index}`, label: action.label, key: action.key, run: () => run(action) })),
     { id: 'refresh', label: 'Refresh', key: 'r', disabled: busy, run: () => void refresh() },
     // No key yet: the keymap is being settled. Always asks first; the Trash can restore it.
-    ...(tile.kind === 'folder' ? current && current.kind !== 'other' ? [{ id: 'delete', label: `Move “${current.name}” to the Trash…`, run: () => void api.trashPath(current.path).then(() => refresh()).catch(e => setError(friendlyError(e))) }] : []
-      : [{ id: 'delete', label: `Move “${tile.title}” to the Trash…`, run: () => void api.trashPath(tile.path!).then(() => { if (!env.tileBack(tile.id)) void go(parent) }).catch(e => setError(friendlyError(e))) }]),
+    ...(tile.kind === 'folder' ? current && current.kind !== 'other' ? [{ id: 'delete', key: 'D', keyLabel: 'Delete', label: `Move “${current.name}” to the Trash…`, run: () => void api.trashPath(current.path).then(() => refresh()).catch(e => setError(friendlyError(e))) }] : []
+      : [{ id: 'delete', key: 'D', keyLabel: 'Delete', label: `Move “${tile.title}” to the Trash…`, run: () => void api.trashPath(tile.path!).then(() => { if (!env.tileBack(tile.id)) void go(parent) }).catch(e => setError(friendlyError(e))) }]),
   ])
   return <div className="files-body" data-arrow-keys onKeyDown={e => {
     if ((e.target as HTMLElement).closest('input, textarea')) return
-    if (e.key === 'Backspace' || (e.altKey && e.key === 'ArrowLeft')) { e.preventDefault(); back(); return }
+    if ((e.key === 'Backspace' && !e.metaKey && !e.ctrlKey) || (e.altKey && e.key === 'ArrowLeft')) { e.preventDefault(); back(); return }
     if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); env.tileForward(tile.id); return }
     if (tile.kind !== 'folder') return
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setSelected(i => Math.max(0, Math.min(entries.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))) }

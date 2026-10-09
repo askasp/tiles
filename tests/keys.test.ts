@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { Input } from 'electron'
-import { createShortcutReader, keyHelp, shortcutFor, windowChord } from '../src/shared/shortcuts'
+import { createShortcutReader, keyHelp, leader, pageKeepsKey, shortcutFor, windowChord, type LeaderEntry } from '../src/shared/shortcuts'
 import { validateActions } from '../src/renderer/actions'
 
 const family = (action: string) => action.split(':')[0]
-const documented = new Set(keyHelp('Super').flatMap(group => group.rows.flatMap(row => row.actions || [])))
+const walk = (entries: Record<string, LeaderEntry>): string[] => Object.values(entries).flatMap(e => [...(e.action ? [e.action] : []), ...(e.keys ? walk(e.keys) : [])])
+const leaderActions = walk(leader)
+const documented = new Set(keyHelp('Super').flatMap(group => group.rows.flatMap(row => (row.actions || []).map(family))))
 const keys = [...'abcdefghijklmnopqrstuvwxyz0123456789.,-=+/ ', 'Tab', 'Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'F2', 'F6', 'Escape']
 const press = (key: string, mods: Partial<Input> = {}) => ({ type: 'keyDown', key, code: /^[0-9]$/.test(key) ? `Digit${key}` : '', control: false, alt: false, meta: false, shift: false, ...mods }) as Input
 
@@ -14,10 +16,11 @@ describe('key sheet', () => {
     const answered = new Set<string>()
     for (const key of keys) for (const mods of modifiers) { const action = shortcutFor(press(key, mods)); if (action) answered.add(family(action)) }
     for (const action of Object.values(windowChord)) answered.add(family(action))
+    for (const action of leaderActions) answered.add(family(action))
     expect([...answered].filter(action => !documented.has(action))).toEqual([])
   })
   it('only documents actions that exist', () => {
-    const real = new Set([...keys.flatMap(key => [{}, { meta: true }, { meta: true, shift: true }, { control: true }, { control: true, shift: true }, { alt: true }].map(mods => shortcutFor(press(key, mods)))), ...Object.values(windowChord)].filter(Boolean).map(a => family(a!)))
+    const real = new Set([...leaderActions, ...keys.flatMap(key => [{}, { meta: true }, { meta: true, shift: true }, { control: true }, { control: true, shift: true }, { alt: true }].map(mods => shortcutFor(press(key, mods)))), ...Object.values(windowChord)].filter(Boolean).map(a => family(a!)))
     expect([...documented].filter(action => !real.has(action))).toEqual([])
   })
   it('opens the action menu and the key sheet from anywhere', () => {
@@ -25,6 +28,22 @@ describe('key sheet', () => {
     expect(shortcutFor(press('.', { control: true, alt: true }))).toBe('actions')
     expect(shortcutFor(press('/', { meta: true }))).toBe('keys')
     expect(shortcutFor(press('.', { control: true }))).toBe('attach-selection')
+  })
+})
+
+describe('leader', () => {
+  it('has one home per action: every Ctrl+W action is under ␣ w, and app actions left the accelerators', () => {
+    const w = new Set(Object.values(leader.w.keys!).map(e => e.action))
+    for (const action of new Set(Object.values(windowChord))) expect(w.has(action)).toBe(true)
+    for (const key of ['w', 'f', '-', '=', 't', 'n', 'u', 'z', 'o', 'Tab']) expect(shortcutFor(press(key, { meta: true }))).toBeUndefined()
+    expect(shortcutFor(press('Tab', { control: true }))).toBeUndefined()
+    expect(shortcutFor(press('b', { control: true, shift: true }))).toBeUndefined()
+    expect(shortcutFor(press('t', { control: true }))).toBeUndefined()
+  })
+  it('leaves Ctrl+K/I/O/Tab to web pages, but ⌘K still opens K', () => {
+    for (const key of ['k', 'i', 'o', 'Tab']) expect(pageKeepsKey(press(key, { control: true }))).toBe(true)
+    expect(pageKeepsKey(press('k', { meta: true }))).toBe(false)
+    expect(pageKeepsKey(press('w', { control: true }))).toBe(false)
   })
 })
 

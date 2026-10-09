@@ -3,6 +3,7 @@ import { isLoopbackURL, localModelURL, type DiscoveryResult, type DiscoveryTurn,
 import { recipeTile, type TileInput } from '../shared/tiles'
 import type { ConnectorDefinition, ConnectorInfo } from '../shared/connectors'
 import { api, friendlyError } from './data'
+import { systemKey } from './ui'
 
 /** K panels write their ↵ action here, so Enter in the K input runs it. */
 export type EnterRef = MutableRefObject<(() => void) | undefined>
@@ -72,21 +73,26 @@ export function ModelSetup({ info, firstRun, saved, skip, enter, embedded }: { i
   const rows = [
     { key: 'connect', icon: 'ai', title: busy ? 'Connecting…' : 'Connect', source: 'Model', subtitle: model ? `${model} · checks the key and saves it` : 'pick a model once the key is checked', action: 'Connect', run: () => void connect(), disabled: !canConnect },
     ...(!local ? [{ key: 'local', icon: 'ai', title: 'Use a local model instead', source: 'Model', subtitle: `e.g. Ollama at ${localModelURL}, no key`, action: 'Set up', run: useLocal, disabled: false }] : [{ key: 'remote', icon: 'ai', title: 'Use a hosted endpoint instead', source: 'Model', subtitle: 'OpenAI, OpenRouter, Groq, Together… any OpenAI-compatible API', action: 'Set up', run: () => { setBaseURL('https://api.openai.com/v1'); setModel('') }, disabled: false }]),
-    ...(skip ? [{ key: 'skip', icon: 'tile', title: 'Skip for now', source: 'Built in', subtitle: 'Browser, Files and Terminal work without a model. Super+K → “model” sets it up later.', action: 'Skip', run: skip, disabled: false }] : []),
+    ...(skip ? [{ key: 'skip', icon: 'tile', title: 'Skip for now', source: 'Built in', subtitle: `Browser, Files and Terminal work without a model. ${systemKey}+K → “model” sets it up later.`, action: 'Skip', run: skip, disabled: false }] : []),
   ]
   const selected = Math.min(choice, rows.length - 1)
   if (enter) enter.current = () => { const row = canConnect && selected === 0 ? rows[0] : rows[selected]; if (!row.disabled) row.run() }
   return <div className="k-panel" data-model-setup>
     {!embedded && <KReply>{firstRun ? 'K uses an AI model to understand what you ask, find things and build connectors. Any OpenAI-compatible endpoint works.' : info?.ready ? `Connected to ${info.model}. Change the endpoint, key or model below.` : 'Connect a model so K can build connectors and plan across your sources.'}</KReply>}
-    <div className="k-fields">
+    <div className="k-fields" onKeyDown={e => {
+      // ↵ in a field connects, the same as the button (or the chosen row in K).
+      if (e.key !== 'Enter' || e.nativeEvent.isComposing || (e.target as HTMLElement).tagName !== 'INPUT') return
+      e.preventDefault()
+      if (embedded) { if (canConnect) void connect() } else enter?.current?.()
+    }}>
       <label className="k-field"><span>Base URL</span><span className="k-input"><input aria-label="Model base URL" value={baseURL} spellCheck={false} onChange={e => setBaseURL(e.target.value)} /></span></label>
       {!local && <label className="k-field"><span>API key</span><span className="k-input"><input aria-label="Model API key" type="password" autoComplete="off" spellCheck={false} value={apiKey} placeholder={keyKnown ? 'Saved · paste a new key to replace it' : 'sk-…'} onChange={e => setAPIKey(e.target.value)} /><em className={error ? 'bad' : 'good'}>{checking ? 'checking…' : error ? '' : probe ? `✓ ${probe.models.length} model${probe.models.length === 1 ? '' : 's'} found` : ''}</em></span></label>}
       {local && <p className="k-note">{checking ? 'Looking for your local model server…' : probe ? `✓ ${probe.models.length} local model${probe.models.length === 1 ? '' : 's'} found` : 'Start Ollama (ollama serve), LM Studio or llama.cpp with an OpenAI-compatible endpoint.'}</p>}
       <label className="k-field"><span>Model</span><span className="k-input">{probe?.models.length ? <select aria-label="Model" value={model} onChange={e => setModel(e.target.value)}>{!probe.models.includes(model) && model && <option value={model}>{model}</option>}{probe.models.map(m => <option key={m} value={m}>{m}</option>)}</select> : <input aria-label="Model" value={model} spellCheck={false} placeholder="Model ID, e.g. gpt-4.1-mini" onChange={e => setModel(e.target.value)} />}</span></label>
       {error && <p className="k-error" role="alert">{error}</p>}
-      <p className="k-note">{local ? 'Runs on this machine. Nothing leaves it.' : 'The key is stored with your system keyring. What you type in K goes to this endpoint; service tokens never do.'} Change it later in Super+, → Model.</p>
+      <p className="k-note">{local ? 'Runs on this machine. Nothing leaves it.' : 'The key is stored with your system keyring. What you type in K goes to this endpoint; service tokens never do.'} Change it later in {systemKey}+, → Model.</p>
     </div>
-    <KChips items={[{ label: 'Model', value: model || '—' }, { label: 'Used for', value: 'Super+K, connectors, tile mapping' }]} />
+    <KChips items={[{ label: 'Model', value: model || '—' }, { label: 'Used for', value: `${systemKey}+K, connectors, tile mapping` }]} />
     {!embedded ? <div className="k-rows">{rows.map((r, i) => <KRow key={r.key} icon={r.icon} title={r.title} source={r.source} subtitle={r.subtitle} action={r.action} hint={i === selected ? '↵' : ''} selected={i === selected} disabled={r.disabled} onClick={() => { setChoice(i); r.run() }} />)}</div>
       : <div className="button-row k-buttons"><button className="pill primary" disabled={!canConnect} onClick={() => void connect()}>{busy ? 'Connecting…' : info?.ready ? 'Save model' : 'Connect model'}</button>{!local && <button className="pill" onClick={useLocal}>Use a local model</button>}{info?.tokenStorage !== 'none' && info?.ready && <button className="text-button" onClick={() => void api.forgetModelKey().then(saved).catch(e => setError(friendlyError(e)))}>Forget key</button>}</div>}
     {!embedded && <ModelRowKeys count={rows.length} move={d => setChoice(c => Math.max(0, Math.min(rows.length - 1, c + d)))} />}
@@ -170,7 +176,7 @@ function KeptConnector({ info, changed, open, done, status, error }: { info: Con
     {info.definition.auth.type === 'bearer' && <form onSubmit={e => { e.preventDefault(); connect() }}>
       <label className="k-field"><span>API token</span><span className="k-input"><input aria-label="Connector token" type="password" autoComplete="off" spellCheck={false} autoFocus={!info.hasToken} value={token} onChange={e => setToken(e.target.value)} placeholder={info.hasToken ? 'Saved · paste to replace' : 'Paste a token'} /><em className="good">{busy ? 'checking…' : info.hasToken ? `✓ ${info.account || 'saved'}` : ''}</em></span></label>
     </form>}
-    {info.definition.auth.type === 'oauth2' && <p className="k-note">Sign in from Super+, → Sources → {info.definition.name}.</p>}
+    {info.definition.auth.type === 'oauth2' && <p className="k-note">Sign in from {systemKey}+, → Sources → {info.definition.name}.</p>}
     <div className="button-row k-buttons">{collections.map(r => <button className="pill" key={r.id} onClick={() => { open(recipeTile({ connectorID: info.definition.id, recipeID: r.id }, `${info.definition.name} · ${r.label}`, r, info.definition.name)); done() }}>Open {r.label}</button>)}<button className="pill primary" onClick={done}>Done</button></div>
   </div>
 }
@@ -193,7 +199,7 @@ export function BuiltinSetup({ id, connectors, changed, open, done, enter }: { i
   return <div className="k-panel" data-connector-setup={id}>
     <KReply>{info ? `${d.name} is added${info.hasToken ? `, connected as ${info.account || 'your token'}` : ''}.` : `${d.name} ships with ChatOS: ${builtin.hint.toLowerCase()}. This is how it shows up:`}</KReply>
     <KMap rows={recipeRows(d, 'built-in')} />
-    <p className="k-note">API destination {d.baseURL}{d.auth.help ? ` · ${d.auth.help}` : ''} Reads run straight away; writes always ask first.{builtin.settings.length ? ` Optional in Super+, → Sources: ${builtin.settings.map(s => s.label.toLowerCase()).join(', ')}.` : ''}</p>
+    <p className="k-note">API destination {d.baseURL}{d.auth.help ? ` · ${d.auth.help}` : ''} Reads run straight away; writes always ask first.{builtin.settings.length ? ` Optional in ${systemKey}+, → Sources: ${builtin.settings.map(s => s.label.toLowerCase()).join(', ')}.` : ''}</p>
     {!info && <div className="button-row k-buttons"><button className="pill primary" disabled={busy} onClick={() => void keep()}>Add {d.name}<kbd>↵</kbd></button></div>}
     {info && <KeptConnector info={info} changed={changed} open={open} done={done} status={setStatus} error={setError} />}
     {status && <p className="k-note" role="status">{status}</p>}

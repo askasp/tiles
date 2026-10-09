@@ -1,6 +1,6 @@
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
-import { approvals, ask, desktopReady, fakeServices, launchDesktop, startSession } from './launch'
+import { approvals, ask, desktopReady, fakeServices, launchDesktop, startSession, tileAction } from './launch'
 import { fixtureServer } from './fixture'
 
 /** Slack and Front are built-in connectors pointed at the fixture's fake APIs; Slack pages are stubbed. No real accounts. */
@@ -56,12 +56,12 @@ test('a developer day: Slack DMs, tagged Front mail with replies, 2 projects × 
     await expect(inbox.locator('.recipe-list-row')).toHaveCount(3)
     const inboxID = await inbox.getAttribute('data-tile-id')
     for (const [subject, action, text] of [['Duplikate', 'Comment', 'Same root cause as last week — looking now.'], ['Login loop', 'Reply', 'Fixed in the 14:00 deploy. Can you confirm?']] as const) {
-      await page.locator(`[data-tile-id="${inboxID}"] .recipe-list-row`).filter({ hasText: subject }).click()
+      await page.locator(`[data-tile-id="${inboxID}"] .recipe-list-row`).filter({ hasText: subject }).click({ modifiers: ['Control'] })
       const conversation = page.locator('[data-kind="recipe"].tile-focused')
       await expect(conversation.locator('.recipe-message').first()).toBeVisible()
       const draft = conversation.getByRole('textbox', { name: 'Resource action draft' })
       await draft.fill(text)
-      await conversation.getByRole('button', { name: new RegExp(`^${action}`) }).click()
+      await tileAction(page, conversation, new RegExp(`^${action}`))
       await expect(draft).toHaveValue('')
     }
     expect(fixture.frontWrites).toEqual([{ id: 'cnv_101', kind: 'comment', body: 'Same root cause as last week — looking now.' }, { id: 'cnv_102', kind: 'reply', body: 'Fixed in the 14:00 deploy. Can you confirm?' }])
@@ -101,15 +101,15 @@ test('a developer day: Slack DMs, tagged Front mail with replies, 2 projects × 
     await page.keyboard.press('Control+Enter')
     await expect(page.locator(`[data-resource-key="folder:${work}/src"]`)).toBeVisible()
     await expect(inside).toHaveAttribute('data-resource-key', `folder:${work}`)
-    await page.keyboard.press('Meta+t')
+    await page.keyboard.press('Control+Alt+.'); await page.keyboard.press('n'); await page.keyboard.press('t')
     await expect(page.locator('[data-kind="terminal"]:visible .xterm')).toBeVisible()
     const focusedID = () => page.locator('.resource-tile.tile-focused').getAttribute('data-tile-id')
     await page.locator(`[data-tile-id="${folderTile}"] .files-toolbar strong`).click()
     const before = await focusedID()
-    // Vim window keys: Ctrl+W, then h/j/k/l.
-    await page.keyboard.press('Control+w'); await expect(page.locator('.chord-hint')).toBeVisible(); await page.keyboard.press('l')
+    // Vim window keys: Ctrl+W, then h/j/k/l. The two folders are lists, stacked in the narrow column.
+    await page.keyboard.press('Control+w'); await expect(page.locator('.chord-hint')).toBeVisible(); await page.keyboard.press('j')
     await expect.poll(focusedID).not.toBe(before)
-    await page.keyboard.press('Control+w'); await page.keyboard.press('h')
+    await page.keyboard.press('Control+w'); await page.keyboard.press('k')
     await expect.poll(focusedID).toBe(before)
 
     // The rest of the day: many interruptions. Measure what grows.
@@ -135,12 +135,12 @@ test('a developer day: Slack DMs, tagged Front mail with replies, 2 projects × 
         await page.locator('[data-kind="session"].tile-focused textarea').fill(`draft ${pass}`)
       }
       await page.keyboard.press('Control+w'); await page.keyboard.press('2')
-      await page.keyboard.press('Control+Alt+Minus')
-      await page.keyboard.press('Control+Alt+Equal')
-      await page.keyboard.press('Meta+t')
+      await page.keyboard.press('Control+w'); await page.keyboard.press('-')
+      await page.keyboard.press('Control+w'); await page.keyboard.press('=')
+      await page.keyboard.press('Control+Alt+.'); await page.keyboard.press('n'); await page.keyboard.press('t')
       await expect(page.locator('[data-kind="terminal"].tile-focused .xterm')).toBeVisible()
       await page.locator('[data-kind="terminal"].tile-focused .terminal-host').click()
-      await page.keyboard.press('Control+Alt+w')
+      await page.keyboard.press('Control+Alt+.'); await page.keyboard.press('w'); await page.keyboard.press('q')
       await expect(page.locator('.stage-tab, .browser-tabs')).toHaveCount(0)
       for (const w of await page.locator('.workspace-button').all()) expect(Number((await w.locator('small').textContent())?.replace(/\D/g, '') || 0)).toBeLessThanOrEqual(4)
       await page.waitForTimeout(300)

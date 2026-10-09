@@ -6,7 +6,7 @@ import { sources as catalogue } from '../shared/sources'
 import { normalizeURL } from '../shared/util'
 import { keyHelp } from '../shared/shortcuts'
 import { api, friendlyError } from './data'
-import { IconButton, Modal } from './ui'
+import { IconButton, Modal, systemKey } from './ui'
 import { ModelSetup } from './Setup'
 import { Badge } from './TileOverlays'
 import { registry } from './sources/registry'
@@ -33,7 +33,7 @@ export function Settings({ model, modelChanged, env, states, close, platform }: 
   model?: ModelInfo; modelChanged: (info: ModelInfo) => void; env: Env; states: Map<string, unknown>; close: () => void; platform: string;
 }) {
   const [pending, setPending] = useState(false), [error, setError] = useState(''), [status, setStatus] = useState('')
-  const system = platform === 'darwin' ? '⌘' : 'Super'
+  const system = systemKey
   const run = async (action: () => Promise<void>) => { setPending(true); setError(''); try { await action() } catch (e) { setError(friendlyError(e)) } finally { setPending(false) } }
   return <Modal title="Settings" close={close} wide><div className="modal-heading"><Settings2 size={18} /><h2>Settings</h2><span className="muted">{system}+,</span><IconButton label="Close settings" onClick={close}><X size={16} /></IconButton></div>
     <div className="settings-grid">
@@ -45,7 +45,7 @@ export function Settings({ model, modelChanged, env, states, close, platform }: 
           {registry.map(source => source.Settings && <source.Settings key={source.id} state={states.get(source.id)} env={env} />)}
         </div>
         <div className="button-row"><button className="pill primary" onClick={() => env.ask('add ')}><Plus size={13} />Add a source</button><button className="pill" onClick={() => env.editConnector({})}>Write a connector by hand</button><button className="text-button" disabled={pending} onClick={() => void run(async () => setStatus(`Backup saved: ${await api.backupStorage()}`))}>Create database backup</button></div>
-        <p className="muted">Sources you add show up in Super+K. Nothing is contacted until it is added.</p>
+        <p className="muted">Sources you add show up in {systemKey}+K. Nothing is contacted until it is added.</p>
       </section>
       {error && <div className="inline-error" role="alert">{error}</div>}{status && <p className="muted" role="status">{status}</p>}
       <section className="settings-section shortcuts-content" aria-label="Keys"><h3><Keyboard size={15} />Keys</h3><p className="muted">Also anywhere with {system}+/ or ?. {platform === 'darwin' ? '' : 'On Linux, Ctrl+Alt works wherever Super is taken by your window manager.'}</p>{keyHelp(system).map(group => <div key={group.title}><h4>{group.title}</h4>{group.rows.map(row => <div className="shortcut-row" key={row.keys + row.label}><kbd>{row.keys}</kbd><span>{row.label}</span></div>)}</div>)}</section>
@@ -65,5 +65,5 @@ export function RenameDialog({ title, submit, close, label = 'Session name' }: {
 export function SendPage({ page, targets, send, close }: { page: BrowserContext; targets: { id: string; title: string; subtitle: string }[]; send: (id: string, note: string) => void; close: () => void }) {
   const [note, setNote] = useState('')
   const [selected, setSelected] = useState(targets[0]?.id || '')
-  return <Modal title="Send page as context" close={close}><div className="modal-heading"><Globe size={18} /><h2>Send page as context</h2><IconButton label="Close send page dialog" onClick={close}><X size={16} /></IconButton></div><div className="send-page-content"><strong className="truncate">{page.title || page.url}</strong><span className="muted truncate">{page.url}</span><label className="form-field">To<select aria-label="Destination" value={selected} onChange={event => setSelected(event.target.value)}>{targets.map(t => <option value={t.id} key={t.id}>{t.title} · {t.subtitle}</option>)}</select></label><label className="form-field">Optional note<input aria-label="Page note" value={note} onChange={event => setNote(event.target.value)} placeholder="What should it know?" /></label><div className="button-row"><span className="muted">Adds context to its draft. Nothing is sent.<br />This page stays in its own tile.</span><button className="pill primary" disabled={!selected} onClick={() => { send(selected, note); close() }}>Add to draft</button></div></div></Modal>
+  return <Modal title="Send page as context" close={close}><div className="modal-heading"><Globe size={18} /><h2>Send page as context</h2><IconButton label="Close send page dialog" onClick={close}><X size={16} /></IconButton></div><form className="send-page-content" onSubmit={event => { event.preventDefault(); if (!selected) return; send(selected, note); close() }}><strong className="truncate">{page.title || page.url}</strong><span className="muted truncate">{page.url}</span><label className="form-field">To<select aria-label="Destination" value={selected} onChange={event => setSelected(event.target.value)}>{targets.map(t => <option value={t.id} key={t.id}>{t.title} · {t.subtitle}</option>)}</select></label><label className="form-field">Optional note<input aria-label="Page note" value={note} onChange={event => setNote(event.target.value)} placeholder="What should it know?" /></label><div className="button-row"><span className="muted">Adds context to its draft. Nothing is sent.<br />This page stays in its own tile.</span><button className="pill primary" type="submit" disabled={!selected}>Add to draft<kbd aria-hidden>↵</kbd></button></div></form></Modal>
 }

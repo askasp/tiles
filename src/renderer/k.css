@@ -188,3 +188,6 @@
 .key-sheet-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 4px 28px; padding: 4px 20px 20px; }
 .key-sheet-groups h3, .shortcuts-content h4 { margin: 12px 0 4px; font-size: 12px; font-weight: 500; color: var(--ink); }
 .key-sheet .shortcut-row kbd { width: 190px; }
+.action-row kbd { order: -1; min-width: 34px; }
+.action-row.group span { color: var(--blue-ink, var(--ink)); }
+.action-menu .modal-heading h2 kbd { font-size: 12px; padding: 1px 7px; border-radius: 6px; background: var(--canvas); color: var(--ink-3); margin-right: 4px; }

@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { mkdtemp, rm, readFile, stat } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { exampleConnector, type ConnectorDefinition } from '../../src/shared/connectors'
-import { ask, desktopReady, launchDesktop } from './launch'
+import { ask, desktopReady, launchDesktop, tileAction } from './launch'
 import { fixtureServer } from './fixture'
 
 async function customAPI() {
@@ -59,7 +59,8 @@ test('A0 model setup, then “add helpdesk”: K proposes an inspectable adapter
     await page.getByRole('button', { name: 'Open Ticket inbox', exact: true }).click()
     const list = page.locator('[data-kind="recipe"]:visible').filter({ has: page.locator('.recipe-list-row') })
     await expect(list.locator('.recipe-list-row')).toHaveCount(2)
-    await list.locator('.recipe-list-row').first().click()
+    // Ctrl+click (Ctrl+↵) opens beside; a plain click opens in place.
+    await list.locator('.recipe-list-row').first().click({ modifiers: ['Control'] })
     let detail = page.locator('[data-resource-key="connector:helpdesk:ticket:item:42"]')
     await expect(detail).toBeVisible(); await expect(list).toBeVisible()
     await expect(detail.locator('.recipe-message-note')).toContainText('Internal note')
@@ -67,7 +68,7 @@ test('A0 model setup, then “add helpdesk”: K proposes an inspectable adapter
     await expect(detail.locator('img, script')).toHaveCount(0)
     await detail.getByRole('textbox', { name: 'Resource action draft' }).fill('Unsaved customer reply must survive')
     await app.evaluate(({ dialog }) => { dialog.showMessageBox = (async () => ({ response: 0, checkboxChecked: false })) as typeof dialog.showMessageBox })
-    await detail.getByRole('button', { name: 'Reply · confirm…' }).click()
+    await tileAction(page, detail, /^Reply · asks first/)
     await expect(detail.getByRole('alert')).toContainText('cancelled')
     await expect(detail.getByRole('textbox', { name: 'Resource action draft' })).toHaveValue('Unsaved customer reply must survive')
     expect(api.requests.filter(r => r.method !== 'GET')).toHaveLength(0)
@@ -86,13 +87,13 @@ test('A0 model setup, then “add helpdesk”: K proposes an inspectable adapter
     await expect(detail.getByRole('textbox', { name: 'Resource action draft' })).toHaveValue('Unsaved customer reply must survive')
     await expect(detail.getByRole('alert')).toContainText('Connect an API token')
     await app.evaluate(({ dialog }) => { dialog.showMessageBox = (async () => ({ response: 1, checkboxChecked: false })) as typeof dialog.showMessageBox })
-    await detail.getByRole('button', { name: 'Mapping', exact: true }).click()
+    await tileAction(page, detail, 'Mapping & connection')
     await page.getByRole('button', { name: 'Helpdesk · v1', exact: true }).click()
     await page.getByRole('textbox', { name: 'Connector token' }).fill('fake-generic-private-token')
     await page.getByRole('button', { name: 'Connect token', exact: false }).click()
     await page.getByRole('button', { name: 'Close', exact: true }).click()
     await expect(detail.locator('.recipe-message-note')).toContainText('Internal note')
-    await detail.getByRole('button', { name: 'Reply · confirm…' }).click()
+    await tileAction(page, detail, /^Reply · asks first/)
     await expect(detail.getByRole('textbox', { name: 'Resource action draft' })).toHaveValue('')
     expect(api.requests.filter(r => r.method === 'POST')).toEqual([{ method: 'POST', path: '/tickets/42/reply', authorization: 'Bearer fake-generic-private-token', body: '{"text":"Unsaved customer reply must survive"}' }])
     const saved = await page.evaluate(() => window.chatos.loadDesktop()!)
@@ -116,7 +117,7 @@ test('unrelated inventory API uses fixed Table and Timeline renderers and retain
     await page.getByRole('button', { name: 'Keep mapping', exact: false }).click()
     await page.getByRole('button', { name: 'Open Assets', exact: true }).click()
     await expect(page.locator('.recipe-table tbody tr')).toHaveCount(2)
-    await page.getByRole('button', { name: 'Count ↕' }).click()
+    await tileAction(page, page.locator('[data-kind="recipe"]:visible').filter({ has: page.locator('.recipe-table') }), /^Sort by Count/)
     await expect(page.locator('.recipe-table tbody tr').first()).toContainText('Valve')
     await page.getByRole('button', { name: 'Pump', exact: true }).click()
     const record = page.locator('[data-resource-key="connector:inventory:asset:item:a-1"]')

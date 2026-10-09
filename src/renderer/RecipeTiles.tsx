@@ -4,20 +4,36 @@ import remarkGfm from 'remark-gfm'
 import { browserTile, recipeTile, type Tile, type TileInput } from '../shared/tiles'
 import type { ConnectorInfo, RecipePage } from '../shared/connectors'
 import { api, friendlyError } from './data'
+import { filterField, systemKey } from './ui'
+import { useTileActions } from './actions'
+import { listOpen, type ListOpen } from './sources/types'
 
-export function RecipeBody({ tile, connectors, visible, open, change, settings }: {
+type RecipeProps = {
   tile: Tile; connectors: ConnectorInfo[]; visible: boolean; open: (tile: TileInput) => void;
+  /** Open from this list: ↵ in place (Back returns), Ctrl+↵ beside, Ctrl+Shift+↵ in a new workspace. */
+  openFrom: (input: TileInput, how: ListOpen) => void;
   change: (patch: Partial<Tile>) => void; settings: () => void;
-}) {
+}
+
+export function RecipeBody(props: RecipeProps) {
+  const { tile, connectors, settings } = props
   const info = connectors.find(c => c.definition.id === tile.resource?.connectorID)
   const recipe = info?.definition.recipes.find(r => r.id === tile.resource?.recipeID)
+  if (!recipe) return <div className="recipe-body"><p>This connector or recipe is unavailable. Your tile and draft are kept.</p><span className="muted">{systemKey}+, → Sources manages connectors.</span></div>
+  // A list opening a row in place becomes another resource: start it fresh, not with the list's rows.
+  return <RecipeView key={tile.key} {...props} />
+}
+
+function RecipeView({ tile, connectors, visible, open, openFrom, change, settings }: RecipeProps) {
+  const info = connectors.find(c => c.definition.id === tile.resource?.connectorID)
+  const recipe = info!.definition.recipes.find(r => r.id === tile.resource?.recipeID)!
   const [page, setPage] = useState<RecipePage>()
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [query, setQuery] = useState(tile.resource?.query || '')
   const [status, setStatus] = useState('')
   const [sort, setSort] = useState({ column: -1, ascending: true })
-  const [selectedRow, setSelectedRow] = useState(0)
+  const draftField = useRef<HTMLTextAreaElement>(null)
   const generation = useRef(0)
   const actionLock = useRef(false)
   const currentDraft = useRef(tile.draft); currentDraft.current = tile.draft
@@ -47,13 +63,12 @@ export function RecipeBody({ tile, connectors, visible, open, change, settings }
     } catch (e) { setError(friendlyError(e)) }
     finally { actionLock.current = false; setBusy(false) }
   }
-  if (!recipe) return <div className="recipe-body"><p>This connector or recipe is unavailable. Your tile and draft are kept.</p><button className="pill" onClick={settings}>Manage connectors</button></div>
-  const openItem = (item: { id: string; title: string; parentID?: string; url?: string }) => {
+  const openItem = (item: { id: string; title: string; parentID?: string; url?: string }, how: ListOpen = 'replace') => {
     const child = info!.definition.recipes.find(r => r.id === recipe.itemRecipe)
     try {
       // Rows that are web pages (a Slack message, a pull request) open in a Browser tile.
-      if (item.url || !child) { if (item.url) open({ ...browserTile(item.url), title: item.title, label: item.title }); return }
-      open(recipeTile({ connectorID: tile.resource!.connectorID, recipeID: child.id, ...(child.shape === 'collection' ? { parentID: item.id } : { resourceID: item.id, ...((item.parentID || tile.resource!.parentID) && { parentID: item.parentID || tile.resource!.parentID }) }) }, item.title, child, info!.definition.name))
+      if (item.url || !child) { if (item.url) openFrom({ ...browserTile(item.url), title: item.title, label: item.title }, how); return }
+      openFrom(recipeTile({ connectorID: tile.resource!.connectorID, recipeID: child.id, ...(child.shape === 'collection' ? { parentID: item.id } : { resourceID: item.id, ...((item.parentID || tile.resource!.parentID) && { parentID: item.parentID || tile.resource!.parentID }) }) }, item.title, child, info!.definition.name), how)
     } catch (e) { setError(friendlyError(e)) }
   }
   const sortedItems = [...(page?.items || [])].sort((a, b) => {
@@ -67,18 +82,26 @@ export function RecipeBody({ tile, connectors, visible, open, change, settings }
     return (numeric ? Number(first) - Number(second) : first.localeCompare(second, undefined, { numeric: true })) * (sort.ascending ? 1 : -1)
   })
   const sortBy = (column: number) => setSort(previous => ({ column, ascending: previous.column === column ? !previous.ascending : true }))
-  return <div className="recipe-body" tabIndex={0} onKeyDown={e => {
-    if (recipe.shape !== 'collection' || (e.target as HTMLElement).matches('input, textarea, button') || e.nativeEvent.isComposing) return
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setSelectedRow(i => Math.max(0, Math.min(sortedItems.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))) }
-    if (e.key === 'Enter' && sortedItems[selectedRow]) { e.preventDefault(); openItem(sortedItems[selectedRow]) }
-  }}>
-    <div className="recipe-toolbar"><span>{info?.definition.name} · {recipe.view} · recipe v{info?.revision}</span><button className="pill" disabled={busy} onClick={() => void load()}>Refresh</button><button className="text-button" onClick={settings}>Mapping</button></div>
-    {recipe.shape === 'collection' && !!info?.filters?.some(f => f.recipeID === recipe.id) && <div className="recipe-presets">{info.filters.filter(f => f.recipeID === recipe.id).map(f => <button className={`pill ${(tile.resource?.query || '') === f.query ? 'primary' : ''}`} key={f.title} disabled={!f.ready} title={f.ready ? f.query || 'default' : `Set this up in Super+, → Sources → ${info.definition.name}`} onClick={() => open(recipeTile({ connectorID: info.definition.id, recipeID: recipe.id, ...(f.query && { query: f.query }) }, `${info.definition.name} · ${f.title}`, recipe, info.definition.name))}>{f.title}</button>)}</div>}
-    {recipe.shape === 'collection' && <form className="recipe-filter" onSubmit={e => { e.preventDefault(); open(recipeTile({ ...tile.resource!, query: query.trim() }, `${recipe.label}${query.trim() ? ` · ${query.trim()}` : ''}`, recipe, info?.definition.name)) }}><input aria-label="Collection filter" placeholder="API search / filter…" value={query} maxLength={300} onChange={e => setQuery(e.target.value)} /><button className="pill" type="submit">Open filtered list</button></form>}
-    {error && <div className="inline-error" role="alert">{error}<button className="text-button" onClick={settings}>Connections</button></div>}
+  const presets = recipe.shape === 'collection' ? info?.filters?.filter(f => f.recipeID === recipe.id) || [] : []
+  const operations = recipe.actions || []
+  useTileActions(tile.id, 'recipe', [
+    { id: 'refresh', label: 'Refresh', key: 'r', disabled: busy, run: () => void load() },
+    { id: 'mapping', label: 'Mapping & connection', key: 'e', run: settings },
+    ...(page?.next ? [{ id: 'more', label: 'Load more', key: 'm', disabled: busy || (page.items.length + page.messages.length) >= 1000, run: () => void load(page.next) }] : []),
+    ...presets.map(f => ({ id: `preset-${f.title}`, label: `Show ${f.title}${(tile.resource?.query || '') === f.query ? ' (shown)' : ''}`, disabled: !f.ready, run: () => open(recipeTile({ connectorID: info!.definition.id, recipeID: recipe.id, ...(f.query && { query: f.query }) }, `${info!.definition.name} · ${f.title}`, recipe, info!.definition.name)) })),
+    ...(recipe.view === 'table' ? [{ label: 'Title', i: -1 }, ...(recipe.fields || []).map((field, i) => ({ label: field.label, i }))].map(c => ({ id: `sort-${c.i}`, label: `Sort by ${c.label}${sort.column === c.i ? (sort.ascending ? ' (↑ now)' : ' (↓ now)') : ''}`, run: () => sortBy(c.i) })) : []),
+    ...(operations.length ? [{ id: 'draft', label: 'Write the action draft', key: 'i', run: () => draftField.current?.focus() }] : []),
+    ...operations.map(a => ({ id: `run-${a.operation}`, label: `${a.label}${info?.definition.operations.find(op => op.id === a.operation)?.effect === 'write' ? ' · asks first' : ''}`, disabled: busy, run: () => void action(a.operation) })),
+  ])
+  // Rows: ↵ opens in place, Ctrl+↵ beside, Ctrl+Shift+↵ in a new workspace (the click does the same with Ctrl/Shift).
+  const row = (item: Parameters<typeof openItem>[0]) => ({ onClick: (e: React.MouseEvent) => openItem(item, listOpen(e)), onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); openItem(item, listOpen(e)) } } })
+  return <div className="recipe-body" tabIndex={0}>
+    <div className="recipe-toolbar"><span>{info?.definition.name} · {recipe.view} · recipe v{info?.revision}{presets.length ? ` · ${presets.find(f => (tile.resource?.query || '') === f.query)?.title || 'custom filter'}` : ''}</span><span className="muted"><kbd>␣ t</kbd> refresh, filters, mapping</span></div>
+    {recipe.shape === 'collection' && <form className="recipe-filter filter-row" onSubmit={e => { e.preventDefault(); open(recipeTile({ ...tile.resource!, query: query.trim() }, `${recipe.label}${query.trim() ? ` · ${query.trim()}` : ''}`, recipe, info?.definition.name)) }}><input {...filterField} aria-label="Collection filter" placeholder="API search / filter… ↵ opens the list" value={query} maxLength={300} onChange={e => setQuery(e.target.value)} /><kbd aria-hidden>/</kbd></form>}
+    {error && <div className="inline-error" role="alert">{error}<span className="muted"><kbd>e</kbd> mapping & connection · <kbd>r</kbd> retry</span></div>}
     {status && <div role="status">{status}</div>}
     <div className="recipe-content">
-      {recipe.view === 'table' ? <table className="recipe-table"><thead><tr><th><button onClick={() => sortBy(-1)}>Title ↕</button></th>{recipe.fields?.map((field, i) => <th key={i}><button onClick={() => sortBy(i)}>{field.label} ↕</button></th>)}</tr></thead><tbody>{sortedItems.map((item, row) => <tr className={selectedRow === row ? 'selected' : ''} key={item.id}><td><button className="text-button" onClick={() => openItem(item)}>{item.title}</button></td>{item.fields.map((f, i) => <td key={i}>{f.value}</td>)}</tr>)}</tbody></table> : sortedItems.map((item, row) => recipe.shape === 'collection' ? <button className={`recipe-list-row ${selectedRow === row ? 'selected' : ''} ${recipe.view === 'timeline' ? 'recipe-timeline-row' : ''}`} key={item.id} onMouseEnter={() => setSelectedRow(row)} onClick={() => openItem(item)}>{recipe.view === 'timeline' && <time>{item.time || 'Undated'}</time>}<strong>{item.title}</strong><small>{item.subtitle}</small></button> : <article key={item.id}>
+      {recipe.view === 'table' ? <table className="recipe-table"><thead><tr><th>Title{sort.column === -1 ? (sort.ascending ? ' ↑' : ' ↓') : ''}</th>{recipe.fields?.map((field, i) => <th key={i}>{field.label}{sort.column === i ? (sort.ascending ? ' ↑' : ' ↓') : ''}</th>)}</tr></thead><tbody>{sortedItems.map(item => <tr key={item.id}><td><button className="text-button" {...row(item)}>{item.title}</button></td>{item.fields.map((f, i) => <td key={i}>{f.value}</td>)}</tr>)}</tbody></table> : sortedItems.map(item => recipe.shape === 'collection' ? <button className={`recipe-list-row ${recipe.view === 'timeline' ? 'recipe-timeline-row' : ''}`} key={item.id} {...row(item)}>{recipe.view === 'timeline' && <time>{item.time || 'Undated'}</time>}<strong>{item.title}</strong><small>{item.subtitle}</small></button> : <article key={item.id}>
         <h2>{item.title}</h2>{item.subtitle && <p className="muted">{item.subtitle}</p>}
         {!!item.fields.length && <dl className="recipe-fields">{item.fields.map((field, i) => <div key={i}><dt>{field.label}</dt><dd className={field.kind === 'badge' ? 'recipe-badge' : ''}>{field.value}</dd></div>)}</dl>}
         {item.text && (recipe.view === 'diff' ? <pre className="recipe-diff">{item.text}</pre> : recipe.view === 'document' ? <div className="markdown"><ReactMarkdown skipHtml remarkPlugins={[remarkGfm]} components={{ img: ({ alt }) => <span>{alt || 'Image omitted'}</span>, a: ({ href, children }) => <a href={href && /^https?:\/\//.test(href) ? href : undefined} onClick={e => { e.preventDefault(); if (href && /^https?:\/\//.test(href)) { try { open(browserTile(href)) } catch (error) { setError(friendlyError(error)) } } }}>{children}</a> }}>{item.text}</ReactMarkdown></div> : <div className="recipe-text">{item.text}</div>)}
@@ -86,8 +109,8 @@ export function RecipeBody({ tile, connectors, visible, open, change, settings }
       {page?.messages.map((message, i) => <div className={`recipe-message recipe-message-${message.kind}`} key={i}><header><strong>{message.kind === 'note' ? 'Internal note' : message.kind === 'tool-call' ? 'Tool call' : message.kind === 'event' ? 'Event' : 'Message'}</strong>{message.author && <span>{message.author}</span>}{message.time && <time>{message.time}</time>}</header>{message.text}</div>)}
       {!busy && page && !page.items.length && <p className="muted">No matching resources.</p>}
       {busy && <p className="muted">Loading…</p>}
-      {page?.next && <button className="pill" disabled={busy || (page.items.length + page.messages.length) >= 1000} onClick={() => void load(page.next)}>Load more</button>}
+      {page?.next && <p className="muted"><kbd>m</kbd> loads more</p>}
     </div>
-    {!!recipe.actions?.length && <div className="recipe-actions"><textarea aria-label="Resource action draft" placeholder="Action draft (saved locally)…" value={tile.draft} maxLength={60_000} onChange={e => change({ draft: e.target.value })} /><div className="button-row">{recipe.actions.map(a => <button key={a.operation} className="pill" disabled={busy} onClick={() => void action(a.operation)}>{a.label}{info?.definition.operations.find(op => op.id === a.operation)?.effect === 'write' ? ' · confirm…' : ''}</button>)}</div><small className="muted">Writes always require a separate confirmation. Layout undo does not undo service actions.</small></div>}
+    {!!recipe.actions?.length && <div className="recipe-actions"><textarea ref={draftField} aria-label="Resource action draft" placeholder="Action draft (saved locally)…" value={tile.draft} maxLength={60_000} onChange={e => change({ draft: e.target.value })} /><p className="muted"><kbd>i</kbd> writes the draft · <kbd>␣ t</kbd> runs {recipe.actions.map(a => a.label).join(", ")}</p><small className="muted">Writes always require a separate confirmation. Layout undo does not undo service actions.</small></div>}
   </div>
 }

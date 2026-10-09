@@ -179,8 +179,10 @@ async function createWindow() {
   window.webContents.on('will-navigate', event => event.preventDefault())
   window.webContents.on('before-input-event', (event, input) => {
     // A terminal or open dialog keeps plain Ctrl keys (Ctrl+W deletes a word in a shell); the renderer handles the rest.
+    // A terminal also keeps Alt keys and F-keys (readline's Alt+D, mc's F2/F6).
     const system = input.meta || (input.control && input.alt)
-    if (keyModes.size && !system && input.control && shortcutFor(input) !== 'attach-selection') return
+    const plain = input.control || (keyModes.has('terminal') && (input.alt || /^F\d+$/.test(input.key)))
+    if (keyModes.size && !system && plain && shortcutFor(input) !== 'attach-selection') return
     const { action, swallow } = readShortcut(input)
     if (swallow) event.preventDefault()
     if (action) emit({ type: 'shortcut', action })
@@ -199,7 +201,7 @@ async function createWindow() {
       { label: 'New terminal', click: () => emit({ type: 'shortcut', action: 'new-terminal' }) },
       { label: 'Settings', click: () => emit({ type: 'shortcut', action: 'settings' }) },
       { label: 'Shelf focused tile (session keeps running)', click: () => emit({ type: 'shortcut', action: 'shelf-tile' }) },
-      { type: 'separator' }, { role: 'quit' },
+      { type: 'separator' }, { role: 'quit', registerAccelerator: process.platform === 'darwin' }, // Ctrl+Q belongs to the terminal (XON) on Linux.
     ] },
     { label: 'Edit', submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
     { label: 'View', submenu: [

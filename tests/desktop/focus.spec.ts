@@ -59,21 +59,30 @@ test('Focus: a new tile takes keyboard focus, and j/k follow the focused tile', 
     await page.keyboard.press('Escape')
     await expect(page.getByRole('dialog')).toHaveCount(0)
 
-    // Space opens the tile's action menu; its letter runs the action. Ctrl+O comes back.
+    // ␣ opens the leader; t is this tile, whose letters run its actions. Ctrl+O comes back.
     await page.keyboard.press(' ')
+    await expect(page.getByRole('dialog', { name: 'Actions · Leader' })).toBeVisible()
+    await expect(page.getByRole('dialog', { name: 'Actions · Leader' }).locator('.action-row').first()).toBeFocused()
+    await page.keyboard.press('t')
     const menu = page.getByRole('dialog', { name: 'Actions · beta' })
-    await expect(menu).toBeVisible()
-    await expect(menu.locator('.action-row').first()).toBeFocused()
     await expect(menu.getByRole('button', { name: /Parent folder/ })).toBeVisible()
+    await expect(menu.locator('.action-row').first()).toBeFocused()
     await page.keyboard.press('-')
     await expect(page.getByRole('dialog')).toHaveCount(0)
     await expect(folderTile(page, profile)).toHaveClass(/tile-focused/)
     await page.keyboard.press('Control+o')
     await expect(folderTile(page, b)).toHaveClass(/tile-focused/)
 
-    // Super+. (Ctrl+Alt+. on Linux) opens it from anywhere; a digit moves the tile to that workspace.
+    // The tile's letters also work bare: - goes up again, Ctrl+O back.
+    await page.keyboard.press('-')
+    await expect(folderTile(page, profile)).toHaveClass(/tile-focused/)
+    await page.keyboard.press('Control+o')
+    await expect(folderTile(page, b)).toHaveClass(/tile-focused/)
+
+    // Super+. (Ctrl+Alt+. on Linux) opens the leader from anywhere; w 2 moves the tile to workspace 2.
     await page.keyboard.press('Control+Alt+.')
-    await expect(page.getByRole('dialog', { name: 'Actions · beta' })).toBeVisible()
+    await page.keyboard.press('w')
+    await expect(page.getByRole('dialog', { name: 'Actions · Tiles (same as Ctrl+W)' })).toBeVisible()
     await page.keyboard.press('2')
     await expect(page.getByRole('dialog')).toHaveCount(0)
     await expect(page.locator('.workspace-button.selected')).toContainText('2')

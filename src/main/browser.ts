@@ -2,6 +2,7 @@ import { BrowserWindow, WebContentsView, session } from 'electron'
 import type { BrowserPlacement, BrowserState, ChatOSAPI, DesktopEvent } from '../shared/types'
 import { normalizeURL } from '../shared/util'
 import { readShortcut } from './keys'
+import { pageKeepsKey } from '../shared/shortcuts'
 
 interface BrowserRecord {
   view: WebContentsView
@@ -79,6 +80,7 @@ export class Browsers {
       if (mainFrame && code !== -3) { record.error = description; this.changed(placement.id) }
     })
     contents.on('before-input-event', (event, input) => {
+      if (pageKeepsKey(input)) return
       const { action, swallow } = readShortcut(input)
       if (swallow) event.preventDefault()
       // The address field lives in ChatOS: take the keyboard back from the page first.

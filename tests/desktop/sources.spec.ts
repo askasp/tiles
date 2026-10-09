@@ -26,7 +26,7 @@ test('universal search separates Files/OpenCode and only explicit actions create
     const project = page.locator('[data-kind="project"]:visible')
     // The project's actions live in its action menu: ␣ opens it, f browses files.
     await expect(project).toHaveClass(/tile-focused/)
-    await page.keyboard.press(' ')
+    await page.keyboard.press(' '); await page.keyboard.press('t')
     await expect(page.getByRole('dialog', { name: /^Actions · / }).getByRole('button', { name: 'Browse files', exact: true })).toBeVisible()
     await page.keyboard.press('Escape')
     input = await search(page, 'chatos')
