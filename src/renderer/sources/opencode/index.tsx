@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { fileTile, openTile, shelfTile, updateTile, type OpenMode, type Tile } from '../../../shared/tiles'
+import { fileTile, hideTile, isLive, openTile, updateTile, type OpenMode, type Tile } from '../../../shared/tiles'
 import { basename, uid } from '../../../shared/util'
 import { directoryOf, projectTile, projectsTile, reviewTile, sessionIntent, sessionsIntent, sessionTile, sessionTitle, type ConnectionInfo, type SessionInfo } from '../../../shared/sources/opencode'
 import type { MessageInfo, SessionDetail, ToolPart } from '../../../shared/sources/opencode/types'
 import { api } from '../../data'
 import { registerBadge } from '../../Setup'
-import { Status, filterField } from '../../ui'
+import { KeyHints, Status, filterField, groupOf, useWide, when } from '../../ui'
 import { useTileActions } from '../../actions'
 import { listOpen, source, type Candidate, type Env, type Other, type Row } from '../types'
 import { Chat } from './Chat'
@@ -43,8 +43,8 @@ function useOpenCode(env: Env): OpenCodeState {
   const [hidden, setHidden] = useState<string[]>([])
   useEffect(() => { if (data.connection.connected) void opencode.hiddenProjects().then(setHidden).catch(() => {}) }, [data.connection.connected])
   const projects = useMemo(() => (data.connection.connected ? data.snapshot?.projects || [] : []).filter(p => p.canonical !== '/' && !hidden.includes(p.canonical)).map(p => ({ projectID: p.id, name: p.name || basename(p.canonical), directory: p.canonical })), [data.snapshot, data.connection.connected, hidden])
-  // Session tiles on the desktop are watched for live updates, even on the shelf.
-  const watchKey = env.desktop.tiles.filter(t => t.kind === 'session' && t.status !== 'closed').map(t => t.sessionID!).sort().join('|')
+  // Session tiles on the desktop are watched for live updates, even hidden.
+  const watchKey = env.desktop.tiles.filter(t => t.kind === 'session' && isLive(t)).map(t => t.sessionID!).sort().join('|')
   useEffect(() => { data.watchSessions(watchKey ? watchKey.split('|') : []) }, [watchKey, data.watchSessions])
   useEffect(() => {
     envRef.current.setDesktop(s => {
@@ -93,13 +93,13 @@ function useOpenCode(env: Env): OpenCodeState {
   }, [])
   const deleteSession = useCallback(async (session: { id: string; title: string }) => {
     const env = envRef.current
-    const tiles = env.desktop.tiles.filter(t => t.kind === 'session' && t.sessionID === session.id && t.status !== 'closed')
+    const tiles = env.desktop.tiles.filter(t => t.kind === 'session' && t.sessionID === session.id && isLive(t))
     try { await opencode.deleteSession({ sessionID: session.id, title: session.title, draft: tiles.some(t => t.draft.trim()) }) }
     catch (e) { env.notify(friendlyError(e)); return false }
     data.forget(session.id)
     // A session opened in place of its list goes back to the list; any other tile closes.
     const closing = tiles.filter(t => !env.tileBack(t.id))
-    env.setDesktop(s => closing.reduce((next, t) => shelfTile(next, t.id, true), s))
+    env.setDesktop(s => closing.reduce((next, t) => hideTile(next, t.id, true), s))
     env.notify(`Deleted “${session.title}”.`)
     return true
   }, [data.forget])
@@ -131,17 +131,6 @@ function SessionBody({ tile, state, env, focused, visible, focusKey }: { tile: T
   </>
 }
 
-/** When a session was last updated, short: “12m”, “09:02”, “Mon”, “Sep 30”. */
-function when(time: number, now = Date.now()) {
-  const day = (t: number) => new Date(t).toDateString(), minutes = Math.round((now - time) / 60_000)
-  if (day(time) === day(now)) return minutes < 1 ? 'now' : minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h`
-  if (now - time < 7 * 86_400_000) return new Date(time).toLocaleString('en', day(time) === day(now - 86_400_000) ? { hour: '2-digit', minute: '2-digit', hour12: false } : { weekday: 'short' })
-  return new Date(time).toLocaleString('en', { month: 'short', day: 'numeric' })
-}
-function groupOf(time: number, now = Date.now()) {
-  const day = (t: number) => new Date(t).toDateString()
-  return day(time) === day(now) ? 'Today' : day(time) === day(now - 86_400_000) ? 'Yesterday' : now - time < 7 * 86_400_000 ? 'This week' : 'Older'
-}
 /** The project tile shows a peek beside its list when it is at least this wide. */
 const PEEK_WIDTH = 1100
 
@@ -153,18 +142,11 @@ function ProjectBody({ tile, state, env }: { tile: Tile; state: OpenCodeState; e
   const [filter, setFilter] = useState('')
   const [selected, setSelected] = useState<SessionInfo>()
   const root = useRef<HTMLDivElement>(null)
-  const [wide, setWide] = useState(false)
-  useEffect(() => {
-    const el = root.current
-    if (!el) return
-    const observer = new ResizeObserver(([entry]) => setWide(entry.contentRect.width >= PEEK_WIDTH))
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [])
+  const wide = useWide(root, PEEK_WIDTH)
   // ▣ n: a tile in this workspace (n counts tiles from the left); “on n”: in workspace n.
   const placed = (id: string) => {
     const t = desktop.tiles.find(t => t.sessionID === id && t.kind === 'session')
-    if (t?.status === 'shelf') return { text: 'shelf', title: 'On the shelf' }
+    if (t?.status === 'hidden') return { text: 'hidden', title: 'Hidden; Ctrl+W = or K brings it back' }
     if (t?.status !== 'visible') return undefined
     const w = desktop.workspaces.find(w => w.id === t.workspaceID)
     return t.workspaceID === tile.workspaceID ? { text: `▣ ${(w?.tileIDs.indexOf(t.id) ?? 0) + 1}`, title: 'A tile in this workspace' } : { text: `on ${w?.slot}`, title: `Open in workspace ${w?.slot}` }
@@ -178,7 +160,7 @@ function ProjectBody({ tile, state, env }: { tile: Tile; state: OpenCodeState; e
     ...(list.page.cursor.next ? [{ id: 'more', label: 'Load more sessions', key: 'm', run: () => void list.refresh(list.page.cursor.next!) }] : []),
     // No key yet: the keymap is being settled. Both ask first.
     { id: 'delete', key: 'D', keyLabel: 'Delete', label: selected ? `Delete session “${sessionTitle(selected)}”…` : 'Delete session… (select one first)', disabled: !selected || !data.connection.connected, run: () => { if (selected) void state.deleteSession({ id: selected.id, title: sessionTitle(selected) }).then(done => { if (done) { setSelected(undefined); void list.refresh() } }) } },
-    { id: 'hide', key: 'X', label: `Hide project “${tile.title}” from ChatOS`, run: () => void state.hideProject(tile.directory!, true).then(() => { if (!env.tileBack(tile.id)) env.setDesktop(s => shelfTile(s, tile.id, true)) }).catch(e => env.reportError(friendlyError(e))) },
+    { id: 'hide', key: 'X', label: `Hide project “${tile.title}” from ChatOS`, run: () => void state.hideProject(tile.directory!, true).then(() => { if (!env.tileBack(tile.id)) env.setDesktop(s => hideTile(s, tile.id, true)) }).catch(e => env.reportError(friendlyError(e))) },
   ])
   const sessions = list.page.data.filter(s => sessionTitle(s).toLowerCase().includes(filter.toLowerCase()))
   const groups: { label: string; sessions: SessionInfo[] }[] = []
@@ -201,14 +183,10 @@ function ProjectBody({ tile, state, env }: { tile: Tile; state: OpenCodeState; e
         {data.connection.connected && !list.loading && !list.page.data.length && <div className="empty-list">No sessions here yet.</div>}
         {list.page.cursor.next && <button className="pill load-more" onClick={() => void list.refresh(list.page.cursor.next!)}>More sessions</button>}
       </div>
-      {!wide && <KeyHints />}
+      {!wide && <KeyHints hints={[['↵', 'Open here'], ['Ctrl+↵', 'Open beside']]} />}
     </div>
     {wide && <Peek session={peeked} detail={peeked && data.details[peeked.id]} running={!!peeked && data.active.includes(peeked.id)} waiting={!!peeked && data.waiting.includes(peeked.id)} connected={data.connection.connected} />}
   </div>
-}
-
-function KeyHints({ browse = false }: { browse?: boolean }) {
-  return <footer className="key-hints"><span><kbd>↵</kbd>Open here</span><span><kbd>Ctrl+↵</kbd>Open beside</span>{browse && <><span><kbd>↑↓</kbd>Browse</span><span><kbd>␣</kbd>Actions</span></>}</footer>
 }
 
 const textOf = (m: MessageInfo) => m.type === 'user' ? m.text || '' : (m.content || []).filter(p => p.type === 'text').map(p => 'text' in p ? p.text : '').join('\n\n')
@@ -243,7 +221,7 @@ function Peek({ session, detail, running, waiting, connected }: { session?: Sess
         return <div key={m.id} className={`peek-message ${m.type}`}>{text && <div className="peek-text">{text}</div>}{!!tools.length && <div className="peek-tools">{tools.length} tool call{tools.length === 1 ? '' : 's'} · {[...new Set(tools.map(t => t.name.replace(/^functions\./, '')))].join(', ')}</div>}</div>
       })}
     </div>
-    <KeyHints browse />
+    <KeyHints hints={[['↵', 'Open here'], ['Ctrl+↵', 'Open beside'], ['↑↓', 'Browse'], ['␣', 'Actions']]} />
   </div>
 }
 

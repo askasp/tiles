@@ -154,7 +154,7 @@ test('a developer day: Slack DMs, tagged Front mail with replies, 2 projects × 
     const keys = await page.evaluate(() => (JSON.parse(window.chatos.loadDesktop() || '{}').tiles as { key: string }[]).map(t => t.key))
     expect(new Set(keys).size).toBe(keys.length)
     // Nothing leaks: a live page exists only for a live browser tile, and live tiles are bounded by
-    // what's on the workspaces plus a small shelf, however much was opened today.
+    // what's on the workspaces plus a few recently hidden, however much was opened today.
     for (const size of sizes) {
       expect(size.pages).toBe(size.browsers)
       expect(size.workspaces).toBeLessThanOrEqual(9)

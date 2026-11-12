@@ -1,0 +1,59 @@
+/* K's chats (Flow G): the thread in K, the Chat tile, the Document tile and the Chats list. */
+.k-icon-k { background: var(--blue); color: #ffffff; }
+.k-icon-doc { background: #6b5bd2; color: #ffffff; font-size: 8.5px; }
+
+/* In K: earlier asks muted, the latest ask and K's reply, then what to do with it. */
+.k-thread { display: flex; flex-direction: column; min-height: 0; }
+.k-thread-turns { display: flex; flex-direction: column; gap: 10px; padding: 14px 18px; max-height: 46vh; overflow: auto; }
+.k-thread-ask { font-size: 12.5px; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.k-thread-ask.latest { display: flex; gap: 12px; color: var(--ink); font-size: 13.5px; font-weight: 500; }
+.k-thread-ask.latest span { margin-left: auto; flex: none; font-size: 12px; font-weight: 400; color: var(--muted); }
+.k-thread-reply { font-size: 13.5px; line-height: 1.55; display: flex; flex-direction: column; gap: 8px; }
+.k-thread-made { font-size: 12px; color: var(--blue-ink); }
+.k-thread-rows { padding: 6px; border-top: 1px solid var(--divider); display: flex; flex-direction: column; gap: 2px; }
+.k-thinking { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--blue-ink); }
+
+/* The Chat tile. */
+.k-chat { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.k-chat-turns { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 14px; padding: 16px 18px; }
+.tile-grid.count-1 .k-chat-turns > *, .tile-grid.count-1 .k-composer { width: min(100%, 860px); align-self: center; }
+.k-chat-empty { margin: auto; color: var(--muted); font-size: 13px; text-align: center; max-width: 360px; line-height: 1.6; }
+.k-turn { display: flex; flex-direction: column; gap: 8px; min-width: 0; font-size: 13.5px; line-height: 1.6; }
+.k-turn.user { align-items: flex-end; }
+.k-bubble { max-width: 85%; padding: 9px 13px; border-radius: 12px; background: var(--canvas); white-space: pre-wrap; overflow-wrap: anywhere; }
+.k-turn-context { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
+.k-turn-context span, .k-context-chip { font-size: 11.5px; color: var(--blue-ink); background: var(--blue-soft); border-radius: 6px; padding: 2px 7px; }
+.k-artifact-card { display: flex; align-items: center; gap: 11px; width: min(100%, 420px); padding: 10px 12px; border-radius: 10px; text-align: left; box-shadow: inset 0 0 0 1px var(--line); background: var(--surface); }
+.k-artifact-card:hover, .k-artifact-card:focus-visible { background: var(--subtle); }
+.k-artifact-card .k-icon { width: 26px; height: 26px; }
+.k-artifact-card-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.k-artifact-card-copy strong { font-size: 13px; font-weight: 500; }
+.k-artifact-card-copy small { font-size: 11.5px; color: var(--muted); }
+.k-artifact-card-action { flex: none; font-size: 12px; color: var(--blue-ink); }
+.k-composer { position: relative; flex: none; padding: 8px 12px 12px; display: flex; flex-direction: column; gap: 6px; }
+.k-context { display: flex; flex-wrap: wrap; gap: 5px; }
+.k-context-chip { display: inline-flex; align-items: center; gap: 5px; }
+.k-context-chip button { color: var(--blue-ink); font-size: 13px; line-height: 1; }
+.k-composer-box { display: flex; align-items: flex-end; gap: 8px; padding: 9px 12px; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--line); background: var(--surface); }
+.k-composer-box:focus-within { box-shadow: inset 0 0 0 1px var(--blue-line); }
+.k-composer-box textarea { flex: 1; resize: none; border: 0; background: none; font: inherit; font-size: 13.5px; line-height: 1.5; max-height: 160px; field-sizing: content; outline: none; }
+.k-mentions { position: absolute; left: 12px; right: 12px; bottom: calc(100% - 4px); display: flex; flex-direction: column; padding: 4px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); box-shadow: 0 6px 24px #00000022; z-index: 5; }
+.k-mentions button { display: flex; align-items: center; gap: 10px; padding: 7px 9px; border-radius: 7px; text-align: left; font-size: 12.5px; }
+.k-mentions button span { flex: 1; }
+.k-mentions button small { color: var(--muted); font-size: 11px; }
+.k-mentions button.selected { background: var(--blue-soft); }
+
+/* The Document tile: versions along the top, the page below. */
+.k-artifact { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.k-artifact-bar { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; padding: 8px 14px; border-bottom: 1px solid var(--divider); font-size: 12px; }
+.k-new { font-size: 11px; color: var(--ok); background: var(--ok-soft); border-radius: 5px; padding: 2px 6px; }
+.k-version { font: 500 11px var(--mono); color: var(--muted); border-radius: 5px; padding: 3px 6px; background: var(--canvas); }
+.k-version.current { color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-strong); background: none; }
+.k-artifact-from { flex: 1; min-width: 60px; color: var(--muted); }
+.k-artifact-page { flex: 1; min-height: 0; overflow: auto; padding: 24px 32px; font-size: 14px; line-height: 1.65; user-select: text; }
+.k-artifact-page .markdown { max-width: 720px; }
+
+/* The Chats list: quick asks muted; artifacts in the peek. */
+.k-chats .muted-group .session-row-title { color: var(--muted); font-style: italic; }
+.k-peek-artifacts { flex: none; display: flex; flex-direction: column; gap: 6px; padding: 0 28px 16px; }
+.k-peek-artifacts .k-head { padding: 0 0 2px; font-weight: 500; }

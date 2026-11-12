@@ -3,8 +3,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { BrowserContext } from '../shared/types'
 import type { ModelInfo } from '../shared/model'
 import type { ConnectorDefinition, ConnectorInfo } from '../shared/connectors'
-import { createShortcutReader, keyHelp, shortcutFor } from '../shared/shortcuts'
-import { activeWorkspace, browserTile, directionTile, fileTile, focusTile, focusedTile, fullscreenTile, goWorkspace, moveTile, openTile, promoteTile, replaceTile, restoreLast, serializeDesktop, shelfTile, shelfTiles, terminalTile, tidyAround, tileLayout, tileTitle, undoArrangement, updateTile, type Direction, type OpenMode, type Tile, type TileDesktop, type TileInput } from '../shared/tiles'
+import { createShortcutReader, desktopKey, keyHelp, shortcutFor } from '../shared/shortcuts'
+import { activeWorkspace, browserTile, directionTile, fileTile, focusTile, focusedTile, fullscreenTile, goWorkspace, moveTile, openTile, promoteTile, replaceTile, restoreLast, serializeDesktop, hideTile, hiddenTiles, isLive, terminalTile, tidyAround, tileLayout, tileTitle, undoArrangement, updateTile, type Direction, type OpenMode, type Tile, type TileDesktop, type TileInput } from '../shared/tiles'
 import { resourceSource, sources as catalogue, type SourceID } from '../shared/sources'
 import { restore } from '../shared/registry'
 import { uid } from '../shared/util'
@@ -59,7 +59,7 @@ export default function App() {
   const [menuStart, setMenuStart] = useState<string[]>([])
   const chordTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const home = machine.home
-  const system = systemKey, workspaceKey = (slot: number) => system === '⌘' ? `⌘${slot}` : `Ctrl+Alt+${slot}`
+  const system = systemKey, workspaceKey = (slot: number) => system === '⌘' ? `⌘${slot}` : `Alt+${slot}`
   useActionsVersion()
   const root = useRef<HTMLDivElement>(null)
   const w = activeWorkspace(desktop), focused = focusedTile(desktop)
@@ -97,8 +97,8 @@ export default function App() {
       const next = openTile(before, input, mode)
       ref.current = next
       setDesktop(next); setFocusKey(k => k + 1)
-      const shelved = next.tiles.filter(t => t.status === 'shelf' && before.tiles.find(b => b.id === t.id)?.status === 'visible')
-      if (shelved.length) notify(`${tileTitle(shelved[0])} moved to the shelf to make room`, false, 'Ctrl+W =')
+      const hidden = next.tiles.filter(t => t.status === 'hidden' && before.tiles.find(b => b.id === t.id)?.status === 'visible')
+      if (hidden.length) notify(`${tileTitle(hidden[0])} hidden to make room`, false, 'Ctrl+W =')
     } catch (e) { reportError(friendlyError(e)) }
   }, [reportError, notify])
   const focus = useCallback((id: string) => { update(s => focusTile(s, id)); setFocusKey(k => k + 1) }, [update])
@@ -119,7 +119,7 @@ export default function App() {
   const trails = useRef(new Map<string, { back: TileInput[]; forward: TileInput[] }>())
   const [, setTrailVersion] = useState(0)
   const trailOf = (id: string) => { let t = trails.current.get(id); if (!t) { t = { back: [], forward: [] }; trails.current.set(id, t) } return t }
-  const snapshot = (t: Tile): TileInput => { const { id: _id, workspaceID: _w, status: _s, lastUsed: _l, shelvedAt: _h, ...rest } = t; return rest as TileInput }
+  const snapshot = (t: Tile): TileInput => { const { id: _id, workspaceID: _w, status: _s, released: _r, lastUsed: _l, hiddenAt: _h, ...rest } = t; return rest as TileInput }
   const navigate = useCallback((id: string, input: TileInput, record: 'push' | 'back' | 'forward' = 'push') => {
     const current = ref.current.tiles.find(t => t.id === id)
     if (!current || current.key === input.key) return
@@ -159,22 +159,23 @@ export default function App() {
   statesRef.current = states
   const stateOf = (id: string) => states.get(id)
 
-  // Tiles that close for good release what they hold (a page, a shell). Shelving keeps them.
+  // Released tiles let go of what they hold (a page, a shell). Hidden ones keep it until then.
   const released = useRef(new Set<string>())
-  const closedKey = desktop.tiles.filter(t => t.status === 'closed').map(t => t.id).sort().join('|')
+  const releasedKey = desktop.tiles.filter(t => !isLive(t)).map(t => t.id).sort().join('|')
   useEffect(() => {
     for (const tile of ref.current.tiles) {
-      if (tile.status !== 'closed') { released.current.delete(tile.id); continue }
+      if (isLive(tile)) { released.current.delete(tile.id); continue }
       if (released.current.has(tile.id)) continue
       released.current.add(tile.id)
-      sourceFor(tile.kind)?.closed?.(tile)
+      sourceFor(tile.kind)?.released?.(tile)
     }
-  }, [closedKey])
-  const hide = useCallback((id: string, close = false) => {
+  }, [releasedKey])
+  const hide = useCallback((id: string, end = false) => {
     const tile = ref.current.tiles.find(t => t.id === id)
-    update(s => shelfTile(s, id, close))
+    update(s => hideTile(s, id, end))
     setFocusKey(k => k + 1)
-    notify(close ? tile?.kind === 'terminal' ? 'Terminal closed and its shell ended.' : 'Tile closed. Search reopens it.' : 'Moved to the shelf. Ctrl+W = brings it back.')
+    const terminal = tile?.kind === 'terminal'
+    notify(end ? terminal ? 'Shell ended. K reopens the terminal with a new one.' : 'Hidden and unloaded. K reopens it.' : terminal ? 'Hidden; the shell keeps running.' : 'Hidden. K finds it.', false, end ? undefined : 'Ctrl+W =')
   }, [notify, update])
   const chooseFolder = async () => {
     try { const folder = await api.chooseFolder(); if (folder) { const target = await api.inspectPath(folder); update(s => ({ ...s, selectedDirectory: target.path, folders: [...new Set([...s.folders, target.path])] })); open(fileTile(target.path)) } } catch (e) { reportError(friendlyError(e)) }
@@ -238,9 +239,9 @@ export default function App() {
       return
     }
     if (action === 'undo-arrangement') { update(undoArrangement); return }
-    if (action === 'restore-tile' || action === 'restore-closed') { update(s => restoreLast(s, action === 'restore-closed')); setFocusKey(k => k + 1); return }
+    if (action === 'restore-tile') { update(restoreLast); setFocusKey(k => k + 1); return }
     if (!tile) return
-    if (action === 'close-tile' || action === 'shelf-tile') { hide(tile.id, action === 'close-tile'); return }
+    if (action === 'hide-tile' || action === 'end-tile') { hide(tile.id, action === 'end-tile'); return }
     if (action === 'rename') { setRenameID(tile.id); setOverlay('rename'); return }
     if (action === 'tile-back' || action === 'tile-forward') {
       const moved = action === 'tile-back' ? tileBack(tile.id) : tileForward(tile.id)
@@ -266,7 +267,7 @@ export default function App() {
       const input = { type: 'keyDown', key: event.key, code: event.code, control: event.ctrlKey, alt: event.altKey, meta: event.metaKey, shift: event.shiftKey } as Electron.Input
       // Terminals own their keys, except the window-manager chords.
       const inTerminal = (event.target as HTMLElement | null)?.closest?.('.terminal-host')
-      if (inTerminal && !event.metaKey && !(event.ctrlKey && event.altKey) && shortcutFor(input) !== 'attach-selection') return
+      if (inTerminal && !event.metaKey && !(event.ctrlKey && event.altKey) && !desktopKey(shortcutFor(input))) return
       // A dialog keeps plain Ctrl keys (Ctrl+J/K in K's list, Ctrl+W in its fields): never swap it for K or eat a letter.
       if ((event.target as HTMLElement | null)?.closest?.('[role="dialog"]') && event.ctrlKey && !event.altKey && !event.metaKey) return
       const { action, swallow } = read(input)
@@ -335,10 +336,10 @@ export default function App() {
     // Where the tile is belongs to Ctrl+W (␣ w); listed here so the tile's menu has everything.
     { id: 'fullscreen', label: w?.fullscreenID ? 'Leave fullscreen' : 'Fullscreen', keyLabel: '⌃W o', run: () => update(fullscreenTile) },
     { id: 'promote', label: 'Make it the main tile', keyLabel: '⌃W x', disabled: visible[0]?.id === tile.id, run: () => update(promoteTile) },
-    { id: 'shelf', label: 'Shelf (stays live)', keyLabel: '⌃W -', run: () => hide(tile.id) },
-    { id: 'close', label: 'Close for good', keyLabel: '⌃W q', run: () => hide(tile.id, true) },
+    { id: 'hide', label: 'Hide', keyLabel: '⌃W q', run: () => hide(tile.id) },
+    { id: 'end', label: tile.kind === 'terminal' ? 'Hide and end the shell' : 'Hide and unload', keyLabel: '⌃W Q', run: () => hide(tile.id, true) },
   ]
-  const shelf = shelfTiles(desktop)
+  const anyHidden = hiddenTiles(desktop).length > 0
   const sourceStatus = [
     ...(model?.configured ? [{ key: 'model', name: model.model.split('/').pop()!, ok: model.ready, label: 'Model' }] : []),
     ...registry.flatMap(s => s.status?.(stateOf(s.id)) || []),
@@ -347,7 +348,6 @@ export default function App() {
     <header className="workspace-bar" onMouseDown={e => { if ((e.target as HTMLElement).closest('button')) e.preventDefault() }}>
       <div className="workspace-strip">{desktop.workspaces.length ? desktop.workspaces.map(workspace => <button className={`workspace-button workspace-select ${workspace.id === desktop.activeID ? 'selected' : ''}`} key={workspace.id} onClick={() => go(workspace.slot)} title={`Workspace ${workspace.slot} · ${workspace.title}`}><kbd>{workspaceKey(workspace.slot)}</kbd><span className="truncate">{workspace.title}</span><small>{workspace.tileIDs.length ? `· ${workspace.tileIDs.length}` : ''}</small>{workspace.tileIDs.some(id => { const t = desktop.tiles.find(t => t.id === id); return t && tileStatus(t)?.waiting }) && <Status waiting />}</button>)
         : <button className="workspace-button workspace-select selected" onClick={() => ask()} title="Nothing open yet"><kbd>{workspaceKey(1)}</kbd><span>empty</span></button>}</div>
-      {!!shelf.length && <div className="shelf-strip" aria-label="Shelf"><span className="shelf-divider" /><button className="shelf-label" onClick={() => setOverlay('overview')}>Shelf</button>{shelf.slice(0, 3).map(tile => <button className="shelf-chip" key={tile.id} onClick={() => focus(tile.id)} title={`${tileTitle(tile)} · ${tileSource(tile)} · click to bring back`}><Badge icon={tileBadge(tile)} size="sm" /><span className="truncate">{tileTitle(tile)}</span>{tileStatus(tile)?.waiting && <Status waiting />}</button>)}{shelf.length > 3 && <button className="shelf-chip more" onClick={() => setOverlay('overview')}>+{shelf.length - 3}</button>}</div>}
       <div className="bar-right">
         <button className="tile-launcher-button" aria-label="Launcher" onClick={() => ask()}>Ask or open…<kbd>{system}+K</kbd></button>
         {sourceStatus.map(s => <button key={s.key} className="source-status" aria-label={s.label} title={`${s.label}${s.ok ? '' : ' · needs attention'}`} onClick={() => setOverlay('settings')}><span className={`status-dot ${s.ok ? 'green' : 'amber'}`} />{s.name}</button>)}
@@ -361,11 +361,11 @@ export default function App() {
       {!visible.length && <section className="empty-desktop" aria-label="Empty desktop" data-desktop-ready>
         {!firstRun && <div className="empty-hint"><button className="tile-launcher-button large" onClick={() => ask()}>Ask or open…<kbd>{system}+K</kbd></button>
           <p>Open a page, a folder or a terminal. {model?.ready ? 'Or “add …” any service with an API.' : 'Connect a model to add services by asking.'}</p>
-          <div className="button-row"><button className="text-button" onClick={() => setOverlay('address')}>Open a web page <kbd aria-hidden>␣ n b</kbd></button><button className="text-button" onClick={() => void chooseFolder()}>Browse a folder</button><button className="text-button" onClick={() => openTerminal()}>Terminal <kbd aria-hidden>␣ n t</kbd></button>{!!shelf.length && <button className="text-button" onClick={() => handler.current('restore-tile')}>Bring back last shelved <kbd aria-hidden>␣ w =</kbd></button>}{!model?.ready && <button className="text-button" onClick={() => ask('model')}>Connect a model <kbd aria-hidden>{system}+K, model</kbd></button>}</div><p className="muted"><kbd aria-hidden>␣</kbd> leader · <kbd aria-hidden>?</kbd> every key</p></div>}
+          <div className="button-row"><button className="text-button" onClick={() => setOverlay('address')}>Open a web page <kbd aria-hidden>␣ n b</kbd></button><button className="text-button" onClick={() => void chooseFolder()}>Browse a folder</button><button className="text-button" onClick={() => openTerminal()}>Terminal <kbd aria-hidden>␣ n t</kbd></button>{anyHidden && <button className="text-button" onClick={() => handler.current('restore-tile')}>Bring back the last hidden <kbd aria-hidden>␣ w =</kbd></button>}{!model?.ready && <button className="text-button" onClick={() => ask('model')}>Connect a model <kbd aria-hidden>{system}+K, model</kbd></button>}</div><p className="muted"><kbd aria-hidden>␣</kbd> leader · <kbd aria-hidden>?</kbd> every key</p></div>}
       </section>}
       <div className={`tile-grid count-${visible.length} ${layout ? 'with-lists' : ''} ${w?.fullscreenID ? 'tile-fullscreen' : ''}`} hidden={desktop.activeID === 'home' || !visible.length}
         style={layout && { gridTemplateColumns: layout.columns.map(c => c === 'list' ? 'var(--list-column)' : `minmax(0, ${c}fr)`).join(' '), gridTemplateRows: `repeat(${layout.rows}, minmax(0, 1fr))` }}>
-        {desktop.tiles.filter(t => t.status !== 'closed').map(tile => {
+        {desktop.tiles.filter(isLive).map(tile => {
           const chip = kindChip(tile, connectors), owner = sourceFor(tile.kind), status = tileStatus(tile), index = visible.findIndex(t => t.id === tile.id), isVisible = index >= 0, cell = layout?.cells[index]
           return <section hidden={!isVisible} data-list={isList(tile) || undefined} style={{ order: index, ...(cell && { gridColumn: cell.column + 1, gridRow: `${cell.row + 1} / span ${cell.rows}` }) }} className={`resource-tile panel ${visible[0]?.id === tile.id ? 'primary-tile' : ''} ${w?.focusedID === tile.id ? 'tile-focused' : ''}`} data-tile-id={tile.id} data-resource-key={tile.key} data-kind={tile.kind} key={tile.id} onPointerDownCapture={() => { if (focusedTile(ref.current)?.id !== tile.id) focus(tile.id) }} tabIndex={-1} onFocusCapture={e => { const at = e.target as HTMLElement; if (at !== e.currentTarget && !at.closest('.tile-header')) lastFocus.current.set(tile.id, at); if (focusedTile(ref.current)?.id !== tile.id) update(s => focusTile(s, tile.id)) }}>
             <header className="tile-header"><Badge icon={tileBadge(tile)} /><strong className="tile-title truncate" title={tileTitle(tile)}>{tileTitle(tile)}</strong><span className="tile-source truncate" title={tile.url || tile.directory}>{tile.kind === 'terminal' ? '' : tileSource(tile)}{tile.directory && tile.kind !== 'session' ? `${tile.kind === 'terminal' ? '' : ' · '}${home && tile.directory.startsWith(home) ? `~${tile.directory.slice(home.length)}` : tile.directory}` : tile.url ? ` · ${(() => { try { return new URL(tile.url).pathname } catch { return '' } })()}` : ''}</span>{tile.linkID && <span title="Linked to the tile that opened it"><Link size={12} /></span>}{status && <Status running={status.running} waiting={status.waiting} />}

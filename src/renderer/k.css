@@ -1,14 +1,8 @@
 /* ChatOS v4: K, source badges, the top bar and built-in tiles. */
 
-/* Top bar: workspaces · shelf · K · source status */
+/* Top bar: workspaces · K · source status */
 .tile-app .workspace-strip { flex: 0 1 auto; }
 .tile-app .workspace-select small { font: 10.5px var(--mono); color: var(--faint); }
-.shelf-strip { display: flex; align-items: center; gap: 4px; min-width: 0; flex: 0 1 auto; overflow: hidden; -webkit-app-region: no-drag; }
-.shelf-divider { width: 1px; height: 18px; background: var(--line-strong); margin: 0 10px; flex-shrink: 0; }
-.shelf-label { font-size: 12px; color: var(--muted); margin-right: 4px; flex-shrink: 0; }
-.tile-app .shelf-chip { height: 28px; padding: 0 10px 0 6px; border-radius: 9px; border: 1px dashed var(--line-strong); background: transparent; color: var(--ink-2); font-size: 12.5px; gap: 7px; max-width: 200px; }
-.tile-app .shelf-chip:hover { background: var(--surface); border-style: solid; }
-.tile-app .shelf-chip.more { font: 500 12px var(--mono); padding: 0 9px; }
 .bar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-shrink: 0; -webkit-app-region: no-drag; }
 .tile-launcher-button { height: 28px; display: inline-flex; align-items: center; gap: 8px; padding: 0 6px 0 11px; border-radius: 999px; background: var(--surface); box-shadow: 0 0 0 1px var(--line); color: var(--ink); font-size: 12.5px; white-space: nowrap; }
 .tile-launcher-button:hover { box-shadow: 0 0 0 1px var(--line-strong); }
@@ -133,7 +127,7 @@
 .image-preview img { max-width: 100%; max-height: 100%; object-fit: contain; box-shadow: 0 6px 20px -12px #0000004d; }
 
 .tile-toast kbd { padding: 2px 8px; border-radius: 999px; background: var(--canvas); }
-@media (max-width: 1150px) { .source-status { display: none; } .shelf-strip { display: none; } }
+@media (max-width: 1150px) { .source-status { display: none; } }
 /* Toasts sit at the bottom, like the design: what happened, and the key that undoes it. */
 .tile-app .tile-toast { top: auto; bottom: 26px; height: auto; min-height: 38px; padding: 4px 6px 4px 16px; border-radius: 999px; background: var(--ink); color: var(--on-ink); border: 0; box-shadow: 0 14px 36px -14px #00000066; font-size: 13px; }
 .tile-app .tile-toast kbd { background: var(--ink-hover); color: var(--line); }

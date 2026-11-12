@@ -1,6 +1,6 @@
 import { LoaderCircle } from 'lucide-react'
-import type { ButtonHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
-import { useEffect, useRef } from 'react'
+import type { ButtonHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { actionForKey } from './actions'
 
 /** The system modifier as people read it: ⌘ on macOS, Super elsewhere (Ctrl+Alt also works on Linux). */
@@ -139,4 +139,35 @@ export const filterField = {
 /** An icon button that shows the key that does the same thing. */
 export function KeyButton({ label, keys, children, className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string; keys?: string; children: ReactNode }) {
   return <button type="button" className={`key-button ${className}`} aria-label={label} title={keys ? `${label} · ${keys}` : label} {...props}>{children}{keys && <kbd>{keys}</kbd>}</button>
+}
+
+/** When something last changed, short: “12m”, “09:02” (yesterday), “Mon”, “Sep 30”. */
+export function when(time: number, now = Date.now()) {
+  const day = (t: number) => new Date(t).toDateString(), minutes = Math.round((now - time) / 60_000)
+  if (day(time) === day(now)) return minutes < 1 ? 'now' : minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h`
+  if (now - time < 7 * 86_400_000) return new Date(time).toLocaleString('en', day(time) === day(now - 86_400_000) ? { hour: '2-digit', minute: '2-digit', hour12: false } : { weekday: 'short' })
+  return new Date(time).toLocaleString('en', { month: 'short', day: 'numeric' })
+}
+/** The day group a list shows something under. */
+export function groupOf(time: number, now = Date.now()): 'Today' | 'Yesterday' | 'This week' | 'Older' {
+  const day = (t: number) => new Date(t).toDateString()
+  return day(time) === day(now) ? 'Today' : day(time) === day(now - 86_400_000) ? 'Yesterday' : now - time < 7 * 86_400_000 ? 'This week' : 'Older'
+}
+/** “Today 09:41”, “Sep 30 16:40”. */
+export const whenLong = (time: number) => `${groupOf(time) === 'Older' || groupOf(time) === 'This week' ? new Date(time).toLocaleDateString('en', { month: 'short', day: 'numeric' }) : groupOf(time)} ${new Date(time).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', hour12: false })}`
+/** True while the element is at least `width` wide: list tiles show a peek when they have the room. */
+export function useWide(ref: RefObject<HTMLElement | null>, width: number) {
+  const [wide, setWide] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const observer = new ResizeObserver(([entry]) => setWide(entry.contentRect.width >= width))
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [ref, width])
+  return wide
+}
+/** The keys a list or peek answers to, along its bottom edge. */
+export function KeyHints({ hints }: { hints: [key: string, label: string][] }) {
+  return <footer className="key-hints">{hints.map(([key, label]) => <span key={key}><kbd>{key}</kbd>{label}</span>)}</footer>
 }

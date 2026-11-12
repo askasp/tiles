@@ -31,7 +31,7 @@ test('Slack DM results open one locally named browser tile, reused from any work
     await expect(page.locator('.workspace-button.selected')).toContainText('1')
     await expect(page.locator('.resource-tile:visible')).toHaveCount(1)
     await open('dm Carl', 'Shift+Enter')
-    await tileAction(page, page.locator('.resource-tile:visible'), 'Shelf (stays live)')
+    await tileAction(page, page.locator('.resource-tile:visible'), 'Hide')
     await open('dm Carl')
     await expect(page.locator('.resource-tile:visible .tile-title')).toHaveText('DM Carl')
     expect(await dmPages()).toBe(1)

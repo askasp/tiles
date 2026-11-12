@@ -27,11 +27,16 @@ export interface Tile {
   recipeIdentity?: string
   recipeIdentityScope?: 'global' | 'parent'
   sourceName?: string
+  /** A source's own id for what the tile shows, e.g. a K chat or artifact. */
+  ref?: string
   workspaceID: string | null
-  status: 'visible' | 'shelf' | 'closed'
+  /** Out of view is one state. The most recent hidden tiles stay live (a page keeps its scroll and
+   * login, a shell keeps running); older ones are released, which only K's reopening can tell. */
+  status: 'visible' | 'hidden'
+  released?: boolean
   lastWorkspaceID?: string
   lastUsed: number
-  shelvedAt: number
+  hiddenAt: number
   draft: string
   context: ContextItem[]
 }
@@ -46,7 +51,7 @@ export interface TileWorkspace {
 interface Arrangement {
   activeID: string
   workspaces: TileWorkspace[]
-  placements: Pick<Tile, 'id' | 'workspaceID' | 'lastWorkspaceID' | 'status' | 'lastUsed' | 'shelvedAt'>[]
+  placements: Pick<Tile, 'id' | 'workspaceID' | 'lastWorkspaceID' | 'status' | 'released' | 'lastUsed' | 'hiddenAt'>[]
 }
 export interface TileDesktop {
   version: 2
@@ -60,7 +65,7 @@ export interface TileDesktop {
   homeDraft: string
   history: Arrangement[]
 }
-export type TileInput = Pick<Tile, 'key' | 'kind' | 'title'> & Partial<Pick<Tile, 'id' | 'directory' | 'sessionID' | 'url' | 'linkID' | 'draft' | 'context' | 'label' | 'path' | 'resource' | 'recipeIdentity' | 'recipeIdentityScope' | 'sourceName'>>
+export type TileInput = Pick<Tile, 'key' | 'kind' | 'title'> & Partial<Pick<Tile, 'id' | 'directory' | 'sessionID' | 'url' | 'linkID' | 'draft' | 'context' | 'label' | 'path' | 'resource' | 'recipeIdentity' | 'recipeIdentityScope' | 'sourceName' | 'ref'>>
 export const desktopInitial = (directory = ''): TileDesktop => ({ version: 2, activeID: 'home', workspaces: [], tiles: [], clock: 0, folders: [], selectedDirectory: directory, pinned: [], homeDraft: '', history: [] })
 export const recipeTile = (ref: ResourceRef, title: string, recipe?: Pick<TileRecipe, 'shape' | 'identity' | 'identityScope'>, sourceName?: string): TileInput => ({ key: resourceKey(ref, recipe), kind: 'recipe', title, resource: validateRef(ref), recipeIdentity: recipe?.identity, recipeIdentityScope: recipe?.identityScope, sourceName })
 export const fileTile = (path: string, kind: 'folder' | 'file' = 'folder', title = basename(path)): TileInput => {
@@ -79,14 +84,16 @@ export const browserTile = (url: string, linkID?: string): TileInput => {
 }
 export const activeWorkspace = (s: TileDesktop) => s.workspaces.find(w => w.id === s.activeID)
 export const focusedTile = (s: TileDesktop) => s.tiles.find(t => t.id === activeWorkspace(s)?.focusedID)
-export const shelfTiles = (s: TileDesktop) => s.tiles.filter(t => t.status === 'shelf').sort((a, b) => b.shelvedAt - a.shelvedAt)
+export const hiddenTiles = (s: TileDesktop) => s.tiles.filter(t => t.status === 'hidden').sort((a, b) => b.hiddenAt - a.hiddenAt)
+/** A tile with something live behind it: a page, a shell, a list's state. */
+export const isLive = (t: Tile) => t.status === 'visible' || !t.released
 export const tileTitle = (t: Pick<Tile, 'title' | 'label'>) => t.label || t.title
 
 function checkpoint(s: TileDesktop): TileDesktop {
   return { ...s, history: [...s.history.slice(-24), {
     activeID: s.activeID,
     workspaces: s.workspaces.map(w => ({ ...w, tileIDs: [...w.tileIDs] })),
-    placements: s.tiles.map(({ id, workspaceID, lastWorkspaceID, status, lastUsed, shelvedAt }) => ({ id, workspaceID, lastWorkspaceID, status, lastUsed, shelvedAt })),
+    placements: s.tiles.map(({ id, workspaceID, lastWorkspaceID, status, released, lastUsed, hiddenAt }) => ({ id, workspaceID, lastWorkspaceID, status, released, lastUsed, hiddenAt })),
   }] }
 }
 function workspace(s: TileDesktop, slot?: number): [TileDesktop, string] {
@@ -98,25 +105,25 @@ function workspace(s: TileDesktop, slot?: number): [TileDesktop, string] {
   const id = `workspace:${number}`
   return [{ ...s, workspaces: [...s.workspaces, { id, slot: number, title: 'Workspace', tileIDs: [], focusedID: null, fullscreenID: null }].sort((a, b) => a.slot - b.slot) }, id]
 }
-/** Shelved tiles stay live (a page keeps its scroll and login, a list its state). Beyond this many,
- * the oldest are closed: their page is released, but identity, name and draft remain and K reopens them. */
-export const SHELF_LIVE = 8
+/** Hidden tiles stay live (a page keeps its scroll and login, a list its state). Beyond this many,
+ * the oldest are released: their page goes, but identity, name and draft remain and K reopens them. */
+export const HIDDEN_LIVE = 8
 export const MAX_WORKSPACES = 9
-/** Kinds whose closing would lose work in progress (a shell's running process). Never closed automatically. */
+/** Kinds whose release would lose work in progress (a shell's running process). Only released when asked. */
 const keepLive = new Set(['terminal'])
-/** Closed tiles are remembered so K can reopen them where they were, but not forever. */
-export const CLOSED_KEPT = 200
-function trimShelf(s: TileDesktop): TileDesktop {
-  const shelved = s.tiles.filter(t => t.status === 'shelf' && !keepLive.has(t.kind)).sort((a, b) => b.shelvedAt - a.shelvedAt)
-  const close = new Set(shelved.slice(SHELF_LIVE).map(t => t.id))
-  let tiles = close.size ? s.tiles.map(t => close.has(t.id) ? { ...t, status: 'closed' as const } : t) : s.tiles
-  // Forget the oldest closed tiles, except ones holding unsent work.
-  const closed = tiles.filter(t => t.status === 'closed' && !t.draft.trim() && !t.context.length).sort((a, b) => Math.max(b.shelvedAt, b.lastUsed) - Math.max(a.shelvedAt, a.lastUsed))
-  if (closed.length > CLOSED_KEPT) { const forget = new Set(closed.slice(CLOSED_KEPT).map(t => t.id)); tiles = tiles.filter(t => !forget.has(t.id)) }
+/** Released tiles are remembered so K can reopen them where they were, but not forever. */
+export const RELEASED_KEPT = 200
+function release(s: TileDesktop): TileDesktop {
+  const live = s.tiles.filter(t => t.status === 'hidden' && !t.released && !keepLive.has(t.kind)).sort((a, b) => b.hiddenAt - a.hiddenAt)
+  const old = new Set(live.slice(HIDDEN_LIVE).map(t => t.id))
+  let tiles = old.size ? s.tiles.map(t => old.has(t.id) ? { ...t, released: true } : t) : s.tiles
+  // Forget the oldest released tiles, except ones holding unsent work.
+  const released = tiles.filter(t => !isLive(t) && !t.draft.trim() && !t.context.length).sort((a, b) => Math.max(b.hiddenAt, b.lastUsed) - Math.max(a.hiddenAt, a.lastUsed))
+  if (released.length > RELEASED_KEPT) { const forget = new Set(released.slice(RELEASED_KEPT).map(t => t.id)); tiles = tiles.filter(t => !forget.has(t.id)) }
   return tiles === s.tiles ? s : { ...s, tiles }
 }
 function tidy(input: TileDesktop): TileDesktop {
-  const s = trimShelf(input)
+  const s = release(input)
   const workspaces = s.workspaces.map(w => {
     const ids = w.tileIDs.filter(id => s.tiles.some(t => t.id === id && t.status === 'visible' && t.workspaceID === w.id))
     const titleTile = ids.map(id => s.tiles.find(t => t.id === id)!).find(t => t.directory) || s.tiles.find(t => t.id === ids[0])
@@ -126,7 +133,7 @@ function tidy(input: TileDesktop): TileDesktop {
 }
 function place(s: TileDesktop, ids: string[], target: string, focus: string): TileDesktop {
   const tick = s.clock + 1
-  let tiles = s.tiles.map(t => ids.includes(t.id) ? { ...t, status: 'visible' as const, workspaceID: target, lastWorkspaceID: target, lastUsed: tick } : t)
+  let tiles = s.tiles.map(t => ids.includes(t.id) ? { ...t, status: 'visible' as const, released: false, workspaceID: target, lastWorkspaceID: target, lastUsed: tick } : t)
   let workspaces = s.workspaces.map(w => ({ ...w, tileIDs: w.tileIDs.filter(id => !ids.includes(id)) }))
   workspaces = workspaces.map(w => w.id === target ? { ...w, tileIDs: [...w.tileIDs, ...ids], focusedID: focus, fullscreenID: null } : w)
   let owner = workspaces.find(w => w.id === target)!
@@ -135,12 +142,12 @@ function place(s: TileDesktop, ids: string[], target: string, focus: string): Ti
     const focused = tiles.find(t => t.id === focus)!
     const candidates = owner.tileIDs.filter(id => id !== focus).map(id => tiles.find(t => t.id === id)!)
     const oldest = candidates.sort((a, b) => a.lastUsed - b.lastUsed)[0]
-    // Automatic shelving is hiding too: carry a session's linked previews.
+    // Making room hides too: carry a session's linked previews.
     // If that would hide the explicitly requested preview, protect its parent
     // and evict a different resource (or an older sibling in an oversized group).
     const victim = oldest.id === focused.linkID ? candidates.find(t => t.id !== focused.linkID) || oldest : oldest
     const evicted = new Set([victim.id, ...tiles.filter(t => t.linkID === victim.id && t.id !== focus && t.workspaceID === target).map(t => t.id)])
-    tiles = tiles.map(t => evicted.has(t.id) ? { ...t, status: 'shelf' as const, workspaceID: null, lastWorkspaceID: target, shelvedAt: tick } : t)
+    tiles = tiles.map(t => evicted.has(t.id) ? { ...t, status: 'hidden' as const, workspaceID: null, lastWorkspaceID: target, hiddenAt: tick } : t)
     owner = { ...owner, tileIDs: owner.tileIDs.filter(id => !evicted.has(id)) }
     workspaces = workspaces.map(w => w.id === target ? owner : w)
   }
@@ -150,7 +157,7 @@ function linkedIDs(s: TileDesktop, id: string): string[] {
   const tile = s.tiles.find(t => t.id === id)
   if (!tile) return []
   const root = tile.id
-  return s.tiles.filter(t => t.status !== 'closed' && (t.id === root || t.linkID === root)).map(t => t.id)
+  return s.tiles.filter(t => isLive(t) && (t.id === root || t.linkID === root)).map(t => t.id)
 }
 export function openTile(s: TileDesktop, input: TileInput, mode: OpenMode = 'here', targetID?: string): TileDesktop {
   if (input.kind === 'browser') input = { ...input, ...browserTile(input.url!, input.linkID), title: input.title }
@@ -162,13 +169,13 @@ export function openTile(s: TileDesktop, input: TileInput, mode: OpenMode = 'her
   // Workspaces are reached with Super+1–9; a tenth would be unreachable, so “new” reuses the current one.
   let target = targetID || (mode !== 'new' || next.workspaces.length >= MAX_WORKSPACES ? activeWorkspace(next)?.id : undefined)
   const linkedRoot = tileRoot(next, existing)
-  if (mode === 'here' && existing?.status === 'shelf' && linkedRoot?.status === 'visible') target = linkedRoot.workspaceID || target
+  if (mode === 'here' && existing?.status === 'hidden' && linkedRoot?.status === 'visible') target = linkedRoot.workspaceID || target
   if (!target || !next.workspaces.some(w => w.id === target)) [next, target] = workspace(next)
-  const tile: Tile = owner || { ...input, id: input.id || uid(), workspaceID: null, status: 'closed', lastUsed: 0, shelvedAt: 0, draft: input.draft || '', context: input.context || [] }
+  const tile: Tile = owner || { ...input, id: input.id || uid(), workspaceID: null, status: 'hidden', released: true, lastUsed: 0, hiddenAt: 0, draft: input.draft || '', context: input.context || [] }
   if (!existing) next = { ...next, tiles: [...next.tiles, tile] }
   const restoreGroup = !!existing && existing.status !== 'visible'
   const ids = mode === 'move' ? linkedIDs(next, tile.linkID || tile.id) : restoreGroup ? linkedIDs(next, tile.id) : [tile.id]
-  if (existing?.status === 'closed') for (const child of next.tiles.filter(t => t.linkID === existing.id && t.status === 'closed' && t.shelvedAt === existing.shelvedAt)) ids.push(child.id)
+  if (existing && !isLive(existing)) for (const child of next.tiles.filter(t => t.linkID === existing.id && !isLive(t) && t.hiddenAt === existing.hiddenAt)) ids.push(child.id)
   if (!ids.includes(tile.id)) ids.push(tile.id)
   return place(next, ids, target, tile.id)
 }
@@ -194,14 +201,16 @@ export function moveTile(s: TileDesktop, id: string, slot: number): TileDesktop 
   const group = linkedIDs(next, tile.linkID || id)
   return place(next, group.length ? group : [id], result[1], id)
 }
-export function shelfTile(s: TileDesktop, id: string, close = false): TileDesktop {
+/** Takes a tile and its linked previews out of view. `release` also lets go of what they hold
+ * now (a page, a shell) instead of when they age out; a terminal is only released this way. */
+export function hideTile(s: TileDesktop, id: string, release = false): TileDesktop {
   const ids = linkedIDs(s, id)
   if (!ids.length) return s
   const next = checkpoint(s)
-  return tidy({ ...next, clock: s.clock + 1, tiles: next.tiles.map(t => ids.includes(t.id) ? { ...t, status: close ? 'closed' : 'shelf', lastWorkspaceID: t.workspaceID || t.lastWorkspaceID, workspaceID: null, shelvedAt: s.clock + 1 } : t) })
+  return tidy({ ...next, clock: s.clock + 1, tiles: next.tiles.map(t => ids.includes(t.id) ? { ...t, status: 'hidden', released: release, lastWorkspaceID: t.workspaceID || t.lastWorkspaceID, workspaceID: null, hiddenAt: s.clock + 1 } : t) })
 }
-export function restoreLast(s: TileDesktop, closed = false): TileDesktop {
-  const tile = s.tiles.filter(t => t.status === (closed ? 'closed' : 'shelf')).sort((a, b) => b.shelvedAt - a.shelvedAt)[0]
+export function restoreLast(s: TileDesktop): TileDesktop {
+  const tile = hiddenTiles(s)[0]
   return tile ? openTile(s, tile, 'move') : s
 }
 export function fullscreenTile(s: TileDesktop): TileDesktop {
@@ -289,14 +298,14 @@ export function tidyAround(s: TileDesktop, id: string): TileDesktop {
   const keep = linkedIDs(s, id)
   const owner = tile.workspaceID || s.activeID
   const next = checkpoint(s)
-  return tidy({ ...next, clock: s.clock + 1, tiles: next.tiles.map(t => t.workspaceID === owner && !keep.includes(t.id) ? { ...t, status: 'shelf', workspaceID: null, lastWorkspaceID: owner, shelvedAt: s.clock + 1 } : t) })
+  return tidy({ ...next, clock: s.clock + 1, tiles: next.tiles.map(t => t.workspaceID === owner && !keep.includes(t.id) ? { ...t, status: 'hidden', workspaceID: null, lastWorkspaceID: owner, hiddenAt: s.clock + 1 } : t) })
 }
 export function undoArrangement(s: TileDesktop): TileDesktop {
   const previous = s.history.at(-1)
   if (!previous) return s
   return { ...s, activeID: previous.activeID, workspaces: previous.workspaces, history: s.history.slice(0, -1), tiles: s.tiles.map(t => {
     const old = previous.placements.find(x => x.id === t.id)
-    return old ? { ...t, ...old } : { ...t, status: 'closed', workspaceID: null }
+    return old ? { ...t, ...old } : { ...t, status: 'hidden', released: true, workspaceID: null }
   }) }
 }
 /** Navigate a tile to another resource in place (Files: into a subfolder; a session list: into a
@@ -362,19 +371,24 @@ export function restoreDesktop(raw: string | null, directory = '', kinds: KindRu
     let s: TileDesktop = { ...desktopInitial(directory), ...parsed, history: [], clock: Number.isFinite(parsed.clock) ? parsed.clock : 0 }
     const keys = new Set<string>(), ids = new Set<string>()
     const rules = new Map(kinds.map(rule => [rule.kind, rule]))
-    s.tiles = s.tiles.filter(t => t && typeof t.id === 'string' && typeof t.key === 'string' && typeof t.title === 'string' && rules.has(t.kind) && ['visible', 'shelf', 'closed'].includes(t.status) && typeof t.draft === 'string' && Array.isArray(t.context)).filter(t => {
+    s.tiles = s.tiles.filter(t => t && typeof t.id === 'string' && typeof t.key === 'string' && typeof t.title === 'string' && rules.has(t.kind) && ['visible', 'hidden', 'shelf', 'closed'].includes(t.status) && typeof t.draft === 'string' && Array.isArray(t.context)).filter(t => {
       if (!rules.get(t.kind)!.restore(t)) return false
       if (ids.has(t.id) || keys.has(t.key)) return false
       ids.add(t.id); keys.add(t.key); return true
-    }).map(t => ({ ...t, label: typeof t.label === 'string' ? t.label : undefined,
+    }).map(t => {
+      // Older versions had a shelf (hidden, live) and closed tiles (hidden, released).
+      const old = t as unknown as { status: string; released?: unknown; hiddenAt?: number; shelvedAt?: number }, hiddenAt = old.hiddenAt ?? old.shelvedAt
+      delete old.shelvedAt
+      return { ...t, label: typeof t.label === 'string' ? t.label : undefined,
+      status: old.status === 'visible' ? 'visible' as const : 'hidden' as const, released: old.status === 'closed' || (old.status === 'hidden' && old.released === true),
       workspaceID: t.status === 'visible' && typeof t.workspaceID === 'string' ? t.workspaceID : null,
-      lastUsed: Number.isFinite(t.lastUsed) ? t.lastUsed : 0, shelvedAt: Number.isFinite(t.shelvedAt) ? t.shelvedAt : 0,
+      lastUsed: Number.isFinite(t.lastUsed) ? t.lastUsed : 0, hiddenAt: Number.isFinite(hiddenAt) ? hiddenAt! : 0,
       context: t.context.filter(c => c && ['file', 'page'].includes(c.kind) && typeof c.id === 'string' && typeof c.name === 'string' && (c.text === undefined || typeof c.text === 'string') && (c.uri === undefined || typeof c.uri === 'string')),
-    }))
+    } })
     const slots = new Set<number>(), wsIDs = new Set<string>()
     s.workspaces = s.workspaces.filter(w => w && typeof w.id === 'string' && Number.isInteger(w.slot) && w.slot > 0 && Array.isArray(w.tileIDs) && !slots.has(w.slot) && !wsIDs.has(w.id) && (slots.add(w.slot), wsIDs.add(w.id), true)).map(w => ({ ...w, tileIDs: [...new Set(w.tileIDs)].filter(id => s.tiles.some(t => t.id === id && t.workspaceID === w.id && t.status === 'visible')) })).sort((a, b) => a.slot - b.slot)
-    s.tiles = s.tiles.map(t => t.status === 'visible' && !s.workspaces.some(w => w.id === t.workspaceID && w.tileIDs.includes(t.id)) ? { ...t, status: 'shelf', workspaceID: null } : t)
-    for (const w of s.workspaces) while (w.tileIDs.length > 4) { const id = w.tileIDs.shift()!; s.tiles = s.tiles.map(t => t.id === id ? { ...t, status: 'shelf', workspaceID: null } : t) }
+    s.tiles = s.tiles.map(t => t.status === 'visible' && !s.workspaces.some(w => w.id === t.workspaceID && w.tileIDs.includes(t.id)) ? { ...t, status: 'hidden', workspaceID: null } : t)
+    for (const w of s.workspaces) while (w.tileIDs.length > 4) { const id = w.tileIDs.shift()!; s.tiles = s.tiles.map(t => t.id === id ? { ...t, status: 'hidden', workspaceID: null } : t) }
     if (!s.workspaces.some(w => w.id === s.activeID)) s.activeID = 'home'
     s.folders = Array.isArray(s.folders) ? s.folders.filter(f => typeof f === 'string') : []
     s.pinned = Array.isArray(s.pinned) ? s.pinned.filter(f => typeof f === 'string') : []

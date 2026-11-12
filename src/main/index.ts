@@ -6,7 +6,7 @@ import { homedir } from 'node:os'
 import type { CoreAPI, DesktopEvent } from '../shared/types'
 import { mainSources, type MainContext, type MainSource } from './registry'
 import { Browsers } from './browser'
-import { shortcutFor } from '../shared/shortcuts'
+import { desktopKey, shortcutFor } from '../shared/shortcuts'
 import { readShortcut } from './keys'
 import { Files } from './files'
 import { Storage } from './storage'
@@ -167,7 +167,7 @@ async function createWindow() {
     if (!window) return false
     return (await dialog.showMessageBox(window, { type: action === 'Approve' ? 'question' : 'warning', title, message: title, detail, buttons: ['Cancel', action], defaultId: 0, cancelId: 0, noLink: true })).response === 1
   }
-  sources = (Object.entries(mainSources) as [string, (ctx: MainContext) => MainSource][]).map(([id, create]) => create({ emit: event => emit({ type: 'source', source: id, event }), storage: store, secrets, env: process.env, home: homedir(), platform: process.platform, confirm: (title, detail, action) => confirm(title, detail, action) }))
+  sources = (Object.entries(mainSources) as [string, (ctx: MainContext) => MainSource][]).map(([id, create]) => create({ emit: event => emit({ type: 'source', source: id, event }), storage: store, secrets, env: process.env, home: homedir(), platform: process.platform, confirm: (title, detail, action) => confirm(title, detail, action), ask: messages => { if (!model) throw new Error('AI model is unavailable'); return model.chat(messages) } }))
   browsers = new Browsers(window, emit)
   terminals = new Terminals(emit)
   model ||= new ModelBroker(storage, secrets, confirm)
@@ -182,7 +182,7 @@ async function createWindow() {
     // A terminal also keeps Alt keys and F-keys (readline's Alt+D, mc's F2/F6).
     const system = input.meta || (input.control && input.alt)
     const plain = input.control || (keyModes.has('terminal') && (input.alt || /^F\d+$/.test(input.key)))
-    if (keyModes.size && !system && plain && shortcutFor(input) !== 'attach-selection') return
+    if (keyModes.size && !system && plain && !desktopKey(shortcutFor(input))) return
     const { action, swallow } = readShortcut(input)
     if (swallow) event.preventDefault()
     if (action) emit({ type: 'shortcut', action })
@@ -200,7 +200,7 @@ async function createWindow() {
       { label: 'Ask or open… (K)', click: () => emit({ type: 'shortcut', action: 'launcher' }) },
       { label: 'New terminal', click: () => emit({ type: 'shortcut', action: 'new-terminal' }) },
       { label: 'Settings', click: () => emit({ type: 'shortcut', action: 'settings' }) },
-      { label: 'Shelf focused tile (session keeps running)', click: () => emit({ type: 'shortcut', action: 'shelf-tile' }) },
+      { label: 'Hide focused tile (session keeps running)', click: () => emit({ type: 'shortcut', action: 'hide-tile' }) },
       { type: 'separator' }, { role: 'quit', registerAccelerator: process.platform === 'darwin' }, // Ctrl+Q belongs to the terminal (XON) on Linux.
     ] },
     { label: 'Edit', submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },

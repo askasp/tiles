@@ -58,7 +58,7 @@ test('V3 messages, permissions, questions, unique browser, linked move, and rest
     await page.getByRole('textbox', { name: 'Launcher search' }).press('Enter')
     await expect(page.locator('.resource-tile:visible')).toHaveCount(2)
     expect(await app.evaluate(({ webContents }) => webContents.getAllWebContents().filter(c => c.getURL().endsWith('/preview')).length)).toBe(1)
-    await tileAction(page, page.locator(`[data-tile-id="${id}"]`), 'Shelf (stays live)')
+    await tileAction(page, page.locator(`[data-tile-id="${id}"]`), 'Hide')
     await expect(page.locator('.resource-tile:visible')).toHaveCount(0)
     fixture.askPermission(id)
     await expect(page.getByRole('button', { name: 'Go to waiting session' })).toContainText('1 waiting')

@@ -14,7 +14,7 @@ async function state(page: Page) {
   return page.evaluate(() => JSON.parse(window.chatos.loadDesktop() || '{}')) as Promise<TileDesktop>
 }
 
-test('all-day desktop: five sessions, Slack DMs/mentions, mail/replies, PRs, shelf and find', async () => {
+test('all-day desktop: five sessions, Slack DMs/mentions, mail/replies, PRs, hiding and find', async () => {
   test.setTimeout(120_000)
   const fixture = await fixtureServer(), profile = await mkdtemp('/tmp/opencode/chatos-day-')
   const env: Record<string, string> = { ...Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => typeof e[1] === 'string')), CHATOS_USER_DATA: profile, CHATOS_SERVER_URL: fixture.url }
@@ -46,7 +46,7 @@ test('all-day desktop: five sessions, Slack DMs/mentions, mail/replies, PRs, she
       await expect(page.locator('[data-tile-id="ses_fixture_5"] textarea')).toHaveValue('Unsent draft 5')
       await launcher(page, `${fixture.url}/preview/dm-carl`, 'Shift+Enter')
       await page.getByRole('button', { name: 'Workspace overview', exact: true }).click()
-      await expect(page.locator('.overview-shelf-row')).not.toHaveCount(0)
+      await expect(page.locator('.overview-hidden .overview-tile-row')).not.toHaveCount(0)
       await page.getByRole('button', { name: 'Close overview' }).click()
     }
     await expect.poll(async () => (await state(page)).tiles?.filter(t => t.kind === 'browser').length).toBe(sources.length)

@@ -12,7 +12,7 @@ const press = (key: string, mods: Partial<Input> = {}) => ({ type: 'keyDown', ke
 
 describe('key sheet', () => {
   it('documents every shortcut the app answers to', () => {
-    const modifiers: Partial<Input>[] = [{}, { meta: true }, { meta: true, shift: true }, { control: true }, { control: true, shift: true }, { control: true, alt: true }, { alt: true }]
+    const modifiers: Partial<Input>[] = [{}, { meta: true }, { meta: true, shift: true }, { control: true }, { control: true, shift: true }, { control: true, alt: true }, { alt: true }, { alt: true, shift: true }]
     const answered = new Set<string>()
     for (const key of keys) for (const mods of modifiers) { const action = shortcutFor(press(key, mods)); if (action) answered.add(family(action)) }
     for (const action of Object.values(windowChord)) answered.add(family(action))
@@ -22,6 +22,14 @@ describe('key sheet', () => {
   it('only documents actions that exist', () => {
     const real = new Set([...leaderActions, ...keys.flatMap(key => [{}, { meta: true }, { meta: true, shift: true }, { control: true }, { control: true, shift: true }, { alt: true }].map(mods => shortcutFor(press(key, mods)))), ...Object.values(windowChord)].filter(Boolean).map(a => family(a!)))
     expect([...documented].filter(action => !real.has(action))).toEqual([])
+  })
+  it('moves between workspaces like i3: Alt+digit goes, Alt+Shift+digit sends the tile', () => {
+    expect(shortcutFor(press('2', { alt: true }))).toBe('workspace:2')
+    expect(shortcutFor(press('0', { alt: true }))).toBe('workspace:0')
+    // Shift+2 reads “@” on the key; the physical key is still Digit2.
+    expect(shortcutFor({ ...press('@', { alt: true, shift: true }), code: 'Digit2' })).toBe('move-workspace:2')
+    expect(shortcutFor(press('0', { alt: true, shift: true }))).toBeUndefined()
+    expect(shortcutFor(press('2', { control: true, alt: true }))).toBe('workspace:2')
   })
   it('opens the action menu and the key sheet from anywhere', () => {
     expect(shortcutFor(press('.', { meta: true }))).toBe('actions')

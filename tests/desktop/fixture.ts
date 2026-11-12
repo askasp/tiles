@@ -56,7 +56,7 @@ export async function fixtureServer(options?: { requestLimit?: number; createDel
     if (path === '/v1/models') return json({ object: 'list', data: [{ id: 'fixture-embedding' }, { id: 'fixture-chat' }] })
     if (path === '/v1/chat/completions' && options?.generate) {
       const messages = body.messages as { content: string }[]
-      return json({ choices: [{ message: { role: 'assistant', content: options.generate(messages[0].content) } }] })
+      return json({ choices: [{ message: { role: 'assistant', content: options.generate(messages.map(m => m.content).join('\n\n')) } }] })
     }
     // Fake Front, Slack and GitHub APIs for the built-in connectors (CHATOS_CONNECTOR_URLS). No real accounts.
     if (path.startsWith('/front/')) {

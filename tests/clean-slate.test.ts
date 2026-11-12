@@ -147,27 +147,27 @@ describe('built-in Files and Terminal', () => {
 })
 
 describe('a long day stays bounded', () => {
-  it('keeps at most SHELF_LIVE shelved tiles live; older ones close but keep identity and drafts, terminals stay', async () => {
-    const { SHELF_LIVE, browserTile, shelfTile, updateTile } = await import('../src/shared/tiles')
+  it('keeps at most HIDDEN_LIVE hidden tiles live; older ones are released but keep identity and drafts, terminals stay', async () => {
+    const { HIDDEN_LIVE, browserTile, hideTile, updateTile } = await import('../src/shared/tiles')
     let s = openTile(desktopInitial(), terminalTile('/tmp'))
     const term = s.tiles[0].id
-    s = shelfTile(s, term)
-    for (let n = 0; n < 20; n++) { s = openTile(s, browserTile(`https://example.test/${n}`)); const id = s.tiles.at(-1)!.id; if (n === 0) s = updateTile(s, id, { draft: 'keep me' }); s = shelfTile(s, id) }
-    const shelved = s.tiles.filter(t => t.status === 'shelf' && t.kind !== 'terminal')
-    expect(shelved).toHaveLength(SHELF_LIVE)
-    expect(shelved.map(t => t.url)).toContain('https://example.test/19')
-    expect(s.tiles.find(t => t.id === term)?.status).toBe('shelf')
+    s = hideTile(s, term)
+    for (let n = 0; n < 20; n++) { s = openTile(s, browserTile(`https://example.test/${n}`)); const id = s.tiles.at(-1)!.id; if (n === 0) s = updateTile(s, id, { draft: 'keep me' }); s = hideTile(s, id) }
+    const live = s.tiles.filter(t => t.status === 'hidden' && !t.released && t.kind !== 'terminal')
+    expect(live).toHaveLength(HIDDEN_LIVE)
+    expect(live.map(t => t.url)).toContain('https://example.test/19')
+    expect(s.tiles.find(t => t.id === term)?.released).toBe(false)
     const first = s.tiles.find(t => t.url === 'https://example.test/0')!
-    expect(first.status).toBe('closed'); expect(first.draft).toBe('keep me')
+    expect(first.released).toBe(true); expect(first.draft).toBe('keep me')
     s = openTile(s, browserTile('https://example.test/0'))
     expect(s.tiles.filter(t => t.url === 'https://example.test/0')).toHaveLength(1)
     expect(s.tiles.find(t => t.url === 'https://example.test/0')?.status).toBe('visible')
   })
-  it('forgets the oldest closed tiles beyond CLOSED_KEPT, but never ones with an unsent draft', async () => {
-    const { CLOSED_KEPT, browserTile, shelfTile, updateTile } = await import('../src/shared/tiles')
+  it('forgets the oldest released tiles beyond RELEASED_KEPT, but never ones with an unsent draft', async () => {
+    const { RELEASED_KEPT, browserTile, hideTile, updateTile } = await import('../src/shared/tiles')
     let s = desktopInitial()
-    for (let n = 0; n < CLOSED_KEPT + 30; n++) { s = openTile(s, browserTile(`https://example.test/c${n}`)); const id = s.tiles.at(-1)!.id; if (n === 0) s = updateTile(s, id, { draft: 'unsent' }); s = shelfTile(s, id, true) }
-    expect(s.tiles.filter(t => t.status === 'closed').length).toBe(CLOSED_KEPT + 1)
+    for (let n = 0; n < RELEASED_KEPT + 30; n++) { s = openTile(s, browserTile(`https://example.test/c${n}`)); const id = s.tiles.at(-1)!.id; if (n === 0) s = updateTile(s, id, { draft: 'unsent' }); s = hideTile(s, id, true) }
+    expect(s.tiles.filter(t => t.released).length).toBe(RELEASED_KEPT + 1)
     expect(s.tiles.some(t => t.url === 'https://example.test/c0')).toBe(true)
     expect(s.tiles.some(t => t.url === 'https://example.test/c1')).toBe(false)
   })

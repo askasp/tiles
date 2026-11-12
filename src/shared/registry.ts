@@ -4,10 +4,11 @@ import type { KindRule, TileDesktop } from './tiles'
 import { coreKinds, restoreDesktop } from './tiles'
 import { coreCatalogue, type CatalogueEntry } from './catalogue'
 import { migrateV1, opencodeEntry, opencodeKinds } from './sources/opencode'
+import { kEntry, kKinds } from './sources/k'
 export type { SourceAPIs } from './registry-api'
 
-export const catalogue: CatalogueEntry[] = [...coreCatalogue, opencodeEntry]
-export const kindRules: KindRule[] = [...coreKinds, ...opencodeKinds]
+export const catalogue: CatalogueEntry[] = [...coreCatalogue, kEntry, opencodeEntry]
+export const kindRules: KindRule[] = [...coreKinds, ...kKinds, ...opencodeKinds]
 const migrations: ((raw: string, directory: string) => TileDesktop | undefined)[] = [migrateV1]
 
 /** Restore any saved desktop: older formats first, then the current one with every registered kind. */

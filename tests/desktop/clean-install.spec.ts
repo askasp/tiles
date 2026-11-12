@@ -99,8 +99,15 @@ test('clean install: model first, built-ins without any server, OpenCode only on
     await page.keyboard.press('Control+Alt+.'); await page.keyboard.press('n'); await page.keyboard.press('n')
     await expect(page.locator('[data-kind="terminal"]:visible')).toHaveCount(2)
     await expect(page.locator('[data-kind="terminal"].tile-focused .files-footer')).toContainText(`${home}/code/clean-slate-folder/assets`)
+    // ␣ w q only hides: the shell keeps running. ␣ w = brings it back; ␣ w Q ends it.
     await page.keyboard.press('Control+Alt+.'); await page.keyboard.press('w'); await page.keyboard.press('q')
     await expect(page.locator('[data-kind="terminal"]:visible')).toHaveCount(1)
+    await expect(page.locator('[data-kind="terminal"]')).toHaveCount(2)
+    await page.keyboard.press('Control+Alt+.'); await page.keyboard.press('w'); await page.keyboard.press('=')
+    await expect(page.locator('[data-kind="terminal"]:visible')).toHaveCount(2)
+    await page.keyboard.press('Control+Alt+.'); await page.keyboard.press('w'); await page.keyboard.press('Shift+Q')
+    await expect(page.locator('[data-kind="terminal"]:visible')).toHaveCount(1)
+    await expect(page.locator('[data-kind="terminal"]')).toHaveCount(1)
     expect(errors).toEqual([])
 
     // B: OpenCode is added by asking, here by URL. Nothing contacted it before this.

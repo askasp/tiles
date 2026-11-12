@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { activeWorkspace, browserTile, desktopInitial, directionTile, focusTile, focusedTile, fullscreenTile, goWorkspace, moveTile, neighbourIndex, openTile, promoteTile, reconcileBrowser, restoreLast, serializeDesktop, shelfTile, tidyAround, tileLayout, undoArrangement, updateTile, type TileDesktop } from '../src/shared/tiles'
+import { activeWorkspace, browserTile, desktopInitial, directionTile, focusTile, focusedTile, fullscreenTile, goWorkspace, moveTile, neighbourIndex, openTile, promoteTile, reconcileBrowser, restoreLast, serializeDesktop, hideTile, tidyAround, tileLayout, undoArrangement, updateTile, type TileDesktop } from '../src/shared/tiles'
 import type { SessionInfo } from '../src/shared/sources/opencode/types'
 import { projectTile, sessionTile } from '../src/shared/sources/opencode'
 import { restore as restoreDesktop } from '../src/shared/registry'
@@ -39,7 +39,7 @@ describe('V3 unique global resource ownership', () => {
   it('never re-numbers surviving workspaces after another empties', () => {
     let s = openTile(goWorkspace(desktopInitial(), 1), sessionTile(session(1)))
     s = openTile(goWorkspace(s, 2), sessionTile(session(2)))
-    s = shelfTile(s, 'session-1')
+    s = hideTile(s, 'session-1')
     expect(s.workspaces.map(w => w.slot)).toEqual([2])
     s = goWorkspace(s, 1)
     expect(s.workspaces.map(w => w.slot)).toEqual([1, 2]); valid(s)
@@ -58,21 +58,21 @@ describe('V3 unique global resource ownership', () => {
     let s = openTile(desktopInitial(), sessionTile(session(1)))
     s = openTile(s, browserTile('localhost:3000', 'session-1'))
     const preview = focusedTile(s)!.id
-    s = shelfTile(s, preview)
+    s = hideTile(s, preview)
     expect(s.tiles.find(t => t.id === 'session-1')?.status).toBe('visible')
     s = focusTile(s, preview)
-    s = shelfTile(s, 'session-1')
-    expect(s.tiles.every(t => t.status === 'shelf')).toBe(true)
+    s = hideTile(s, 'session-1')
+    expect(s.tiles.every(t => t.status === 'hidden' && !t.released)).toBe(true)
     s = focusTile(s, 'session-1')
     expect(s.tiles.every(t => t.status === 'visible')).toBe(true); valid(s)
   })
-  it('moving a linked preview brings its parent too; ordinary unshelving rejoins the parent', () => {
+  it('moving a linked preview brings its parent too; bringing back a hidden preview rejoins the parent', () => {
     let s = openTile(desktopInitial(), sessionTile(session(1)))
     s = openTile(s, browserTile('localhost:3000', 'session-1'))
     const preview = focusedTile(s)!.id
     s = moveTile(s, preview, 3)
     expect(activeWorkspace(s)?.tileIDs).toContain('session-1')
-    s = shelfTile(s, preview); s = goWorkspace(s, 2); s = focusTile(s, preview)
+    s = hideTile(s, preview); s = goWorkspace(s, 2); s = focusTile(s, preview)
     expect(activeWorkspace(s)?.slot).toBe(3)
     expect(activeWorkspace(s)?.tileIDs).toHaveLength(2); valid(s)
   })
@@ -86,31 +86,31 @@ describe('V3 unique global resource ownership', () => {
     expect(s.tiles).toHaveLength(1); valid(s)
     s = undoArrangement(s); valid(s)
   })
-  it('local browser names survive title changes, shelving, and persistence', () => {
+  it('local browser names survive title changes, hiding, and persistence', () => {
     let s = openTile(desktopInitial(), browserTile('https://app.slack.com/client/team/dm'))
     const id = focusedTile(s)!.id
     s = updateTile(s, id, { label: 'DM Carl' })
     s = reconcileBrowser(s, id, 'https://app.slack.com/client/team/dm', 'Slack')
-    s = shelfTile(s, id)
+    s = hideTile(s, id)
     const restored = restoreDesktop(serializeDesktop(s))
     expect(restored.tiles[0].label).toBe('DM Carl'); expect(restored.tiles[0].title).toBe('Slack'); valid(restored)
   })
-  it('fifth visible tile shelves the LRU, never the requested one', () => {
+  it('fifth visible tile hides the LRU, never the requested one', () => {
     let s = desktopInitial()
     for (let n = 1; n <= 4; n++) s = openTile(s, sessionTile(session(n)))
     s = focusTile(s, 'session-1')
     s = openTile(s, sessionTile(session(5)))
-    expect(s.tiles.find(t => t.id === 'session-2')?.status).toBe('shelf')
+    expect(s.tiles.find(t => t.id === 'session-2')?.status).toBe('hidden')
     expect(s.tiles.find(t => t.id === 'session-5')?.status).toBe('visible')
     expect(focusedTile(s)?.id).toBe('session-5'); valid(s)
   })
-  it('automatic LRU shelving carries the hidden session’s linked preview', () => {
+  it('hiding the LRU to make room carries the hidden session’s linked preview', () => {
     let s = openTile(desktopInitial(), sessionTile(session(1)))
     s = openTile(s, browserTile('localhost:3000', 'session-1'))
     const preview = focusedTile(s)!.id
     for (let n = 2; n <= 4; n++) s = openTile(s, sessionTile(session(n)))
-    expect(s.tiles.find(t => t.id === 'session-1')?.status).toBe('shelf')
-    expect(s.tiles.find(t => t.id === preview)?.status).toBe('shelf')
+    expect(s.tiles.find(t => t.id === 'session-1')?.status).toBe('hidden')
+    expect(s.tiles.find(t => t.id === preview)?.status).toBe('hidden')
     expect(activeWorkspace(s)?.tileIDs).toHaveLength(3); valid(s)
   })
   it('focusing an existing owner removes a temporary empty workspace without renumbering', () => {
@@ -119,10 +119,10 @@ describe('V3 unique global resource ownership', () => {
     s = focusTile(s, 'session-1')
     expect(s.workspaces.map(w => w.slot)).toEqual([1]); valid(s)
   })
-  it('restores closed resources and their linked previews without duplicate identities', () => {
+  it('restores released resources and their linked previews without duplicate identities', () => {
     let s = openTile(desktopInitial(), sessionTile(session(1)))
     s = openTile(s, browserTile('localhost:3000', 'session-1'))
-    s = shelfTile(s, 'session-1', true)
+    s = hideTile(s, 'session-1', true)
     s = openTile(s, sessionTile(session(1)))
     expect(s.tiles).toHaveLength(2); expect(s.tiles.every(t => t.status === 'visible')).toBe(true); valid(s)
   })
@@ -180,13 +180,22 @@ describe('V3 arrangement and persistence', () => {
     expect(activeWorkspace(s)?.tileIDs).toHaveLength(3)
     expect(s.tiles.find(t => t.id === 'session-1')?.draft).toBe('Typed after arrangement'); valid(s)
   })
-  it('round-trips shelf, stable slots, drafts and links, excluding screenshots/history', () => {
+  it('round-trips hidden tiles, stable slots, drafts and links, excluding screenshots/history', () => {
     let s = openTile(goWorkspace(desktopInitial('/projects/amino'), 5), sessionTile(session(1)))
     s = updateTile(s, 'session-1', { draft: 'Remember', context: [{ id: 'large', kind: 'image', name: 'shot', uri: 'data:image/png;base64,x' }] })
-    s = openTile(s, browserTile('localhost:3000', 'session-1')); s = shelfTile(s, 'session-1')
+    s = openTile(s, browserTile('localhost:3000', 'session-1')); s = hideTile(s, 'session-1')
     const restored = restoreDesktop(serializeDesktop(s))
     expect(restored.tiles[0].draft).toBe('Remember'); expect(restored.tiles[0].context).toEqual([])
     expect(restored.history).toEqual([]); expect(restored.tiles[1].linkID).toBe('session-1'); valid(restored)
+  })
+  it('reads older desktops: shelved tiles stay live, closed ones come back released', () => {
+    let s = openTile(desktopInitial(), browserTile('https://example.com/a'))
+    s = openTile(s, browserTile('https://example.com/b'))
+    const raw = JSON.parse(serializeDesktop(s))
+    raw.workspaces[0].tileIDs = []
+    raw.tiles = raw.tiles.map((t: Record<string, unknown>, i: number) => { const { hiddenAt: _h, released: _r, ...rest } = t; return { ...rest, status: i ? 'closed' : 'shelf', workspaceID: null, shelvedAt: 7 + i } })
+    const restored = restoreDesktop(JSON.stringify(raw))
+    expect(restored.tiles.map(t => [t.status, !!t.released, t.hiddenAt, 'shelvedAt' in t])).toEqual([['hidden', false, 7, false], ['hidden', true, 8, false]])
   })
   it('migrates v1 without losing drafts or duplicating browser URLs', () => {
     const base = { kind: 'session', hidden: false, panes: [null, null], tabPane: {}, split: false, focusedPane: 0, fullscreen: false, context: [], closedTabs: [] }
@@ -199,7 +208,7 @@ describe('V3 arrangement and persistence', () => {
     expect(s.tiles.find(t => t.id === 'session-1')?.draft).toBe('Draft one')
     expect(s.tiles.find(t => t.id === 'session-2')?.draft).toBe('Draft two')
     expect(s.tiles.find(t => t.id === 'session-1')?.status).toBe('visible')
-    expect(s.tiles.find(t => t.id === 'session-2')?.status).toBe('shelf'); valid(s)
+    expect(s.tiles.find(t => t.id === 'session-2')?.status).toBe('hidden'); valid(s)
   })
   it('v1 review tabs in the same project become one repository review tile', () => {
     const base = { kind: 'session', hidden: false, panes: [null, null], tabPane: {}, split: false, focusedPane: 0, fullscreen: false, context: [], draft: '', closedTabs: [] }
@@ -245,7 +254,7 @@ describe('entire workday simulation', () => {
       s = goWorkspace(s, minute % 3 + 1)
       s = openTile(s, sessionTile(session(minute % 5 + 1)), minute % 17 === 0 ? 'move' : 'here')
       s = openTile(s, browserTile(urls[minute % urls.length]), minute % 11 === 0 ? 'move' : 'here')
-      if (minute % 7 === 0) s = shelfTile(s, focusedTile(s)!.id)
+      if (minute % 7 === 0) s = hideTile(s, focusedTile(s)!.id)
       if (minute % 9 === 0) s = restoreLast(s)
       if (minute % 13 === 0) { s = directionTile(s, 'left'); s = promoteTile(s) }
       if (minute % 23 === 0) { s = tidyAround(s, focusedTile(s)!.id); s = undoArrangement(s) }

@@ -5,6 +5,7 @@ import { connectorFetch, checkDestination } from './connector-network'
 import type { SecretStorage } from './secrets'
 import type { Storage } from './storage'
 import type { Confirm } from './connectors'
+import type { KMessage } from '../shared/sources/k'
 
 const validKey = (key: unknown) => key === undefined || (typeof key === 'string' && key.length <= 16_384 && !/[\r\n\x00]/.test(key))
 
@@ -90,12 +91,21 @@ export class ModelBroker {
     return this.info()
   }
   async generate(prompt: string): Promise<string> {
-    if (!this.info().ready || !this.settings) throw new Error('Connect a model first: Super+K, then “model”.')
     if (typeof prompt !== 'string' || prompt.length > 160_000) throw new Error('Model input is too large')
+    return this.complete([{ role: 'user', content: prompt }])
+  }
+  /** K's chats: a conversation with a system message. Same endpoint, same limits, no tools. */
+  async chat(messages: KMessage[]): Promise<string> {
+    if (!Array.isArray(messages) || !messages.length || messages.length > 100 || messages.some(m => !m || !['system', 'user', 'assistant'].includes(m.role) || typeof m.content !== 'string')) throw new Error('Invalid conversation')
+    if (messages.reduce((n, m) => n + m.content.length, 0) > 400_000) throw new Error('This chat is too long for the model. Start a new chat.')
+    return this.complete(messages.map(m => ({ role: m.role, content: m.content })))
+  }
+  private async complete(messages: KMessage[]): Promise<string> {
+    if (!this.info().ready || !this.settings) throw new Error('Connect a model first: Super+K, then “model”.')
     const settings = this.settings, token = this.token
     const response = await this.fetcher(`${settings.baseURL}/chat/completions`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
-      body: JSON.stringify({ model: settings.model, messages: [{ role: 'user', content: prompt }], max_completion_tokens: 16_000 }),
+      body: JSON.stringify({ model: settings.model, messages, max_completion_tokens: 16_000 }),
       redirect: 'error', signal: AbortSignal.timeout(90_000),
     })
     if (!response.ok) { await response.body?.cancel(); throw new Error(`Model request failed (HTTP ${response.status}). Check the URL, model ID, key and account quota. No action was run.`) }

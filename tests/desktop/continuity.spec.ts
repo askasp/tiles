@@ -10,7 +10,7 @@ async function open(page: Page, query: string, mode = 'Enter') {
   await input.press(mode); await expect(input).toHaveCount(0)
 }
 
-test('reading position and partial agent answers survive workspace/empty desktop/shelf switching', async () => {
+test('reading position and partial agent answers survive workspace/empty desktop/hiding', async () => {
   const fixture = await fixtureServer(), profile = await mkdtemp('/tmp/opencode/chatos-continuity-')
   fixture.seedHistory('ses_fixture_1', 60)
   const env: Record<string, string> = { ...Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => typeof e[1] === 'string')), CHATOS_USER_DATA: profile, CHATOS_SERVER_URL: fixture.url }
@@ -31,7 +31,7 @@ test('reading position and partial agent answers survive workspace/empty desktop
     await open(page, 'Consent reload')
     await expect(session.locator('.question-card select')).toHaveValue('device')
     await expect.poll(() => scroll.evaluate(e => e.scrollTop)).toBe(220)
-    await tileAction(page, page.locator('.resource-tile:visible'), 'Shelf (stays live)')
+    await tileAction(page, page.locator('.resource-tile:visible'), 'Hide')
     await open(page, 'Consent reload')
     await expect(session.locator('.question-card select')).toHaveValue('device')
     await expect.poll(() => scroll.evaluate(e => e.scrollTop)).toBe(220)
@@ -74,7 +74,7 @@ test('browser popup reuses URL owner and native browser shortcuts open the launc
     await page.getByRole('button', { name: 'Save name', exact: true }).click()
     await app.evaluate(async ({ webContents }) => { await webContents.getAllWebContents().find(c => c.getURL().endsWith('/dm-carl'))!.executeJavaScript("document.title = 'Generic Slack page'") })
     await expect(page.locator('.resource-tile:visible .tile-title')).toHaveText('DM Carl · important')
-    await tileAction(page, page.locator('.resource-tile:visible'), 'Shelf (stays live)')
+    await tileAction(page, page.locator('.resource-tile:visible'), 'Hide')
     await open(page, 'DM Carl · important')
     await expect(page.locator('.resource-tile:visible .tile-title')).toHaveText('DM Carl · important')
     const browserID = await page.locator('.resource-tile:visible').getAttribute('data-tile-id')

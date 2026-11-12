@@ -1,4 +1,4 @@
-import type { MutableRefObject, ReactNode } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, MutableRefObject, ReactNode } from 'react'
 import type { OpenMode, Tile, TileDesktop, TileInput } from '../../shared/tiles'
 import type { ConnectorDefinition, ConnectorInfo } from '../../shared/connectors'
 import type { ModelInfo } from '../../shared/model'
@@ -69,16 +69,26 @@ export interface Row {
   /** While shown, other results are hidden: e.g. “start session in …” must never open something else. */
   exclusive?: boolean
   disabled?: boolean
+  /** Enter hands K's panel to that source's `Panel` with this argument, e.g. a K chat. */
+  panel?: { source: string; arg: string }
   run(mode: OpenMode): void | Promise<void>
 }
 export interface Candidate { input: TileInput; score: number }
 export interface TileProps<S> { tile: Tile; state: S; env: Env; visible: boolean; focused: boolean; focusKey: number }
+/** A source's view inside K, below the input: K's chat thread. The input stays K's; Enter and keys come here. */
+export interface PanelProps<S> {
+  state: S; env: Env; arg: string
+  input: string; setInput(text: string): void
+  /** Keys pressed in K's input while the panel is open. True when the panel handled it. */
+  keys: MutableRefObject<((event: ReactKeyboardEvent<HTMLInputElement>) => boolean) | undefined>
+  close(): void
+}
 export interface SetupProps<S> { state: S; env: Env; name: string; done(): void; enter: MutableRefObject<(() => void) | undefined> }
 
 export interface Source<S = unknown> {
   /** The catalogue id: scope, “add <id>”, settings row. */
   id: string
-  /** Badge shown on rows, tiles and the shelf. */
+  /** Badge shown on rows and tiles. */
   badge: string
   /** Tile kinds this source renders. */
   kinds: readonly string[]
@@ -95,6 +105,7 @@ export interface Source<S = unknown> {
   /** → actions this source offers on any resource, e.g. “Open terminal here” on a folder. */
   others?(input: TileInput, state: S, env: Env): Other[]
   Setup?(props: SetupProps<S>): ReactNode
+  Panel?(props: PanelProps<S>): ReactNode
   Settings?(props: { state: S; env: Env }): ReactNode
   Tile?(props: TileProps<S>): ReactNode
   /** Lists (sessions, a folder, an inbox) take a narrow column beside work tiles. Work tiles are the default. */
@@ -108,8 +119,8 @@ export interface Source<S = unknown> {
   contextTargets?(state: S): { id: string; title: string; subtitle: string; input: TileInput }[]
   acceptsContext?: readonly string[]
   rename?(tile: Tile, title: string, state: S): Promise<boolean>
-  /** Called before the tile closes for good, e.g. to end a shell. */
-  closed?(tile: Tile): void
+  /** Called when a hidden tile is released: unload its page, end its shell. */
+  released?(tile: Tile): void
 }
 export type AnySource = Source<any> // eslint-disable-line @typescript-eslint/no-explicit-any
 export const source = <S,>(s: Source<S>): Source<S> => s

@@ -3,7 +3,8 @@ import type { AnySource } from './types'
 import { browserSource, filesSource, terminalSource } from './builtin'
 import { connectorsSource } from './connectors'
 import { opencodeSource } from './opencode'
+import { kSource } from './k'
 
-export const registry: AnySource[] = [browserSource, filesSource, terminalSource, connectorsSource, opencodeSource]
+export const registry: AnySource[] = [browserSource, filesSource, terminalSource, connectorsSource, kSource, opencodeSource]
 export const sourceFor = (kind: string) => registry.find(s => s.kinds.includes(kind))
 export const sourceByID = (id: string) => registry.find(s => s.id === id)

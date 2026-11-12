@@ -36,6 +36,8 @@ export class Storage {
     try { const value = run(); this.db.exec('COMMIT'); return value } catch (e) { this.db.exec('ROLLBACK'); throw e }
   }
   get(key: string): string | null { return this.db.prepare('SELECT value FROM app_state WHERE key=?').get(key)?.value as string || null }
+  /** Every value whose key starts with `prefix`. */
+  entries(prefix: string): string[] { return this.db.prepare('SELECT value FROM app_state WHERE substr(key, 1, ?) = ?').all(prefix.length, prefix).map(row => row.value as string) }
   delete(key: string) { this.db.prepare('DELETE FROM app_state WHERE key=?').run(key) }
   set(key: string, value: string) { this.db.prepare('INSERT INTO app_state VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at').run(key, value, Date.now()) }
   loadDesktop(legacy?: string | null): string | null {

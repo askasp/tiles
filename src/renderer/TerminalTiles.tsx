@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { desktopKey, shortcutFor } from '../shared/shortcuts'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
@@ -24,7 +25,7 @@ export function TerminalBody({ tile, visible, focused, focusKey, consumeDraft }:
     const fitter = new FitAddon()
     terminal.loadAddon(fitter); terminal.open(host.current)
     // Window-manager chords (Super, Ctrl+Alt) belong to ChatOS, not the shell.
-    terminal.attachCustomKeyEventHandler(event => !(event.metaKey || (event.ctrlKey && event.altKey)))
+    terminal.attachCustomKeyEventHandler(event => !(event.metaKey || (event.ctrlKey && event.altKey) || desktopKey(shortcutFor({ type: 'keyDown', key: event.key, code: event.code, control: event.ctrlKey, alt: event.altKey, meta: event.metaKey, shift: event.shiftKey } as Electron.Input))))
     term.current = terminal; fit.current = fitter
     try { fitter.fit() } catch { /* Hidden tiles have no size yet. */ }
     let alive = true

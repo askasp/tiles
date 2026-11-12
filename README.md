@@ -33,14 +33,14 @@ On Linux, `npm run doctor` checks the installed Electron sandbox helper. If it r
 - **Collection → independent item tile** is the connector contract. Lists do not contain nested tile tabs. Once OpenCode is added, `opencode projects` in K opens the project collection; each project opens its session collection, and each session opens its own conversation. Opening any of these does not create a session.
 - One visible tile fills the workspace; two split it; three use a big slot and two stacked slots; four form a grid.
 - Promote moves the focused tile to the first/big slot. In a four-tile grid, promotion temporarily enlarges it fullscreen rather than making the neighbours too small; promote again or use fullscreen to return.
-- Opening a fifth shelves the least recently focused tile. It keeps running, stays searchable, and can be restored.
+- Opening a fifth hides the least recently focused tile. It keeps running, stays searchable, and Ctrl+W = brings it back.
 - Opening a session or normalized full URL already visible takes you to its owner workspace—even if you request a new workspace. Nothing is copied.
 - Give opaque browser resources a stable local name with the header pencil (e.g. **DM Carl**, **Mail · replies to me**). Search matches the name and original title/URL; browser title changes do not overwrite your name.
 - Workspace numbers stay stable: removing workspace 1 never turns workspace 2 into workspace 1. Empty workspaces disappear when you leave them.
-- Links you open from a session become independent browser tiles linked to that session. Moving or shelving the session takes its previews too. Moving a linked preview also takes its parent; shelving only the preview leaves the session visible.
-- **Shelving keeps a tile live.** Ctrl+W − shelves it; Ctrl+W q (or ␣ w q) closes it, and that is local too: the OpenCode session continues, its draft remains, and search can reopen it.
+- Links you open from a session become independent browser tiles linked to that session. Moving or hiding the session takes its previews too. Moving a linked preview also takes its parent; hiding only the preview leaves the session visible.
+- **Out of view is one state: hidden.** Ctrl+W q (or ␣ w q) hides a tile and Ctrl+W = brings back the last one; K finds any of them. Hiding is local: the OpenCode session continues and its draft remains. Ctrl+W Q also ends what the tile holds (a terminal's shell, a page's memory).
 - Layout undo restores placement, not old drafts or sent messages. It never undoes server actions.
-- Switching workspaces or shelving keeps mounted tile bodies: chat reading position, partial agent answers and repository review state stay intact during the run.
+- Switching workspaces or hiding keeps mounted tile bodies: chat reading position, partial agent answers and repository review state stay intact during the run.
 
 V1/V2 browser-local state migrates automatically into main-process SQLite, preserving drafts and unique browser URLs. Old `chatos.workspace.v1` / `chatos.desktop.v2` entries remain untouched as migration sources; they are no longer updated. Browser duplicates in old stage tabs become one tile. Screenshot attachments are intentionally not persisted.
 
@@ -57,14 +57,14 @@ ChatOS needs no mouse. Every action has one home; other keys for it are aliases.
 | Keys | Does |
 | --- | --- |
 | ␣ g 1–9 · 0 · o · u | Go to workspace · home · overview · what's waiting on you |
-| ␣ n t · b · n · r | New terminal (in the focused folder) · browser tile · item like this tile · reopen the last closed |
+| ␣ n t · b · n | New terminal (in the focused folder) · browser tile · item like this tile |
 | ␣ w … | The tile keys below (same as Ctrl+W) |
 | ␣ t … | This tile's own actions, with their letters: everything that used to be a button |
 | ␣ s · z · ? | Settings · undo what K arranged · every key |
 
 When something waits on you, such as a permission, its keys come first: **y** allow once · **a** always · **d** deny.
 
-**2. Tiles: Ctrl+W, then one key** (vim). h j k l focus · H J K L swap · 1–9 move to that workspace · w / W next / previous · o fullscreen · x make main · − shelf · = bring back · q close. A hint lists them while Ctrl+W waits (1.5 s), in a web page too.
+**2. Tiles: Ctrl+W, then one key** (vim). h j k l focus · H J K L swap · 1–9 move to that workspace · w / W next / previous · o fullscreen · x make main · q hide · = bring back · Q hide and end. A hint lists them while Ctrl+W waits (1.5 s), in a web page too.
 
 **3. In the focused tile: bare keys, never while typing.** j / k down / up · l open · h back · / filter (Esc or ↓ returns to the list) · the tile's letters (␣ t lists them, e.g. Files: − up, r refresh; a project: s start session, d review, f files, t terminal; D or Delete deletes, always after asking) · Ctrl+O / Ctrl+I or System+[ / ] back / forward in the tile · F2 rename · Esc leaves a text field, so letters are keys again. In a list, ↵ opens in place, Ctrl+↵ beside, Ctrl+Shift+↵ in a new workspace.
 
@@ -90,13 +90,13 @@ Optional sources are listed in exactly three registries: `src/shared/registry.ts
 
 ### A long day stays bounded
 
-Shelved tiles stay live (pages keep scroll and logins) up to 8; older ones close, releasing their page while keeping identity, name and draft, and K reopens them in place. Terminals are never closed automatically. The 200 most recent closed tiles are remembered (any with an unsent draft or context always are). Workspaces are capped at the nine reachable with System+1–9; Ctrl+Enter beyond that opens in the current one. The desktop is saved within 100 ms of a change even while pages and sessions keep updating. `tests/desktop/developer-day.spec.ts` simulates a day (Slack DMs, tagged Front mail with a comment and a reply, 3 sessions in each of 2 projects, heavy open/move/shelf/close, a restart) and checks that live pages match live tiles and what's saved matches the screen; set `DAY_PASSES=12` for a longer day. `tests/desktop/real-e2e.spec.ts` (`CHATOS_REAL_E2E=1`, optional `CHATOS_MODEL_URL`) runs a fresh install against real services on the machine: a local OpenAI-compatible model, K building a connector for a public API and reading it, the running OpenCode service with one throwaway session in a temp folder, Files navigation and window keys.
+The 8 most recently hidden tiles stay live (pages keep scroll and logins); older ones are released, letting go of their page while keeping identity, name and draft, and K reopens them in place. Terminals are only released by Ctrl+W Q. The 200 most recent released tiles are remembered (any with an unsent draft or context always are). Workspaces are capped at the nine reachable with System+1–9; Ctrl+Enter beyond that opens in the current one. The desktop is saved within 100 ms of a change even while pages and sessions keep updating. `tests/desktop/developer-day.spec.ts` simulates a day (Slack DMs, tagged Front mail with a comment and a reply, 3 sessions in each of 2 projects, heavy open/move/hide/end, a restart) and checks that live pages match live tiles and what's saved matches the screen; set `DAY_PASSES=12` for a longer day. `tests/desktop/real-e2e.spec.ts` (`CHATOS_REAL_E2E=1`, optional `CHATOS_MODEL_URL`) runs a fresh install against real services on the machine: a local OpenAI-compatible model, K building a connector for a public API and reading it, the running OpenCode service with one throwaway session in a temp folder, Files navigation and window keys.
 
 K's model may be small and local. K states the connector rules explicitly, maps harmless near-misses (`items: "."`, `view: "detail"`), and sends a rejected proposal back to the model with the exact validator error (twice at most); errors name the operation or recipe. `<think>` blocks are ignored.
 
 ### Sources, resources and actions
 
-The launcher searches all known tiles (visible, shelved and closed), project folders and server session titles. Every result shows **source · resource type · action**, plus its path or existing owner. Searching `chatos` (or `open chatos`) offers separate **Files · Folder · Browse files** and **OpenCode · Project · Show sessions** results. Neither creates a session. Equally relevant resources you used recently rank higher; their action remains visible.
+The launcher searches all known tiles (visible and hidden), project folders and server session titles. Every result shows **source · resource type · action**, plus its path or existing owner. Searching `chatos` (or `open chatos`) offers separate **Files · Folder · Browse files** and **OpenCode · Project · Show sessions** results. Neither creates a session. Equally relevant resources you used recently rank higher; their action remains visible.
 
 Search everywhere by default, or press Tab to narrow to a source (Tab again moves to the next, then to **Add source**). Typing `OpenCode` and pressing Enter enters that source's search without opening a tile. Empty Backspace returns to all sources. Source scoping is optional navigation, not a nested tile container. You can also use prefixes (`opencode chatos`, `files chatos`, `web example.com`, `mail …`, `slack …`, `github …`). Short `dm …` / `pr …` commands request provider discovery but retain universal local matches, so a session named **PR cleanup** or a renamed **DM Carl** tile stays findable.
 
@@ -104,7 +104,7 @@ Search everywhere by default, or press Tab to narrow to a source (Tab again move
 - `open the chatos sessions in OpenCode`: find the OpenCode project/session list.
 - `start an OpenCode session in chatos` / `new session`: explicit session creation; an unknown project name does not fall back to an unrelated directory.
 - `files /absolute/path`: open a local folder or text-file preview, with errors kept visible in the launcher.
-- `just Consent reload` / `hide everything but Consent reload`: shelve other tiles.
+- `just Consent reload` / `hide everything but Consent reload`: hide other tiles.
 
 These built-in commands use explicit local patterns. Custom sources also participate in universal search and have source chips. **Ask AI to find…** translates a free-form request into approved collection searches, without tools or write actions. Multiple matches remain candidates; AI does not silently pick or open one. OpenCode's SDK still handles its specialized session UI and streaming.
 
@@ -163,9 +163,9 @@ Backups contain private drafts and may retain earlier **encrypted** credentials.
 
 ### Files tiles
 
-Folders and files are independent native resources, not OpenCode projects or sessions. **Enter navigates the tile in place** (into a subfolder, or into a file), Ctrl+Enter opens beside, and each Files tile has its own Back/Forward history; if the target is already open in another tile, Enter goes there instead. Folder rows support ↑/↓ and Enter, and their filter matches the loaded folder's names. Opening a child or parent goes to its own unique tile; LRU shelving keeps the desktop bounded. Folder tiles offer **Open terminal here**, and, once OpenCode is a source, **Show OpenCode sessions** and **Start OpenCode session here**. OpenCode project tiles offer **Browse files**. Image files (PNG, JPEG, GIF, WebP, AVIF, BMP, ICO, SVG up to 25 MB) open in an image viewer; SVG renders as an image, so scripts never run.
+Folders and files are independent native resources, not OpenCode projects or sessions. **Enter navigates the tile in place** (into a subfolder, or into a file), Ctrl+Enter opens beside, and each Files tile has its own Back/Forward history; if the target is already open in another tile, Enter goes there instead. Folder rows support ↑/↓ and Enter, and their filter matches the loaded folder's names. Opening a child or parent goes to its own unique tile; Hiding the least recently used tile keeps the desktop bounded. Folder tiles offer **Open terminal here**, and, once OpenCode is a source, **Show OpenCode sessions** and **Start OpenCode session here**. OpenCode project tiles offer **Browse files**. Image files (PNG, JPEG, GIF, WebP, AVIF, BMP, ICO, SVG up to 25 MB) open in an image viewer; SVG renders as an image, so scripts never run.
 
-Terminal tiles run your login shell in a real pseudo-terminal via `@lydell/node-pty` (prebuilt N-API binaries for macOS, Linux and Windows, so nothing is compiled for Electron; packaged builds unpack it from the asar). If it can't load, Linux falls back to the system `script` command; macOS's BSD `script` cannot work without a terminal on its input. Shelving keeps the shell running; closing the tile ends it. After a restart the tile comes back and starts a fresh shell in the same folder. While a terminal has focus, plain Ctrl chords (Ctrl+W, Ctrl+L, Ctrl+K…) go to the shell; Super / Ctrl+Alt chords still manage tiles.
+Terminal tiles run your login shell in a real pseudo-terminal via `@lydell/node-pty` (prebuilt N-API binaries for macOS, Linux and Windows, so nothing is compiled for Electron; packaged builds unpack it from the asar). If it can't load, Linux falls back to the system `script` command; macOS's BSD `script` cannot work without a terminal on its input. Hiding keeps the shell running; Ctrl+W Q ends it. After a restart the tile comes back and starts a fresh shell in the same folder. While a terminal has focus, plain Ctrl chords (Ctrl+W, Ctrl+L, Ctrl+K…) go to the shell; Super / Ctrl+Alt chords still manage tiles.
 
 Local file access is read-only, through the main process. Symlink targets resolve to canonical identities before opening. Directory listings are bounded at 1,000 entries; text previews at 256 KiB. Binary/non-UTF-8 files and system pseudo-files are not previewed. HTML/scripts are displayed as inert text, not executed. File content is not stored in desktop persistence; paths and tile ownership survive restart, then contents reload. **Files are local to the desktop machine**; an OpenCode server's remote-only path may not exist locally. This is a navigator/text reader, not a file editor or recursive indexed filesystem search.
 

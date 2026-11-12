@@ -1,4 +1,4 @@
-import { browserTile, desktopInitial, focusTile, goWorkspace, openTile, shelfTile, type KindRule, type TileDesktop, type TileInput } from '../../tiles'
+import { browserTile, desktopInitial, focusTile, goWorkspace, hideTile, openTile, type KindRule, type TileDesktop, type TileInput } from '../../tiles'
 import type { CatalogueEntry } from '../../catalogue'
 import { basename } from '../../util'
 import { restoreState, sessionTitle } from './legacy'
@@ -57,7 +57,7 @@ export function migrateV1(raw: string, directory: string): TileDesktop | undefin
       const input = tab.kind === 'browser' ? { ...browserTile(tab.url, w.sessionID), id: tab.id, title: tab.title } : { key: `${tab.kind}:${tab.kind === 'review' ? w.directory : w.sessionID}`, kind: tab.kind, title: tab.title, directory: w.directory, sessionID: w.sessionID, linkID: tab.kind === 'details' ? w.sessionID : undefined }
       if (!s.tiles.some(t => t.key === input.key)) s = openTile(s, input, 'here', target)
     }
-    if (w.hidden) for (const t of s.tiles.filter(t => t.workspaceID === target)) s = shelfTile(s, t.id)
+    if (w.hidden) for (const t of s.tiles.filter(t => t.workspaceID === target)) s = hideTile(s, t.id)
   }
   const oldActive = old.workspaces.find(w => w.id === old.activeID)
   const focused = s.tiles.find(t => t.sessionID === oldActive?.sessionID && t.kind === 'session')

@@ -52,7 +52,7 @@ export const browserSource = source<{ states: Record<string, BrowserState> }>({
       standalone={!tile.linkID} reportError={env.reportError} />
   },
   onShortcut: (action, _state, env) => { if (action !== 'new') return false; env.address(); return true },
-  closed: tile => { void api.browserClose(tile.id).catch(() => {}) },
+  released: tile => { void api.browserClose(tile.id).catch(() => {}) },
 })
 
 /** “~/git/ch” → the home-relative path. Paths are how people name folders. */
@@ -129,6 +129,6 @@ export const terminalSource = source<null>({
     return true
   },
   Tile: ({ tile, env, visible, focused, focusKey }) => <TerminalBody tile={tile} visible={visible} focused={focused} focusKey={focusKey} consumeDraft={() => env.changeTile(tile.id, { draft: '' })} />,
-  closed: tile => { void api.terminalClose(tile.id).catch(() => {}) },
+  released: tile => { void api.terminalClose(tile.id).catch(() => {}) },
 })
 export { terminalTile }

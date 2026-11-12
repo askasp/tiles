@@ -218,7 +218,7 @@ describe('upgrading from separate services', () => {
     expect(new Connectors(store, codec, async () => true, async () => '{}').list().map(c => c.definition.id)).toEqual(['front'])
 
     const old = { ...desktopInitial(), workspaces: [{ id: 'w1', tileIDs: ['a', 'b'], focusedID: 'a', fullscreenID: null }], activeID: 'w1' }
-    const tile = (id: string, extra: object) => ({ id, title: 'Front', status: 'visible', workspaceID: 'w1', draft: 'kept draft', context: [], lastUsed: 1, shelvedAt: 0, ...extra })
+    const tile = (id: string, extra: object) => ({ id, title: 'Front', status: 'visible', workspaceID: 'w1', draft: 'kept draft', context: [], lastUsed: 1, hiddenAt: 0, ...extra })
     const restored = restoreDesktop(serializeDesktop({ ...old, tiles: [tile('a', { key: 'front-list:is:open', kind: 'front-list', frontQuery: 'is:open' }), tile('b', { key: 'front:cnv_9', kind: 'front-conversation', conversationID: 'cnv_9', url: 'https://app.frontapp.com/open/cnv_9' })] } as never))
     expect(restored.tiles.map(t => [t.kind, t.resource, t.draft])).toEqual([['recipe', { connectorID: 'front', recipeID: 'inbox', query: 'is:open' }, 'kept draft'], ['recipe', { connectorID: 'front', recipeID: 'conversation', resourceID: 'cnv_9' }, 'kept draft']])
   })

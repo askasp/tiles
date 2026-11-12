@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { ask, desktopReady, launchDesktop, tileAction } from './launch'
 
-test('live OpenCode: one session tile, shelf, and reopen without changing the session', async () => {
+test('live OpenCode: one session tile, hide, and reopen without changing the session', async () => {
   const profile = await mkdtemp('/tmp/opencode/chatos-desktop-')
   const env: Record<string, string> = { ...Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === 'string')), CHATOS_USER_DATA: profile }
   delete env.ELECTRON_RUN_AS_NODE
@@ -30,9 +30,11 @@ test('live OpenCode: one session tile, shelf, and reopen without changing the se
     await openSession()
     await expect(page.locator('.resource-tile:visible')).toHaveCount(1)
     await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Unsent desktop smoke-test draft')
-    await tileAction(page, page.locator('.resource-tile:visible'), 'Shelf (stays live)')
+    await tileAction(page, page.locator('.resource-tile:visible'), 'Hide')
     await expect(page.locator('.resource-tile:visible')).toHaveCount(0)
-    await expect(page.locator('.shelf-chip')).toContainText(title)
+    await page.getByRole('button', { name: 'Workspace overview', exact: true }).click()
+    await expect(page.locator('.overview-hidden')).toContainText(title)
+    await page.getByRole('button', { name: 'Close overview' }).click()
     await openSession()
     await expect(page.getByRole('textbox', { name: 'Message', exact: true })).toHaveValue('Unsent desktop smoke-test draft')
     await expect(page.locator('.resource-tile:visible')).toHaveCount(1)

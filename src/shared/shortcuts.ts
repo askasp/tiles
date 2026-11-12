@@ -7,12 +7,18 @@ import type { Input } from 'electron'
 // - In a tile: bare keys, never while typing: vim motions and the tile's own letters.
 // - Accelerators for the top few only: ⌘K, ⌘1–9, ⌘, (Ctrl+Alt instead of ⌘ on Linux, where
 //   Super belongs to the window manager).
+// - Workspaces like i3 (whose default mod is Alt): Alt+1–9 goes there, Alt+Shift+1–9 sends the
+//   focused tile there. Not on a Mac, where Option+digit types characters (⌘1–9, Ctrl+W 1–9 there).
 // Never bound, because the OS takes them: ⌘/Super+Tab and +Space, ⌘H (hide), Super+L (lock),
 // Super+arrows (window snapping), ⌘⇧3/4/5 (screenshots), ⌘F/⌘−/⌘= (find, zoom),
 // Ctrl+Alt+T and Ctrl+Alt+arrows (Ubuntu terminal, workspace switching).
+const mac = typeof process !== 'undefined' && process.platform ? process.platform === 'darwin' : typeof navigator !== 'undefined' && /Mac/.test(navigator.platform)
 export function shortcutFor(input: Input): string | undefined {
   if (input.type !== 'keyDown') return
   const key = input.key.toLowerCase()
+  // Shift turns 1 into “!” on the key, so read the physical key.
+  const digit = input.code?.match(/^Digit([0-9])$/)?.[1]
+  if (digit && input.alt && !input.control && !input.meta && !mac) return input.shift ? digit === '0' ? undefined : `move-workspace:${digit}` : `workspace:${digit}`
   const system = input.meta || (input.control && input.alt)
   if (system && !input.shift) {
     if (/^[0-9]$/.test(key)) return `workspace:${key}`
@@ -36,6 +42,9 @@ export function shortcutFor(input: Input): string | undefined {
   if (key === 'f2' && !input.control && !input.alt && !input.meta) return 'rename'
 }
 
+/** Keys that work even in a terminal or a text field: they belong to the desktop, like a window manager's. */
+export const desktopKey = (action?: string) => action === 'attach-selection' || /^(move-)?workspace:/.test(action || '')
+
 /** Plain Ctrl keys a web page keeps (Slack, GitHub and Docs use them). ⌘K / Ctrl+Alt+K still open K. */
 export function pageKeepsKey(input: Input) {
   return input.type === 'keyDown' && input.control && !input.alt && !input.meta && ['k', 'i', 'o', 'tab'].includes(input.key.toLowerCase())
@@ -47,7 +56,7 @@ export const windowChord: Record<string, string> = {
   H: 'swap:left', J: 'swap:down', K: 'swap:up', L: 'swap:right',
   arrowleft: 'focus:left', arrowdown: 'focus:down', arrowup: 'focus:up', arrowright: 'focus:right',
   w: 'next-tile', W: 'previous-tile', p: 'previous-tile',
-  q: 'close-tile', c: 'close-tile', o: 'fullscreen', '-': 'shelf-tile', '=': 'restore-tile', '+': 'restore-tile', x: 'promote',
+  q: 'hide-tile', c: 'hide-tile', Q: 'end-tile', o: 'fullscreen', '=': 'restore-tile', '+': 'restore-tile', x: 'promote',
   // Ctrl+W, then a digit: move the tile to that workspace.
   ...Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => [String(n), `move-workspace:${n}`])),
 }
@@ -60,18 +69,18 @@ const digits = (label: (n: number) => string, action: (n: number) => string) => 
 export const leader: Record<string, LeaderEntry> = {
   g: { label: 'Go', keys: entries([
     ...digits(n => `Workspace ${n}`, n => `workspace:${n}`),
-    ['0', 'Home', 'workspace:0'], ['o', 'Overview of workspaces and the shelf', 'overview'], ['u', 'What is waiting on you', 'attention'],
+    ['0', 'Home', 'workspace:0'], ['o', 'Overview of workspaces', 'overview'], ['u', 'What is waiting on you', 'attention'],
   ]) },
   n: { label: 'New', keys: entries([
     ['t', 'Terminal in the focused folder', 'new-terminal'], ['b', 'Browser tile', 'new-browser'],
-    ['n', 'New item like this tile', 'new'], ['r', 'Reopen the last closed tile', 'restore-closed'],
+    ['n', 'New item like this tile', 'new'],
   ]) },
   w: { label: 'Tiles (same as Ctrl+W)', keys: entries([
     ['h', 'Focus left', 'focus:left'], ['j', 'Focus down', 'focus:down'], ['k', 'Focus up', 'focus:up'], ['l', 'Focus right', 'focus:right'],
     ['H', 'Swap left', 'swap:left'], ['J', 'Swap down', 'swap:down'], ['K', 'Swap up', 'swap:up'], ['L', 'Swap right', 'swap:right'],
     ['w', 'Next tile', 'next-tile'], ['W', 'Previous tile', 'previous-tile'],
     ['o', 'Fullscreen', 'fullscreen'], ['x', 'Make it the main tile', 'promote'],
-    ['-', 'Shelf (stays live)', 'shelf-tile'], ['=', 'Bring back the last shelved', 'restore-tile'], ['q', 'Close for good', 'close-tile'],
+    ['q', 'Hide (K finds it)', 'hide-tile'], ['Q', 'Hide and end (a terminal’s shell)', 'end-tile'], ['=', 'Bring back the last hidden', 'restore-tile'],
     ...digits(n => `Move to workspace ${n}`, n => `move-workspace:${n}`),
   ]) },
   t: { label: 'This tile', tile: true },
@@ -123,8 +132,8 @@ export function keyHelp(system: string): KeyGroup[] {
       { keys: '1–9', label: 'Move the tile to that workspace', actions: ['move-workspace'] },
       { keys: 'w · W p', label: 'Next · previous tile', actions: ['next-tile', 'previous-tile'] },
       { keys: 'o · x', label: 'Fullscreen · make main', actions: ['fullscreen', 'promote'] },
-      { keys: '− · = +', label: 'Shelf · bring back', actions: ['shelf-tile', 'restore-tile'] },
-      { keys: 'q c', label: 'Close for good', actions: ['close-tile'] },
+      { keys: 'q c · = +', label: 'Hide · bring back the last hidden', actions: ['hide-tile', 'restore-tile'] },
+      { keys: 'Q', label: 'Hide and end (a terminal’s shell, a page’s memory)', actions: ['end-tile'] },
     ] },
     { title: 'In the focused tile (never while typing)', rows: [
       { keys: 'j k · l · h', label: 'Down · up · open · back' },
@@ -138,7 +147,8 @@ export function keyHelp(system: string): KeyGroup[] {
     ] },
     { title: `Accelerators · ${mac ? '⌘' : 'Super, or Ctrl+Alt'}`, rows: [
       { keys: `${S}+K · Ctrl+K`, label: 'K: search, open, ask, or add a source', actions: ['launcher'] },
-      { keys: `${A}1–9 · ${A}0`, label: 'Workspace by number · home', actions: ['workspace'] },
+      { keys: mac ? '⌘1–9 · ⌘0' : 'Alt+1–9 · Alt+0 · Ctrl+Alt+1–9', label: 'Workspace by number · home (i3)', actions: ['workspace'] },
+      ...(mac ? [] : [{ keys: 'Alt+Shift+1–9', label: 'Send the focused tile to that workspace (i3)', actions: ['move-workspace'] }]),
       { keys: `${S}+,`, label: 'Settings', actions: ['settings'] },
       { keys: `${S}+. · ${S}+/`, label: 'Leader · every key', actions: ['actions', 'keys'] },
       { keys: 'Ctrl+L · Alt+D · F6', label: 'Address: the page’s address bar, or open a URL', actions: ['address'] },
