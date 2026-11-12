@@ -17,6 +17,8 @@
   --tile-shadow: 0 1px 2px #0000000d, 0 6px 18px -12px #00000033;
   --ink: #1c1b19; --ink-2: #4a4742; --ink-3: #6b6862; --muted: #77736b; --faint: #a29e96; --ink-hover: #3a3833; --on-ink: #ffffff;
   --blue: #1793d1; --blue-ink: #1478b0; --blue-line: #9cc9e6; --blue-soft: #f2f8fc;
+  /* The focused tile: one calm line, clear against --tile-line without glowing. */
+  --focus-line: #5aaedc;
   --danger: #9a3028; --danger-soft: #fff1ee; --danger-line: #efc9c6;
   --warn: #8a5a08; --warn-soft: #fcf6ea; --warn-line: #f0e1c2; --amber: #d99a1e;
   --green: #3fae6a; --ok: #2e7d4f; --ok-soft: #eaf6ee;
@@ -31,6 +33,7 @@
   --tile-shadow: 0 1px 2px #00000066, 0 8px 22px -12px #000000aa;
   --ink: #ecebe7; --ink-2: #cfccc5; --ink-3: #b0aca4; --muted: #948f86; --faint: #6f6b64; --ink-hover: #d9d6cf; --on-ink: #161514;
   --blue: #3aa6e6; --blue-ink: #6cbcef; --blue-line: #2d5b7a; --blue-soft: #15283a;
+  --focus-line: #3b84b3;
   --danger: #f19a8f; --danger-soft: #3a1d19; --danger-line: #6b302a;
   --warn: #e6b75c; --warn-soft: #33270f; --warn-line: #5e4719; --amber: #e0a63a;
   --green: #4cc07c; --ok: #79d39c; --ok-soft: #16301f;
@@ -46,7 +49,7 @@ button:disabled { cursor: default; opacity: .5; }
 input, textarea, select { min-width: 0; }
 input:focus, textarea:focus, select:focus { outline: none; }
 /* Keyboard-first: a field you reach with Tab or a key shows it. Fields with their own focus look are left alone. */
-:is(input, textarea, select):focus-visible:not(.composer-input, .k-composer-input, .large-input, .launcher-input input, .k-input input, .address-bar input, .files-filter input, .project-tile-toolbar input) { box-shadow: 0 0 0 2px var(--blue-line); border-color: var(--blue); }
+:is(input, textarea, select):focus-visible:not(.composer-input, .k-composer-input, .large-input, .launcher-input input, .k-input input, .files-filter input, .project-tile-toolbar input) { box-shadow: 0 0 0 2px var(--blue-line); border-color: var(--blue); }
 button:focus-visible, a:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 button, a, label, kbd, .workspace-bar { -webkit-user-select: none; user-select: none; }
 input, textarea { -webkit-user-select: text; user-select: text; }
@@ -81,7 +84,7 @@ svg { flex-shrink: 0; }
 .mode-badge span { color: var(--faint); font-family: var(--mono); }
 .connection-banner { display: flex; align-items: center; justify-content: center; gap: 20px; font-size: 12px; background: var(--warn-soft); color: var(--warn); padding: 6px 16px; flex-shrink: 0; }
 .connection-banner span { max-width: 80%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.workspace-content { flex: 1; min-height: 0; padding: 0 10px 10px; }
+.workspace-content { flex: 1; min-height: 0; padding: 0 6px 6px; }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
 .panel-header { height: 48px; display: flex; align-items: center; gap: 9px; padding: 0 14px; border-bottom: 1px solid var(--divider); flex-shrink: 0; font-size: 13.5px; }
 .header-right { margin-left: auto; }
@@ -184,11 +187,6 @@ svg { flex-shrink: 0; }
 .stage-empty > span { font-size: 13px; max-width: 360px; line-height: 1.6; }
 .stage-empty .button-row { margin-top: 7px; justify-content: center; }
 .browser-pane { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.browser-toolbar { display: flex; align-items: center; gap: 2px; height: 44px; padding: 0 8px; border-bottom: 1px solid var(--divider); flex-shrink: 0; }
-.browser-toolbar .icon-button { width: 27px; }
-.address-bar { border: 1px solid transparent; background: var(--canvas); height: 30px; border-radius: 999px; display: flex; align-items: center; gap: 7px; margin: 0 5px; padding: 0 12px; flex: 1; color: var(--ink-3); min-width: 0; }
-.address-bar:focus-within { border-color: var(--blue-line); background: var(--surface); }
-.address-bar input { border: 0; background: none; font-size: 12px; width: 100%; }
 .browser-surface { flex: 1; min-height: 0; position: relative; background: var(--surface); }
 .browser-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 12px; }
 .browser-error { padding: 5px 10px; font-size: 11px; background: var(--warn-soft); color: var(--warn); display: flex; align-items: center; gap: 5px; }

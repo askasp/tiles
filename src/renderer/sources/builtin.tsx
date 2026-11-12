@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { BrowserState } from '../../shared/types'
-import { browserTile, fileTile, reconcileBrowser, terminalTile, type TileInput } from '../../shared/tiles'
+import { browserTile, fileTile, isLive, reconcileBrowser, terminalTile, type TileInput } from '../../shared/tiles'
 import { terminalIntent } from '../../shared/sources'
 import { normalizeURL, uid } from '../../shared/util'
 import { api, friendlyError } from '../data'
@@ -47,7 +47,7 @@ export const browserSource = source<{ states: Record<string, BrowserState> }>({
     return rows
   },
   Tile({ tile, state, env }) {
-    return <BrowserPane tab={{ id: tile.id, kind: 'browser', title: tile.title, url: tile.url! }} state={state.states[tile.id]} openAddress={() => env.address()} navigate={url => env.openURL(url, tile.linkID)} attachPage={id => env.attach(id)}
+    return <BrowserPane tab={{ id: tile.id, kind: 'browser', title: tile.title, url: tile.url! }} state={state.states[tile.id]} openAddress={() => env.address()} attachPage={id => env.attach(id)}
       screenshot={id => { void api.browserScreenshot(id).then(uri => { const owner = tile.linkID && env.desktop.tiles.find(t => t.id === tile.linkID); if (owner) env.changeTile(owner.id, { context: [...owner.context, { id: uid(), kind: 'image', name: 'Browser screenshot', uri }] }); else env.notify('Link this page to a tile that takes context to attach screenshots.') }).catch(e => env.reportError(friendlyError(e))) }}
       standalone={!tile.linkID} reportError={env.reportError} />
   },
@@ -110,7 +110,10 @@ export const terminalSource = source<null>({
     // A path is used as typed; a name is searched (async) below. With nothing typed: the focused folder, or home.
     const dir = asked && pathLike(asked) ? expandPath(asked, env.home).replace(/(.)\/$/, '$1') : !asked ? focusedDirectory || env.home : undefined
     if (!dir) return []
-    return [{ key: 'terminal', icon: 'terminal', title: 'Terminal', source: 'Terminal', subtitle: `in ${where(dir)}${!asked && focusedDirectory ? ', the focused folder' : ''}`, action: 'Open terminal', first: true, run: mode => env.openTerminal(dir, mode) }]
+    // A bare “terminal” goes back to the shell you have running (K ranks it first, most recent on top);
+    // “new terminal”, “open terminal” or a folder starts another.
+    const reopen = !asked && !/^(?:new|open)\b/i.test(q.raw.trim()) && env.desktop.tiles.some(t => t.kind === 'terminal' && isLive(t))
+    return [{ key: 'terminal', icon: 'terminal', title: reopen ? 'New terminal' : 'Terminal', source: 'Terminal', subtitle: `in ${where(dir)}${!asked && focusedDirectory ? ', the focused folder' : ''}`, action: 'Open terminal', first: !reopen, run: mode => env.openTerminal(dir, mode) }]
   },
   search(q, _state, env) {
     // Narrowed to Terminal, a folder name or partial path offers terminals in the matching folders.

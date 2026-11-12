@@ -165,7 +165,7 @@ export function keyHelp(system: string): KeyGroup[] {
       { keys: mac ? '⌘⌃1–9 · ⌘⇧1–9' : 'Alt+Shift+1–9 · Ctrl+Alt+Shift+1–9', label: mac ? 'Send the focused tile to that workspace (⌘⇧3/4/5 are screenshots)' : 'Send the focused tile to that workspace (i3)', actions: ['move-workspace'] },
       { keys: `${S}+,`, label: 'Settings', actions: ['settings'] },
       { keys: `${S}+. · ${S}+/`, label: 'Leader · every key', actions: ['actions', 'keys'] },
-      { keys: 'Ctrl+L · Alt+D · F6', label: 'Address: the page’s address bar, or open a URL', actions: ['address'] },
+      { keys: 'Ctrl+L · Alt+D · F6', label: 'Open a URL in its own tile (or go to the tile that has it)', actions: ['address'] },
       { keys: 'Ctrl+.', label: 'Selection as context to another tile (never sends)', actions: ['attach-selection'] },
     ] },
     { title: 'In a web page', rows: [

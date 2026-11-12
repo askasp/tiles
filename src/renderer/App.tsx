@@ -217,12 +217,8 @@ export default function App() {
     // Cmd+N means “new” in the focused tile's source: a session next to a session, a shell next to a shell.
     if (action === 'new') { const owner = tile && sourceFor(tile.kind); if (!owner?.onShortcut?.('new', stateOf(owner.id), env)) ask(); return }
     if (registry.some(s => s.onShortcut?.(action, stateOf(s.id), env))) return
-    if (action === 'new-browser') { setOverlay('address'); return }
-    if (action === 'address') {
-      const input = tile?.kind === 'browser' ? document.querySelector<HTMLInputElement>(`[data-address-for="${tile.id}"]`) : null
-      if (input) { input.focus(); input.select() } else setOverlay('address')
-      return
-    }
+    // Pages have no address bar, like installed web apps: another address opens in its own tile.
+    if (action === 'address' || action === 'new-browser') { setOverlay('address'); return }
     if (action === 'attach-selection') {
       if (tile?.kind === 'browser') void attachRef.current(tile.id, true)
       else {
@@ -369,7 +365,7 @@ export default function App() {
         {desktop.tiles.filter(isLive).map(tile => {
           const chip = kindChip(tile, connectors), owner = sourceFor(tile.kind), status = tileStatus(tile), index = visible.findIndex(t => t.id === tile.id), isVisible = index >= 0, cell = layout?.cells[index]
           return <section hidden={!isVisible} data-list={isList(tile) || undefined} style={{ order: index, ...(cell && { gridColumn: cell.column + 1, gridRow: `${cell.row + 1} / span ${cell.rows}` }) }} className={`resource-tile panel ${visible[0]?.id === tile.id ? 'primary-tile' : ''} ${w?.focusedID === tile.id ? 'tile-focused' : ''}`} data-tile-id={tile.id} data-resource-key={tile.key} data-kind={tile.kind} key={tile.id} onPointerDownCapture={() => { if (focusedTile(ref.current)?.id !== tile.id) focus(tile.id) }} tabIndex={-1} onFocusCapture={e => { const at = e.target as HTMLElement; if (at !== e.currentTarget && !at.closest('.tile-header')) lastFocus.current.set(tile.id, at); if (focusedTile(ref.current)?.id !== tile.id) update(s => focusTile(s, tile.id)) }}>
-            <header className="tile-header"><Badge icon={tileBadge(tile)} /><strong className="tile-title truncate" title={tileTitle(tile)}>{tileTitle(tile)}</strong><span className="tile-source truncate" title={tile.url || tile.directory}>{tile.kind === 'terminal' ? '' : tileSource(tile)}{tile.directory && tile.kind !== 'session' ? `${tile.kind === 'terminal' ? '' : ' · '}${home && tile.directory.startsWith(home) ? `~${tile.directory.slice(home.length)}` : tile.directory}` : tile.url ? ` · ${(() => { try { return new URL(tile.url).pathname } catch { return '' } })()}` : ''}</span>{tile.linkID && <span title="Linked to the tile that opened it"><Link size={12} /></span>}{status && <Status running={status.running} waiting={status.waiting} />}
+            <header className="tile-header"><Badge icon={tileBadge(tile)} /><strong className="tile-title truncate" title={tileTitle(tile)}>{tileTitle(tile)}</strong><span className="tile-source truncate" title={tile.url || tile.directory}>{tile.kind === 'terminal' ? '' : tileSource(tile)}{tile.directory && tile.kind !== 'session' ? `${tile.kind === 'terminal' ? '' : ' · '}${home && tile.directory.startsWith(home) ? `~${tile.directory.slice(home.length)}` : tile.directory}` : tile.url ? ` · ${(() => { try { return new URL(tile.url).pathname } catch { return '' } })()}` : ''}</span><span className="tile-header-slot" data-header-slot={tile.id} />{tile.linkID && <span title="Linked to the tile that opened it"><Link size={12} /></span>}{status && <Status running={status.running} waiting={status.waiting} />}
               {registry.map(s => s.headerActions && <span key={s.id} className="tile-header-action">{s.headerActions(tile, stateOf(s.id), env)}</span>)}
               <span className={`tile-type ${chip.generated ? 'generated' : ''}`}>{chip.text}</span>
               <button type="button" className="tile-menu-button" aria-label={`Actions for ${tileTitle(tile)}`} title={`Actions · ␣ or ${system}+.`} onClick={() => { focus(tile.id); setMenuStart(['t']); setOverlay('actions') }}><kbd>␣ t</kbd><span>actions</span></button>

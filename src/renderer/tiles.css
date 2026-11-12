@@ -4,7 +4,7 @@
 .tile-app .workspace-select small { font: 10px var(--mono); color: var(--muted); }
 .tile-launcher-button { background: var(--surface); gap: 10px; }
 .attention-button { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; white-space: nowrap; padding: 6px; }
-.tile-grid { height: 100%; display: grid; gap: 10px; grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr); }
+.tile-grid { height: 100%; display: grid; gap: 6px; grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr); }
 .tile-grid.count-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .tile-grid.count-3 { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); grid-template-rows: repeat(2, minmax(0, 1fr)); }
 .tile-grid.count-3 > .primary-tile { grid-row: 1 / 3; }
@@ -14,11 +14,14 @@
 .tile-grid { --list-column: min(360px, 34%); }
 .resource-tile { min-height: 0; min-width: 0; display: flex; flex-direction: column; border-radius: 12px; }
 .resource-tile:focus { outline: none; }
-.resource-tile.tile-focused { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue); }
-.tile-header { display: flex; align-items: center; gap: 8px; height: 42px; min-height: 42px; padding: 0 10px 0 14px; border-bottom: 1px solid var(--divider); color: var(--ink-3); font-size: 12px; }
-.tile-title { color: var(--ink); font-weight: 500; flex: 1; }
+.resource-tile.tile-focused { border-color: var(--focus-line); }
+/* One thin line of chrome: the content gets the room. */
+.tile-header { display: flex; align-items: center; gap: 6px; height: 26px; min-height: 26px; padding: 0 6px 0 8px; border-bottom: 1px solid var(--divider); color: var(--ink-3); font-size: 11px; }
+.tile-header .k-icon { width: 16px; height: 16px; border-radius: 4px; font-size: 8px; }
+.tile-header-slot { display: contents; }
+.tile-title { color: var(--ink); font-weight: 500; flex: 1; font-size: 11.5px; }
 .tile-source { font-size: 10px; max-width: 140px; color: var(--muted); }
-.tile-type { font: 9px var(--mono); color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 2px 5px; }
+.tile-type { font: 9px var(--mono); color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 4px; }
 .tile-header .icon-button { width: 24px; height: 24px; }
 .tile-body { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .resource-tile .composer-input { min-height: 38px; }
@@ -51,7 +54,7 @@
 .session-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .session-row-meta { font-size: 11.5px; color: var(--muted); }
 .project-tile-body.wide .session-row.peeked { background: var(--blue-soft); box-shadow: inset 0 0 0 1px var(--blue-line); }
-.key-hints { flex: none; display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 9px 14px; border-top: 1px solid var(--divider); font-size: 11.5px; color: var(--muted); }
+.key-hints { flex: none; display: flex; flex-wrap: wrap; gap: 2px 12px; padding: 4px 8px; border-top: 1px solid var(--divider); font-size: 10.5px; color: var(--muted); }
 .key-hints span { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 /* The peek: read-only, never scrolls back. Newest messages stay in view; older ones fall off the top. */
 .project-peek { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
@@ -87,7 +90,7 @@
 .launcher-sources .pill { font-size: 11px; }
 .tile-app .workspace-content { position: relative; }
 .files-body { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.files-toolbar { display: flex; gap: 8px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--divider); }
+.files-toolbar { display: flex; gap: 8px; align-items: center; padding: 3px 8px; border-bottom: 1px solid var(--divider); }
 .files-toolbar strong { font-size: 12px; font-weight: 500; flex: 1; }
 .files-actions { display: flex; flex-wrap: wrap; gap: 9px; padding: 10px 14px; }
 .files-filter { padding: 0 14px 10px; }
@@ -98,7 +101,7 @@
 .file-entry span { flex: 1; }
 .file-entry small { color: var(--muted); font-size: 10px; }
 .file-preview pre { font-family: var(--mono); font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
-.files-footer { padding: 9px 14px; color: var(--muted); border-top: 1px solid var(--divider); font-size: 10px; }
+.files-footer { padding: 3px 8px; color: var(--muted); border-top: 1px solid var(--divider); font-size: 10px; }
 @media (max-width: 1150px) { .tile-source { max-width: 75px; } .tile-header { gap: 5px; padding-left: 8px; } .tile-type { display: none; } .tile-launcher-button kbd { display: none; } .resource-tile .model-select select { max-width: 120px; } }
 .recipe-body { display: flex; flex-direction: column; min-height: 0; height: 100%; font-size: 13px; }
 .recipe-toolbar, .recipe-filter { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--divider); flex-wrap: wrap; }

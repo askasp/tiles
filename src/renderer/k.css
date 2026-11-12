@@ -30,11 +30,14 @@
 .k-icon-search, .k-icon-add { background: var(--canvas); color: var(--muted); }
 
 /* Tile header (v4): badge · title · source · kind chip */
-.tile-app .tile-header { gap: 9px; padding: 0 8px 0 12px; }
+.tile-app .tile-header { gap: 6px; padding: 0 6px 0 8px; }
 .tile-app .tile-title { flex: 0 1 auto; font-weight: 600; }
 .tile-app .tile-source { flex: 1; max-width: none; font-size: 12px; color: var(--muted); }
 .tile-app .tile-type { flex: none; height: 20px; display: inline-flex; align-items: center; padding: 0 7px; border: 0; border-radius: 6px; background: var(--canvas); color: var(--ink-2); font: 500 10.5px var(--mono); white-space: nowrap; }
 .tile-app .tile-type.generated { background: var(--blue-soft); color: var(--blue-ink); }
+/* Where a tile came from only matters when a model wrote it. */
+.tile-app .tile-type:not(.generated) { display: none; }
+.tile-app .tile-type.generated { height: 16px; padding: 0 5px; border-radius: 4px; }
 
 /* K */
 .modal:has(.k-input-row) { width: 760px; border-radius: 18px; }
@@ -91,7 +94,7 @@
 .k-head { display: flex; align-items: center; gap: 6px; padding: 4px 12px; font-size: 12px; color: var(--muted); }
 .k-followup { display: flex; gap: 8px; margin: 10px 14px 4px; }
 .k-followup input { flex: 1; height: 34px; border: 1px solid var(--line-strong); border-radius: 999px; padding: 0 14px; font-size: 13px; }
-.k-foot { display: flex; flex-wrap: wrap; gap: 16px; padding: 11px 18px; border-top: 1px solid var(--divider); font: 11px var(--mono); color: var(--muted); }
+.k-foot { display: flex; flex-wrap: wrap; gap: 12px; padding: 4px 10px; border-top: 1px solid var(--divider); font: 11px var(--mono); color: var(--muted); }
 .k-foot .k-status { margin-left: auto; font-family: inherit; }
 
 /* Settings */
@@ -120,13 +123,12 @@
 .terminal-host { flex: 1; min-height: 0; padding: 2px 4px 2px 8px; }
 .terminal-host .xterm, .terminal-host .xterm-viewport { height: 100%; }
 .terminal-host .xterm-viewport { background: var(--terminal) !important; }
-/* A terminal is almost all terminal: one thin dark line for its title and folder, no footer,
- * a hairline frame that still turns blue on focus. */
-.resource-tile[data-kind="terminal"] { border-radius: 6px; background: var(--terminal); }
-.resource-tile[data-kind="terminal"] .tile-header { height: 22px; min-height: 22px; padding: 0 8px; gap: 6px; border-bottom: 0; background: var(--terminal); color: color-mix(in srgb, var(--terminal-ink) 50%, var(--terminal)); font-size: 10.5px; }
+/* A terminal is almost all terminal: its thin header goes dark with it, and there is no footer. */
+.resource-tile[data-kind="terminal"] { background: var(--terminal); }
+.resource-tile[data-kind="terminal"] .tile-header { border-bottom: 0; background: var(--terminal); color: color-mix(in srgb, var(--terminal-ink) 50%, var(--terminal)); }
 .resource-tile[data-kind="terminal"] .tile-header :is(.k-icon, .tile-type, .tile-menu-button) { display: none; }
-.resource-tile[data-kind="terminal"] .tile-title { flex: 0 1 auto; color: inherit; font-size: 10.5px; }
-.resource-tile[data-kind="terminal"] .tile-source { flex: 1; max-width: none; color: inherit; font-size: 10.5px; }
+.resource-tile[data-kind="terminal"] .tile-title { flex: 0 1 auto; color: inherit; }
+.resource-tile[data-kind="terminal"] .tile-source { flex: 1; max-width: none; color: inherit; }
 .resource-tile[data-kind="terminal"].tile-focused .tile-title { color: var(--terminal-ink); }
 
 /* Image preview in Files */
@@ -155,8 +157,8 @@
 .files-toolbar { gap: 2px; }
 .files-toolbar strong { flex: 1; margin: 0 6px; }
 /* Tiles stand out from the desktop: a firmer edge and a soft lift. */
-.tile-app .resource-tile.panel { border-color: var(--tile-line); box-shadow: var(--tile-shadow); }
-.tile-app .resource-tile.tile-focused { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue), var(--tile-shadow); }
+.tile-app .resource-tile.panel { border-color: var(--tile-line); box-shadow: var(--tile-shadow); border-radius: 6px; }
+.tile-app .resource-tile.tile-focused { border-color: var(--focus-line); box-shadow: var(--tile-shadow); }
 .tile-app .workspace-select.selected, .tile-app .tile-launcher-button { box-shadow: 0 0 0 1px var(--tile-line), 0 1px 2px #0000000d; }
 .empty-desktop { border-color: var(--line-strong); }
 .appearance { align-self: flex-start; display: inline-flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--canvas); }

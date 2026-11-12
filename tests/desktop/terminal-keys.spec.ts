@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { desktopReady, launchDesktop } from './launch'
+import { ask, desktopReady, launchDesktop } from './launch'
 
 test('Ctrl+W is the tile prefix inside a terminal too, and Ctrl+W ; hands the shell its own Ctrl+W', async () => {
   const profile = await mkdtemp('/tmp/chatos-terminal-keys-')
@@ -46,6 +46,40 @@ test('Ctrl+W is the tile prefix inside a terminal too, and Ctrl+W ; hands the sh
     await page.keyboard.press('Control+w'); await page.keyboard.press('2')
     await expect(page.locator('.workspace-button.selected kbd')).toContainText('2')
     await expect(page.locator(`[data-tile-id="${id}"].tile-focused`)).toBeVisible()
+  } finally {
+    await app.close()
+    await rm(profile, { recursive: true, force: true })
+  }
+})
+
+test('K: “terminal” goes back to the shell you have running; “new terminal” starts another', async () => {
+  const profile = await mkdtemp('/tmp/chatos-terminal-reopen-')
+  const env: Record<string, string> = { ...Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => typeof e[1] === 'string')), CHATOS_USER_DATA: profile, SHELL: '/bin/sh' }
+  delete env.ELECTRON_RUN_AS_NODE
+  const app = await launchDesktop(env)
+  try {
+    const page = await app.firstWindow()
+    await desktopReady(page)
+    const terminals = page.locator('.resource-tile[data-kind="terminal"]')
+    // Nothing running yet: “terminal” opens one.
+    await ask(page, 'terminal', false)
+    await expect(page.locator('.launcher-result.selected')).toContainText('Open terminal')
+    await page.keyboard.press('Enter')
+    await expect(terminals.locator('.xterm')).toBeVisible()
+    const id = await terminals.getAttribute('data-tile-id')
+    // Hidden, the shell keeps running: “terminal” brings that one back, not a new one.
+    await page.keyboard.press('Control+w'); await page.keyboard.press('q')
+    await expect(page.locator('.resource-tile[data-kind="terminal"]:visible')).toHaveCount(0)
+    await ask(page, 'terminal', false)
+    await expect(page.locator('.launcher-result.selected')).toContainText('Bring back')
+    await page.keyboard.press('Enter')
+    await expect(page.locator(`[data-tile-id="${id}"].tile-focused`)).toBeVisible()
+    await expect(terminals).toHaveCount(1)
+    // Asked for a new one: a new one.
+    await ask(page, 'new terminal', false)
+    await expect(page.locator('.launcher-result.selected')).toContainText('Open terminal')
+    await page.keyboard.press('Enter')
+    await expect(terminals).toHaveCount(2)
   } finally {
     await app.close()
     await rm(profile, { recursive: true, force: true })
