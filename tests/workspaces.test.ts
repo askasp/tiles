@@ -82,9 +82,10 @@ describe('i3-style app shortcuts', () => {
     // System+Enter is left to lists (open beside); Ctrl+W x promotes.
     expect(shortcutFor({ ...input, key: 'enter' })).toBeUndefined()
     expect(shortcutFor({ ...input, key: '[' })).toBe('tile-back')
-    // Shift+digit is not ours (⌘⇧3/4/5 are macOS screenshots): Ctrl+W, then a digit moves a tile.
-    expect(shortcutFor({ ...input, key: '2', shift: true })).toBeUndefined()
-    expect(shortcutFor({ ...input, key: '@', code: 'Digit2', shift: true })).toBeUndefined()
+    // System+Shift+digit sends the tile, as System+digit goes. macOS still takes ⌘⇧3/4/5 for
+    // screenshots before the app sees them, so Ctrl+W, then a digit, works for every number.
+    expect(shortcutFor({ ...input, key: '@', code: 'Digit2', shift: true })).toBe('move-workspace:2')
+    expect(shortcutFor({ ...input, control: false, alt: false, meta: true, key: '@', code: 'Digit2', shift: true })).toBe('move-workspace:2')
     expect(windowChord['2']).toBe('move-workspace:2')
     // Never the OS's: app switcher, Spotlight/layouts, hide, lock, window snapping, Ubuntu's terminal.
     for (const [key, mods] of [['Tab', { meta: true }], [' ', { meta: true }], [' ', { control: true, alt: false }], ['h', { meta: true }], ['l', { meta: true }], ['ArrowLeft', { meta: true }], ['t', { control: true, alt: true }], ['ArrowRight', { control: true, alt: true }]] as const)

@@ -2,6 +2,11 @@ import { LoaderCircle } from 'lucide-react'
 import type { ButtonHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { actionForKey } from './actions'
+import { createShortcutReader } from '../shared/shortcuts'
+
+/** Keys the window itself reads, when the main process lets them through. One reader, shared
+ * with the terminals, so a terminal knows the key after Ctrl+W is ours, not the shell's. */
+export const readKeys = createShortcutReader()
 
 /** The system modifier as people read it: ⌘ on macOS, Super elsewhere (Ctrl+Alt also works on Linux). */
 export const systemKey = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘' : 'Super'

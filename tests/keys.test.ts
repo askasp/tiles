@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Input } from 'electron'
-import { createShortcutReader, keyHelp, leader, pageKeepsKey, shortcutFor, windowChord, type LeaderEntry } from '../src/shared/shortcuts'
+import { createShortcutReader, isChordKey, keyHelp, leader, pageKeepsKey, shortcutFor, windowChord, type LeaderEntry } from '../src/shared/shortcuts'
 import { validateActions } from '../src/renderer/actions'
 
 const family = (action: string) => action.split(':')[0]
@@ -30,6 +30,12 @@ describe('key sheet', () => {
     expect(shortcutFor({ ...press('@', { alt: true, shift: true }), code: 'Digit2' })).toBe('move-workspace:2')
     expect(shortcutFor(press('0', { alt: true, shift: true }))).toBeUndefined()
     expect(shortcutFor(press('2', { control: true, alt: true }))).toBe('workspace:2')
+  })
+  it('sends the tile with ⌘⇧digit on a Mac (Ctrl+Alt+Shift elsewhere), as ⌘digit goes', () => {
+    expect(shortcutFor({ ...press('@', { meta: true, shift: true }), code: 'Digit2' })).toBe('move-workspace:2')
+    expect(shortcutFor({ ...press('@', { control: true, alt: true, shift: true }), code: 'Digit2' })).toBe('move-workspace:2')
+    expect(shortcutFor(press('0', { meta: true, shift: true }))).toBeUndefined()
+    expect(shortcutFor(press('2', { meta: true }))).toBe('workspace:2')
   })
   it('opens the action menu and the key sheet from anywhere', () => {
     expect(shortcutFor(press('.', { meta: true }))).toBe('actions')
@@ -68,6 +74,19 @@ describe('Ctrl+W chord', () => {
     read(press('w', { control: true })); expect(read(press('Escape'))).toEqual({ action: 'chord-cancel', swallow: true })
     read(press('w', { control: true })); now = 2000; expect(read(press('l')).action).toBeUndefined()
     read(press('w', { control: true })); expect(read(press('Shift')).swallow).toBe(false); expect(read(press('L', { shift: true })).action).toBe('swap:right')
+  })
+  it('is the prefix in a terminal too: it says when the next key is ours, and Ctrl+W ; hands the shell a real Ctrl+W', () => {
+    let now = 0
+    const read = createShortcutReader(() => now)
+    expect(isChordKey(press('w', { control: true }))).toBe(true)
+    expect(isChordKey(press('w', { control: true, alt: true }))).toBe(false)
+    expect(isChordKey(press('w', { control: true, shift: true }))).toBe(false)
+    expect(read.pending()).toBe(false)
+    read(press('w', { control: true })); expect(read.pending()).toBe(true)
+    // Ctrl+W Ctrl+H, like vim: the second Ctrl key is ours while the chord waits.
+    expect(read(press('h', { control: true }))).toEqual({ action: 'focus:left', swallow: true }); expect(read.pending()).toBe(false)
+    read(press('w', { control: true })); expect(read(press(';'))).toEqual({ action: 'terminal-ctrl-w', swallow: true })
+    read(press('w', { control: true })); now = 2000; expect(read.pending()).toBe(false)
   })
 })
 

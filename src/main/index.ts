@@ -6,7 +6,7 @@ import { homedir } from 'node:os'
 import type { CoreAPI, DesktopEvent } from '../shared/types'
 import { mainSources, type MainContext, type MainSource } from './registry'
 import { Browsers } from './browser'
-import { desktopKey, shortcutFor } from '../shared/shortcuts'
+import { desktopKey, isChordKey, shortcutFor } from '../shared/shortcuts'
 import { readShortcut } from './keys'
 import { Files } from './files'
 import { Storage } from './storage'
@@ -178,11 +178,13 @@ async function createWindow() {
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', event => event.preventDefault())
   window.webContents.on('before-input-event', (event, input) => {
-    // A terminal or open dialog keeps plain Ctrl keys (Ctrl+W deletes a word in a shell); the renderer handles the rest.
+    // A terminal or open dialog keeps plain Ctrl keys; the renderer handles the rest. Not Ctrl+W in a terminal:
+    // it is the tile prefix there too, like tmux's, and Ctrl+W ; sends the shell its own Ctrl+W (delete word).
     // A terminal also keeps Alt keys and F-keys (readline's Alt+D, mc's F2/F6).
     const system = input.meta || (input.control && input.alt)
     const plain = input.control || (keyModes.has('terminal') && (input.alt || /^F\d+$/.test(input.key)))
-    if (keyModes.size && !system && plain && !desktopKey(shortcutFor(input))) return
+    const chord = readShortcut.pending() || (keyModes.has('terminal') && !keyModes.has('overlay') && isChordKey(input))
+    if (keyModes.size && !system && plain && !chord && !desktopKey(shortcutFor(input))) return
     const { action, swallow } = readShortcut(input)
     if (swallow) event.preventDefault()
     if (action) emit({ type: 'shortcut', action })

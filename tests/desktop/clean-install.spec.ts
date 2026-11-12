@@ -91,8 +91,8 @@ test('clean install: model first, built-ins without any server, OpenCode only on
     await terminal.locator('.terminal-host').click()
     await page.keyboard.type('echo "pwd=$(pwd)"\n')
     await expect(terminal.locator('.xterm-rows')).toContainText(`pwd=${home}/code/clean-slate-folder/assets`)
-    // Plain Ctrl chords belong to the shell (Ctrl+W deletes a word), not to tile management.
-    await page.keyboard.type('echo one two'); await page.keyboard.press('Control+w'); await page.keyboard.press('Enter')
+    // Ctrl+W is the tile prefix here too (like tmux's); Ctrl+W ; gives the shell its own Ctrl+W (delete a word).
+    await page.keyboard.type('echo one two'); await page.keyboard.press('Control+w'); await page.keyboard.press(';'); await page.keyboard.press('Enter')
     await expect(terminal.locator('.xterm-rows')).toContainText('echo one')
     await expect(terminal.locator('.xterm-rows')).not.toContainText('two')
     // Leader n n in a terminal (⌘. works there): another terminal in the same folder (not OpenCode).

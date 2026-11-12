@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { desktopKey, shortcutFor } from '../shared/shortcuts'
+import { desktopKey, isChordKey, shortcutFor } from '../shared/shortcuts'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import type { Tile } from '../shared/tiles'
 import { api, friendlyError } from './data'
 import { useTileActions } from './actions'
-import { systemKey } from './ui'
+import { readKeys, systemKey } from './ui'
 
 /** A shell in a folder. The process lives in the main process, so shelving
  * the tile keeps it running; reopening replays recent output. */
@@ -24,8 +24,12 @@ export function TerminalBody({ tile, visible, focused, focusKey, consumeDraft }:
     })
     const fitter = new FitAddon()
     terminal.loadAddon(fitter); terminal.open(host.current)
-    // Window-manager chords (Super, Ctrl+Alt) belong to ChatOS, not the shell.
-    terminal.attachCustomKeyEventHandler(event => !(event.metaKey || (event.ctrlKey && event.altKey) || desktopKey(shortcutFor({ type: 'keyDown', key: event.key, code: event.code, control: event.ctrlKey, alt: event.altKey, meta: event.metaKey, shift: event.shiftKey } as Electron.Input))))
+    // Window-manager chords (Super, Ctrl+Alt) belong to ChatOS, not the shell. So do Ctrl+W, the tile
+    // prefix, and the key after it; Ctrl+W ; sends the shell its own Ctrl+W.
+    terminal.attachCustomKeyEventHandler(event => {
+      const input = { type: 'keyDown', key: event.key, code: event.code, control: event.ctrlKey, alt: event.altKey, meta: event.metaKey, shift: event.shiftKey } as Electron.Input
+      return !(event.metaKey || (event.ctrlKey && event.altKey) || desktopKey(shortcutFor(input)) || isChordKey(input) || readKeys.pending())
+    })
     term.current = terminal; fit.current = fitter
     try { fitter.fit() } catch { /* Hidden tiles have no size yet. */ }
     let alive = true

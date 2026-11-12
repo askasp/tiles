@@ -3,12 +3,14 @@ import type { Input } from 'electron'
 // One pattern, every action with one home (other keys for it are documented aliases):
 // - Leader: ␣ in a tile, or ⌘. / Super+. / Ctrl+Alt+. from anywhere (typing, terminals, pages).
 //   App-wide actions live under it in mnemonic groups: g go, n new, w tiles, t this tile.
-// - Tiles: Ctrl+W, then one key (also ␣ w): where tiles are.
+// - Tiles: Ctrl+W, then one key (also ␣ w): where tiles are. In a terminal too, like a tmux prefix:
+//   Ctrl+W ; sends the shell (or nvim) its own Ctrl+W.
 // - In a tile: bare keys, never while typing: vim motions and the tile's own letters.
 // - Accelerators for the top few only: ⌘K, ⌘1–9, ⌘, (Ctrl+Alt instead of ⌘ on Linux, where
 //   Super belongs to the window manager).
 // - Workspaces like i3 (whose default mod is Alt): Alt+1–9 goes there, Alt+Shift+1–9 sends the
-//   focused tile there. Not on a Mac, where Option+digit types characters (⌘1–9, Ctrl+W 1–9 there).
+//   focused tile there. Not on a Mac, where Option+digit types characters: ⌘1–9 goes, ⌘⇧1–9 sends
+//   (⌘⇧3/4/5 stay macOS screenshots, so Ctrl+W 3/4/5 there).
 // Never bound, because the OS takes them: ⌘/Super+Tab and +Space, ⌘H (hide), Super+L (lock),
 // Super+arrows (window snapping), ⌘⇧3/4/5 (screenshots), ⌘F/⌘−/⌘= (find, zoom),
 // Ctrl+Alt+T and Ctrl+Alt+arrows (Ubuntu terminal, workspace switching).
@@ -20,6 +22,8 @@ export function shortcutFor(input: Input): string | undefined {
   const digit = input.code?.match(/^Digit([0-9])$/)?.[1]
   if (digit && input.alt && !input.control && !input.meta && !mac) return input.shift ? digit === '0' ? undefined : `move-workspace:${digit}` : `workspace:${digit}`
   const system = input.meta || (input.control && input.alt)
+  // ⌘⇧1–9 (Ctrl+Alt+Shift on Linux) sends the tile, as ⌘1–9 goes. macOS keeps ⌘⇧3/4/5 for screenshots.
+  if (digit && system && input.shift) return digit === '0' ? undefined : `move-workspace:${digit}`
   if (system && !input.shift) {
     if (/^[0-9]$/.test(key)) return `workspace:${key}`
     if (key === 'k') return 'launcher'
@@ -57,6 +61,8 @@ export const windowChord: Record<string, string> = {
   arrowleft: 'focus:left', arrowdown: 'focus:down', arrowup: 'focus:up', arrowright: 'focus:right',
   w: 'next-tile', W: 'previous-tile', p: 'previous-tile',
   q: 'hide-tile', c: 'hide-tile', Q: 'end-tile', o: 'fullscreen', '=': 'restore-tile', '+': 'restore-tile', x: 'promote',
+  // Ctrl+W is the prefix in a terminal too, so this hands the terminal a real Ctrl+W (delete word, nvim's windows).
+  ';': 'terminal-ctrl-w',
   // Ctrl+W, then a digit: move the tile to that workspace.
   ...Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => [String(n), `move-workspace:${n}`])),
 }
@@ -81,6 +87,7 @@ export const leader: Record<string, LeaderEntry> = {
     ['w', 'Next tile', 'next-tile'], ['W', 'Previous tile', 'previous-tile'],
     ['o', 'Fullscreen', 'fullscreen'], ['x', 'Make it the main tile', 'promote'],
     ['q', 'Hide (K finds it)', 'hide-tile'], ['Q', 'Hide and end (a terminal’s shell)', 'end-tile'], ['=', 'Bring back the last hidden', 'restore-tile'],
+    [';', 'Send Ctrl+W to the terminal', 'terminal-ctrl-w'],
     ...digits(n => `Move to workspace ${n}`, n => `move-workspace:${n}`),
   ]) },
   t: { label: 'This tile', tile: true },
@@ -91,9 +98,13 @@ export const leader: Record<string, LeaderEntry> = {
 
 /** Reads keys including the Ctrl+W chord. One reader per window, shared with its pages,
  * so Ctrl+W pressed in a web page and h pressed after still pair up. */
+export const isChordKey = (input: Input) => input.type === 'keyDown' && input.control && !input.alt && !input.meta && !input.shift && input.key.toLowerCase() === 'w'
+
 export function createShortcutReader(now = () => Date.now()) {
   let pendingUntil = 0
-  return (input: Input): { action?: string; swallow: boolean } => {
+  /** True while Ctrl+W waits for its second key: that key is ours, even in a terminal. */
+  const pending = () => pendingUntil > now()
+  return Object.assign((input: Input): { action?: string; swallow: boolean } => {
     if (input.type !== 'keyDown') return { swallow: false }
     if (pendingUntil > now()) {
       if (['Shift', 'Control', 'Alt', 'Meta'].includes(input.key)) return { swallow: false }
@@ -106,13 +117,13 @@ export function createShortcutReader(now = () => Date.now()) {
       const other = shortcutFor(input)
       return { action: other || 'chord-cancel', swallow: !!other }
     }
-    if (input.control && !input.alt && !input.meta && !input.shift && input.key.toLowerCase() === 'w') {
+    if (isChordKey(input)) {
       pendingUntil = now() + 1500
       return { action: 'chord', swallow: true }
     }
     const action = shortcutFor(input)
     return { action, swallow: !!action }
-  }
+  }, { pending })
 }
 
 /** What the key sheet, Settings and the Ctrl+W hint show. `actions` ties a row to shortcutFor/windowChord/leader (checked by tests). */
@@ -134,6 +145,7 @@ export function keyHelp(system: string): KeyGroup[] {
       { keys: 'o · x', label: 'Fullscreen · make main', actions: ['fullscreen', 'promote'] },
       { keys: 'q c · = +', label: 'Hide · bring back the last hidden', actions: ['hide-tile', 'restore-tile'] },
       { keys: 'Q', label: 'Hide and end (a terminal’s shell, a page’s memory)', actions: ['end-tile'] },
+      { keys: ';', label: 'Send Ctrl+W itself to the terminal (delete word, nvim’s windows)', actions: ['terminal-ctrl-w'] },
     ] },
     { title: 'In the focused tile (never while typing)', rows: [
       { keys: 'j k · l · h', label: 'Down · up · open · back' },
@@ -148,7 +160,7 @@ export function keyHelp(system: string): KeyGroup[] {
     { title: `Accelerators · ${mac ? '⌘' : 'Super, or Ctrl+Alt'}`, rows: [
       { keys: `${S}+K · Ctrl+K`, label: 'K: search, open, ask, or add a source', actions: ['launcher'] },
       { keys: mac ? '⌘1–9 · ⌘0' : 'Alt+1–9 · Alt+0 · Ctrl+Alt+1–9', label: 'Workspace by number · home (i3)', actions: ['workspace'] },
-      ...(mac ? [] : [{ keys: 'Alt+Shift+1–9', label: 'Send the focused tile to that workspace (i3)', actions: ['move-workspace'] }]),
+      { keys: mac ? '⌘⇧1–9' : 'Alt+Shift+1–9 · Ctrl+Alt+Shift+1–9', label: mac ? 'Send the focused tile to that workspace (⌘⇧3/4/5 are screenshots: Ctrl+W 3)' : 'Send the focused tile to that workspace (i3)', actions: ['move-workspace'] },
       { keys: `${S}+,`, label: 'Settings', actions: ['settings'] },
       { keys: `${S}+. · ${S}+/`, label: 'Leader · every key', actions: ['actions', 'keys'] },
       { keys: 'Ctrl+L · Alt+D · F6', label: 'Address: the page’s address bar, or open a URL', actions: ['address'] },

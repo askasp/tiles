@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { BrowserContext } from '../shared/types'
 import type { ModelInfo } from '../shared/model'
 import type { ConnectorDefinition, ConnectorInfo } from '../shared/connectors'
-import { createShortcutReader, desktopKey, keyHelp, shortcutFor } from '../shared/shortcuts'
+import { desktopKey, isChordKey, keyHelp, shortcutFor } from '../shared/shortcuts'
 import { activeWorkspace, browserTile, directionTile, fileTile, focusTile, focusedTile, fullscreenTile, goWorkspace, moveTile, openTile, promoteTile, replaceTile, restoreLast, serializeDesktop, hideTile, hiddenTiles, isLive, terminalTile, tidyAround, tileLayout, tileTitle, undoArrangement, updateTile, type Direction, type OpenMode, type Tile, type TileDesktop, type TileInput } from '../shared/tiles'
 import { resourceSource, sources as catalogue, type SourceID } from '../shared/sources'
 import { restore } from '../shared/registry'
@@ -11,7 +11,7 @@ import { uid } from '../shared/util'
 import { AddressDialog, RenameDialog, SendPage, Settings as SettingsDialog } from './Overlays'
 import { Badge, TileLauncher, TileOverview, tileBadge, tileSource } from './TileOverlays'
 import { api, friendlyError } from './data'
-import { IconButton, Status, listKeys, rowSelector, systemKey } from './ui'
+import { IconButton, Status, listKeys, readKeys, rowSelector, systemKey } from './ui'
 import { KeySheet, LeaderMenu } from './ActionMenu'
 import { tileActions, useActionsVersion, type TileAction } from './actions'
 import { ConnectorSettings } from './ConnectorSettings'
@@ -212,6 +212,8 @@ export default function App() {
     const tile = focusedTile(ref.current), ws = activeWorkspace(ref.current)
     if (action.startsWith('workspace:')) { go(Number(action.split(':')[1])); return }
     if (action.startsWith('move-workspace:') && tile) { move(tile.id, Number(action.split(':')[1])); return }
+    // Ctrl+W is our prefix even in a terminal; Ctrl+W ; gives the shell (or nvim) the real one.
+    if (action === 'terminal-ctrl-w') { if (tile?.kind === 'terminal') void api.terminalInput(tile.id, '\x17').catch(() => {}); return }
     // Cmd+N means “new” in the focused tile's source: a session next to a session, a shell next to a shell.
     if (action === 'new') { const owner = tile && sourceFor(tile.kind); if (!owner?.onShortcut?.('new', stateOf(owner.id), env)) ask(); return }
     if (registry.some(s => s.onShortcut?.(action, stateOf(s.id), env))) return
@@ -261,16 +263,15 @@ export default function App() {
       if (event.type === 'shortcut') handler.current(event.action)
       if (event.type === 'tile-focus') update(s => focusedTile(s)?.id === event.tileID ? s : focusTile(s, event.tileID))
     })
-    const read = createShortcutReader()
     const keys = (event: KeyboardEvent) => {
       if (event.isComposing) return
       const input = { type: 'keyDown', key: event.key, code: event.code, control: event.ctrlKey, alt: event.altKey, meta: event.metaKey, shift: event.shiftKey } as Electron.Input
-      // Terminals own their keys, except the window-manager chords.
+      // Terminals own their keys, except the window-manager chords and Ctrl+W, the tile prefix (Ctrl+W ; gives the shell one).
       const inTerminal = (event.target as HTMLElement | null)?.closest?.('.terminal-host')
-      if (inTerminal && !event.metaKey && !(event.ctrlKey && event.altKey) && !desktopKey(shortcutFor(input))) return
+      if (inTerminal && !event.metaKey && !(event.ctrlKey && event.altKey) && !desktopKey(shortcutFor(input)) && !isChordKey(input) && !readKeys.pending()) return
       // A dialog keeps plain Ctrl keys (Ctrl+J/K in K's list, Ctrl+W in its fields): never swap it for K or eat a letter.
       if ((event.target as HTMLElement | null)?.closest?.('[role="dialog"]') && event.ctrlKey && !event.altKey && !event.metaKey) return
-      const { action, swallow } = read(input)
+      const { action, swallow } = readKeys(input)
       if (swallow) event.preventDefault()
       if (action) { handler.current(action); return }
       if (event.key === 'Escape') {
