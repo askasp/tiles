@@ -1,10 +1,8 @@
 /* ChatOS v4: K, source badges, the top bar and built-in tiles. */
 
-/* Top bar: workspaces · K · source status */
-.tile-app .workspace-strip { flex: 0 1 auto; }
-.tile-app .workspace-select small { font: 10.5px var(--mono); color: var(--faint); }
-.bar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-shrink: 0; -webkit-app-region: no-drag; }
-.tile-launcher-button { height: 28px; display: inline-flex; align-items: center; gap: 8px; padding: 0 6px 0 11px; border-radius: 999px; background: var(--surface); box-shadow: 0 0 0 1px var(--line); color: var(--ink); font-size: 12.5px; white-space: nowrap; }
+/* Top bar: K · what's waiting · source status */
+.bar-right { margin-left: auto; display: flex; align-items: center; gap: 6px; flex-shrink: 0; -webkit-app-region: no-drag; }
+.tile-launcher-button { height: 22px; display: inline-flex; align-items: center; gap: 8px; padding: 0 6px 0 11px; border-radius: 999px; background: var(--surface); box-shadow: 0 0 0 1px var(--line); color: var(--ink); font-size: 12.5px; white-space: nowrap; }
 .tile-launcher-button:hover { box-shadow: 0 0 0 1px var(--line-strong); }
 .tile-launcher-button kbd { font-size: 11px; color: var(--ink-2); padding: 1px 6px; border-radius: 999px; background: var(--canvas); }
 .tile-launcher-button.large { height: 40px; font-size: 14px; padding: 0 8px 0 16px; }
@@ -159,7 +157,7 @@
 /* Tiles stand out from the desktop: a firmer edge and a soft lift. */
 .tile-app .resource-tile.panel { border-color: var(--tile-line); box-shadow: var(--tile-shadow); border-radius: 6px; }
 .tile-app .resource-tile.tile-focused { border-color: var(--focus-line); box-shadow: var(--tile-shadow); }
-.tile-app .workspace-select.selected, .tile-app .tile-launcher-button { box-shadow: 0 0 0 1px var(--tile-line), 0 1px 2px #0000000d; }
+.tile-app .tile-launcher-button { box-shadow: 0 0 0 1px var(--tile-line), 0 1px 2px #0000000d; }
 .empty-desktop { border-color: var(--line-strong); }
 .appearance { align-self: flex-start; display: inline-flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--canvas); }
 .appearance button { padding: 4px 12px; border-radius: 7px; font-size: 12.5px; color: var(--ink-3); }

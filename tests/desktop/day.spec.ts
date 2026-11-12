@@ -4,7 +4,8 @@ import { ask, desktopReady, fakeServices, launchDesktop } from './launch'
 import { fixtureServer } from './fixture'
 import type { TileDesktop } from '../../src/shared/tiles'
 
-async function launcher(page: Page, query: string, mode = 'Enter') {
+// This day packs its work into two pages: Ctrl+↵ joins the page you are on, ↵ gives a thing its own.
+async function launcher(page: Page, query: string, mode = 'Control+Enter') {
   await page.getByRole('button', { name: 'Launcher', exact: true }).click()
   const input = page.getByRole('textbox', { name: 'Launcher search' })
   await input.fill(query); await input.press(mode)
@@ -25,7 +26,7 @@ test('all-day desktop: five sessions, Slack DMs/mentions, mail/replies, PRs, hid
     await desktopReady(page, { opencode: true })
     for (let i = 0; i < fixture.sessions.length; i++) {
       const session = fixture.sessions[i]
-      await launcher(page, session.title!, i === 3 ? 'Control+Enter' : 'Enter')
+      await launcher(page, session.title!, i === 3 ? 'Enter' : 'Control+Enter')
       await page.locator(`[data-tile-id="${session.id}"] textarea`).fill(`Unsent draft ${i + 1}`)
     }
     await expect.poll(async () => (await state(page)).workspaces?.length).toBe(2)

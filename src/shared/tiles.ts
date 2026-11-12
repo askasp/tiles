@@ -108,7 +108,18 @@ function workspace(s: TileDesktop, slot?: number): [TileDesktop, string] {
 /** Hidden tiles stay live (a page keeps its scroll and login, a list its state). Beyond this many,
  * the oldest are released: their page goes, but identity, name and draft remain and K reopens them. */
 export const HIDDEN_LIVE = 8
+/** Spaces open at once. Each thing gets its own and K is how you get back to one, so past this
+ * the space used longest ago is put away: its tiles hide (K brings them back; a shell keeps running). */
 export const MAX_WORKSPACES = 9
+function makeRoom(s: TileDesktop): TileDesktop {
+  const open = s.workspaces.filter(w => w.tileIDs.length)
+  if (open.length < MAX_WORKSPACES) return s
+  const used = (w: TileWorkspace) => Math.max(0, ...w.tileIDs.map(id => s.tiles.find(t => t.id === id)?.lastUsed || 0))
+  const oldest = open.filter(w => w.id !== s.activeID).sort((a, b) => used(a) - used(b))[0]
+  if (!oldest) return s
+  const tick = s.clock + 1, ids = new Set(oldest.tileIDs)
+  return tidy({ ...s, clock: tick, tiles: s.tiles.map(t => ids.has(t.id) ? { ...t, status: 'hidden' as const, workspaceID: null, lastWorkspaceID: oldest.id, hiddenAt: tick } : t), workspaces: s.workspaces.map(w => w.id === oldest.id ? { ...w, tileIDs: [] } : w) })
+}
 /** Kinds whose release would lose work in progress (a shell's running process). Only released when asked. */
 const keepLive = new Set(['terminal'])
 /** Released tiles are remembered so K can reopen them where they were, but not forever. */
@@ -166,11 +177,11 @@ export function openTile(s: TileDesktop, input: TileInput, mode: OpenMode = 'her
   const owner = existing ? s.tiles.find(t => t.id === existing.id)! : undefined
   if (owner?.status === 'visible' && mode !== 'move') return focusTile(s, owner.id)
   let next = checkpoint(s)
-  // Workspaces are reached with Super+1–9; a tenth would be unreachable, so “new” reuses the current one.
-  let target = targetID || (mode !== 'new' || next.workspaces.length >= MAX_WORKSPACES ? activeWorkspace(next)?.id : undefined)
+  // Each thing gets its own space by default; K is how you get back to it, not a number.
+  let target = targetID || (mode !== 'new' ? activeWorkspace(next)?.id : undefined)
   const linkedRoot = tileRoot(next, existing)
   if (mode === 'here' && existing?.status === 'hidden' && linkedRoot?.status === 'visible') target = linkedRoot.workspaceID || target
-  if (!target || !next.workspaces.some(w => w.id === target)) [next, target] = workspace(next)
+  if (!target || !next.workspaces.some(w => w.id === target)) { next = makeRoom(next); [next, target] = workspace(next) }
   const tile: Tile = owner || { ...input, id: input.id || uid(), workspaceID: null, status: 'hidden', released: true, lastUsed: 0, hiddenAt: 0, draft: input.draft || '', context: input.context || [] }
   if (!existing) next = { ...next, tiles: [...next.tiles, tile] }
   const restoreGroup = !!existing && existing.status !== 'visible'

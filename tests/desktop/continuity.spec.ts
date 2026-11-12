@@ -24,7 +24,8 @@ test('reading position and partial agent answers survive workspace/empty desktop
     fixture.askQuestion('ses_fixture_1')
     await session.locator('.question-card select').selectOption('device')
     await scroll.evaluate(e => { e.scrollTop = 220; e.dispatchEvent(new Event('scroll')) })
-    await open(page, 'Health sources', 'Control+Enter')
+    // ↵ gives it its own space; the session stays in its own.
+    await open(page, 'Health sources')
     await expect(session).not.toBeVisible()
     await page.keyboard.press('Control+Alt+0')
     await expect(page.getByRole('region', { name: 'Empty desktop' })).toBeVisible()
@@ -47,7 +48,7 @@ test('browser popup reuses URL owner and native browser shortcuts open the launc
   try {
     await desktopReady(page, { opencode: true })
     await open(page, `${fixture.url}/preview/dm-carl`)
-    await open(page, `${fixture.url}/preview/front-inbox`, 'Control+Enter')
+    await open(page, `${fixture.url}/preview/front-inbox`)
     await expect.poll(() => app.evaluate(({ webContents }) => webContents.getAllWebContents().filter(c => c.getURL().includes('/preview/')).length)).toBe(2)
     await app.evaluate(({ webContents }) => { const contents = webContents.getAllWebContents().find(c => c.getURL().endsWith('/front-inbox'))!; void contents.executeJavaScript("window.open('/preview/dm-carl', '_blank')") })
     await expect(page.locator('.resource-tile:visible .tile-title')).toHaveText('dm carl')
@@ -127,11 +128,11 @@ test('switching workspaces from a focused web page keeps the workspace keys work
     await expect.poll(() => app.evaluate(({ webContents }) => webContents.getAllWebContents().filter(c => c.getURL().endsWith('/focus-test')).length)).toBe(1)
     await app.evaluate(({ webContents }) => webContents.getAllWebContents().find(c => c.getURL().endsWith('/focus-test'))!.focus())
     await press('3', ['control', 'alt'])
-    await expect(page.locator('.workspace-button.selected')).toContainText('3')
+    await expect(page.locator('main.workspace-content')).toHaveAttribute('data-workspace-slot', '3')
     // The hidden page gave the keyboard back, so the next workspace key works.
     await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.isFocused())).toBe(true)
     await press('1', ['control', 'alt'])
-    await expect(page.locator('.workspace-button.selected')).toContainText('1')
+    await expect(page.locator('main.workspace-content')).toHaveAttribute('data-workspace-slot', '1')
     await expect(page.locator('[data-kind="browser"]:visible')).toHaveCount(1)
   } finally { await app.close(); await fixture.close(); await rm(profile, { recursive: true, force: true }) }
 })

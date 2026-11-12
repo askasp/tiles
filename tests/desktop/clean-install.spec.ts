@@ -32,10 +32,10 @@ test('clean install: model first, built-ins without any server, OpenCode only on
     await expect(page.locator('.source-status')).toHaveCount(0)
     expect(await page.evaluate(() => window.chatos.connectors())).toEqual([])
 
-    // Keyboard only: Tab walks the built-in sources, then lands on Add source.
+    // Keyboard only: Tab walks the built-in sources (the web is where K starts), then lands on Add source.
     let k = await ask(page, '', false)
     await expect(page.locator('.launcher-result').filter({ hasText: 'Add a source' })).toHaveCount(1)
-    for (const name of ['Browser', 'Files', 'Terminal']) { await k.press('Tab'); await expect(page.locator('.k-scope')).toContainText(name) }
+    for (const name of ['Files', 'Terminal']) { await k.press('Tab'); await expect(page.locator('.k-scope')).toContainText(name) }
     await k.press('Tab')
     await expect(k).toHaveValue('add ')
     await expect(page.locator('.launcher-result').filter({ hasText: 'Add OpenCode' })).toHaveCount(1)
@@ -47,22 +47,24 @@ test('clean install: model first, built-ins without any server, OpenCode only on
     await expect(page.locator('.launcher-result').first()).toContainText(`${home}/code/cl`)
     // Narrowed to Terminal with nothing typed: a terminal at home, no folder needed.
     await k.fill('')
-    for (const name of ['Browser', 'Files', 'Terminal']) { await k.press('Tab'); await expect(page.locator('.k-scope')).toContainText(name) }
+    for (const name of ['Files', 'Terminal']) { await k.press('Tab'); await expect(page.locator('.k-scope')).toContainText(name) }
     await expect(page.locator('.launcher-result').first()).toContainText('Terminal')
     await expect(page.locator('.launcher-result').first()).toContainText('in ~')
     await page.keyboard.press('Escape')
 
-    // A3: before any service is connected, the name finds the folder; → offers a terminal there.
+    // A name is a site first; Ctrl+J/K move through K's results without leaving the keyboard row.
     let input = await ask(page, 'clean-slate', false)
+    await expect(page.locator('.launcher-result.selected')).toContainText('Open site')
+    await input.press('Control+j')
+    await expect(page.locator('.launcher-result.selected')).toContainText('Search the web')
+    await input.press('Control+k')
+    await expect(page.locator('.launcher-result.selected')).toContainText('Open site')
+    // A3: Tab to Files, and the name finds the folder; → offers a terminal there.
+    await input.press('Tab'); await expect(page.locator('.k-scope')).toContainText('Files')
     const folder = page.locator('.launcher-result').first()
     await expect(folder).toContainText('Browse files')
     await expect(folder).toContainText('~/code/clean-slate-folder')
     await expect(page.locator('.launcher-result').filter({ hasText: 'OpenCode' })).toHaveCount(0)
-    // Ctrl+J/K move through K's results without leaving the keyboard row.
-    await input.press('Control+j')
-    await expect(page.locator('.launcher-result.selected')).toContainText('Search the web')
-    await input.press('Control+k')
-    await expect(page.locator('.launcher-result.selected')).toContainText('Browse files')
     await input.press('ArrowRight')
     await expect(page.locator('.launcher-result').filter({ hasText: 'Open terminal here' })).toHaveCount(1)
     await input.press('ArrowLeft')
@@ -70,9 +72,9 @@ test('clean install: model first, built-ins without any server, OpenCode only on
     const files = page.locator('[data-kind="folder"]:visible')
     await expect(files.locator('.file-entry')).toHaveCount(2)
     await expect(files.getByRole('button', { name: 'Show OpenCode sessions' })).toHaveCount(0)
-    await expect(page.locator('.workspace-button.selected')).toContainText('clean-slate-folder')
+    await expect(page.locator('main.workspace-content')).toHaveAttribute('data-workspace-title', /clean-slate-folder/)
 
-    k = await ask(page, 'pixel', false)
+    k = await ask(page, 'files pixel', false)
     await expect(page.locator('.launcher-result').first()).toContainText('~/code/clean-slate-folder/assets/pixel.png')
     await page.keyboard.press('Escape')
     // Files picks the viewer: images render as images.
@@ -95,18 +97,21 @@ test('clean install: model first, built-ins without any server, OpenCode only on
     await page.keyboard.type('echo one two'); await page.keyboard.press('Control+w'); await page.keyboard.press(';'); await page.keyboard.press('Enter')
     await expect(terminal.locator('.xterm-rows')).toContainText('echo one')
     await expect(terminal.locator('.xterm-rows')).not.toContainText('two')
-    // Leader n n in a terminal (⌘. works there): another terminal in the same folder (not OpenCode).
+    // Leader n n in a terminal (⌘. works there): another terminal in the same folder (not OpenCode), in its own space.
     await page.keyboard.press('Control+Alt+.'); await page.keyboard.press('n'); await page.keyboard.press('n')
-    await expect(page.locator('[data-kind="terminal"]:visible')).toHaveCount(2)
-    await expect(page.locator('[data-kind="terminal"].tile-focused .tile-source')).toHaveAttribute('title', `${home}/code/clean-slate-folder/assets`)
+    await expect(page.locator('[data-kind="terminal"]')).toHaveCount(2)
+    await expect(page.locator('[data-kind="terminal"]:visible')).toHaveCount(1)
+    const second = page.locator('[data-kind="terminal"].tile-focused')
+    await expect(second.locator('.tile-source')).toHaveAttribute('title', `${home}/code/clean-slate-folder/assets`)
+    const secondID = await second.getAttribute('data-tile-id')
     // ␣ w q only hides: the shell keeps running. ␣ w = brings it back; ␣ w Q ends it.
     await page.keyboard.press('Control+Alt+.'); await page.keyboard.press('w'); await page.keyboard.press('q')
-    await expect(page.locator('[data-kind="terminal"]:visible')).toHaveCount(1)
+    await expect(page.locator(`[data-tile-id="${secondID}"]:visible`)).toHaveCount(0)
     await expect(page.locator('[data-kind="terminal"]')).toHaveCount(2)
     await page.keyboard.press('Control+Alt+.'); await page.keyboard.press('w'); await page.keyboard.press('=')
-    await expect(page.locator('[data-kind="terminal"]:visible')).toHaveCount(2)
+    await expect(page.locator(`[data-tile-id="${secondID}"].tile-focused`)).toBeVisible()
     await page.keyboard.press('Control+Alt+.'); await page.keyboard.press('w'); await page.keyboard.press('Shift+Q')
-    await expect(page.locator('[data-kind="terminal"]:visible')).toHaveCount(1)
+    await expect(page.locator(`[data-tile-id="${secondID}"]`)).toHaveCount(0)
     await expect(page.locator('[data-kind="terminal"]')).toHaveCount(1)
     expect(errors).toEqual([])
 

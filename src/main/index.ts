@@ -147,7 +147,7 @@ async function createWindow() {
   window = new BrowserWindow({
     title: 'ChatOS', width: 1440, height: 940, minWidth: 950, minHeight: 620,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#0f0f0e' : '#e4e2dc', show: false,
-    ...(process.platform === 'darwin' && { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 18 } }),
+    ...(process.platform === 'darwin' && { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 12, y: 9 } }),
     autoHideMenuBar: process.platform !== 'darwin',
     webPreferences: {
       preload: join(here, '../preload/index.cjs'),

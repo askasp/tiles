@@ -144,7 +144,7 @@ export function TileLauncher(props: LauncherProps) {
     if (tidyQuery) return resources
     const narrow: Row[] = !q.scope && q.text ? scopes.filter(s => s.name.toLowerCase() === q.text.toLowerCase() && !(s.id === 'terminal' && terminalIntent(q.raw))).map(s => ({ key: `source:${s.id}`, icon: sourceByID(s.id)?.badge || (iconText[s.id.slice(10)] ? s.id.slice(10) : 'connector'), title: s.name, source: 'Source', subtitle: catalogue.find(c => c.id === s.id || `connector:${c.id}` === s.id)?.hint || 'Search this source', action: 'Narrow to source', scope: s.id, run: () => {} })) : []
     const addRow: Row[] = !query.trim() && !scope ? [{ key: 'add-source', icon: 'add', title: 'Add a source', source: 'K', subtitle: `${catalogue.filter(c => !c.builtin).map(c => c.name).slice(0, 3).join(', ')}${model?.ready ? ', or anything with an API' : '… · a model lets K add any API'}`, action: 'Choose', fill: 'add ', run: () => {} }] : []
-    return [...narrow, ...commands.filter(c => c.first), ...resources, ...commands.filter(c => !c.first), ...addRow]
+    return [...commands.filter(c => c.first), ...narrow, ...resources, ...commands.filter(c => !c.first), ...addRow]
   }, [panel, add?.name, query, q, scope, model?.ready, model?.model, desktop, states, env, found, searchKey, asked, tidyQuery, tidy, scopes.map(s => s.id).join('|')]) // eslint-disable-line react-hooks/exhaustive-deps
   const expandedRow = rows.find(r => r.key === expanded)
   const shown: Row[] = expandedRow ? expandedRow.others!.map((o, i) => ({ key: `${expandedRow.key}:other:${i}`, icon: expandedRow.icon, title: o.label, source: expandedRow.source, subtitle: expandedRow.title, action: o.label, run: o.run })) : rows
@@ -167,9 +167,9 @@ export function TileLauncher(props: LauncherProps) {
   const scopeName = scope && scopes.find(s => s.id === scope)?.name
   const knownState = known ? stateOf(states, known) : undefined
   const canAsk = !!env.connectors.length && !!model?.ready && !!query.trim()
-  const foot = panel || add ? ['↵ continue', 'esc cancel'] : expandedRow ? ['↑↓ ⌃J ⌃K choose', '↵ run here', '← back'] : ['↑↓ ⌃J ⌃K choose', '↵ open here', '⌃↵ or ⌘↵ new workspace', '→ other actions', scope ? '⌫ widen to everything' : 'Tab narrow to a source', ...(canAsk ? ['Alt+↵ ask K to find it'] : [])]
+  const foot = panel || add ? ['↵ continue', 'esc cancel'] : expandedRow ? ['↑↓ ⌃J ⌃K choose', '↵ run here', '← back'] : ['↑↓ ⌃J ⌃K choose', '↵ open', '⌘↵ or ⌃↵ join this page', '→ other actions', scope ? '⌫ widen to everything' : 'Tab files and other sources', ...(canAsk ? ['Alt+↵ ask K to find it'] : [])]
   return <Modal title="Launcher" close={close}>
-    <div className="launcher-input k-input-row"><span className="k-logo">K</span>{scopeName && <button className="k-scope" onClick={() => { setScope(undefined); input.current?.focus() }} title="Widen to all sources">{scopeName}<span>›</span></button>}<input ref={input} autoFocus aria-label="Launcher search" placeholder={sourcePanel ? 'Reply to K… Ctrl+↵ continues in a tile' : props.firstRun ? 'Connect a model to get started' : scopeName ? `Search ${scopeName.toLowerCase()}…` : 'Ask or open… a page, folder, terminal, or “add …”'} value={query} onChange={e => { setQuery(e.target.value); setIndex(0); setOpenError('') }} onKeyDown={e => {
+    <div className="launcher-input k-input-row"><span className="k-logo">K</span>{scopeName && <button className="k-scope" onClick={() => { setScope(undefined); input.current?.focus() }} title="Widen to all sources">{scopeName}<span>›</span></button>}<input ref={input} autoFocus aria-label="Launcher search" placeholder={sourcePanel ? 'Reply to K… Ctrl+↵ continues in a tile' : props.firstRun ? 'Connect a model to get started' : scopeName ? `Search ${scopeName.toLowerCase()}…` : 'Open a site, or what’s open… Tab for files and more'} value={query} onChange={e => { setQuery(e.target.value); setIndex(0); setOpenError('') }} onKeyDown={e => {
       if (e.nativeEvent.isComposing) return
       if (sourcePanel) { panelKeys.current?.(e); return }
       if (panel) { if (e.key === 'Enter') { e.preventDefault(); enter.current?.() } return }
@@ -183,18 +183,19 @@ export function TileLauncher(props: LauncherProps) {
       if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey && scopes.length) {
         e.preventDefault(); e.stopPropagation()
         const byName = q.text && !add && scopes.find(s => s.name.toLowerCase().startsWith(q.text.toLowerCase()))
-        const at = scopes.findIndex(s => s.id === scope)
-        // Tab walks All → each source → Add source → All.
+        // Tab walks All (the web and what's open) → Files → each other source → Add source → All.
+        const cycle = scopes.filter(s => s.id !== 'web'), at = cycle.findIndex(s => s.id === scope)
         if (byName && !scope) { setScope(byName.id); setQuery('') }
         else if (/^add\s*$/i.test(query)) { setQuery(''); setScope(undefined) }
-        else if (at === scopes.length - 1) { setScope(undefined); setQuery('add ') }
-        else setScope(scopes[at + 1].id)
+        else if (!cycle.length || at === cycle.length - 1) { setScope(undefined); setQuery('add ') }
+        else setScope(cycle[at + 1].id)
         setIndex(0)
       }
       // Ctrl+Enter (or Cmd+Enter on a Mac): in a new workspace. Shift+Enter: move here.
       // Alt+Enter: ask K (the model) to find it in the connected services.
       if (e.key === 'Enter' && e.altKey) { e.preventDefault(); if (canAsk) void askAI(); return }
-      if (e.key === 'Enter') { e.preventDefault(); void execute(e.shiftKey ? 'move' : e.ctrlKey || e.metaKey ? 'new' : 'here') }
+      // ↵: its own space, or where it already is. ⌘↵ / Ctrl+↵ (Shift+↵ too): join the page you are on.
+      if (e.key === 'Enter') { e.preventDefault(); void execute(e.ctrlKey || e.metaKey || e.shiftKey ? 'move' : 'new') }
       if (e.key === 'Backspace' && !query && scope) { e.preventDefault(); setScope(undefined); setIndex(0) }
       if (e.key === 'z' && e.ctrlKey && !query) { e.preventDefault(); undo() }
     }} /><kbd>esc</kbd><IconButton label="Close launcher" onClick={close}><X size={15} /></IconButton></div>
@@ -208,7 +209,7 @@ export function TileLauncher(props: LauncherProps) {
     {openError && <div className="inline-error" role="alert">{openError}</div>}
     {!panel && !!asked.errors.length && <div className="inline-error">{asked.errors.slice(0, 2).join(' · ')}</div>}
     {panelOwner?.Panel && <panelOwner.Panel key={`${sourcePanel!.source}|${sourcePanel!.arg}`} state={stateOf(states, panelOwner)} env={env} arg={sourcePanel!.arg} input={query} setInput={setQuery} keys={panelKeys} close={close} />}
-    {!panel && !sourcePanel && <div className="tile-launcher-results" ref={list}>{expandedRow && <span className="k-head">Other actions · {expandedRow.title}</span>}{shown.map((row, i) => <KRow key={row.key} icon={row.icon} title={row.title} label={`${row.title} · ${row.source} · ${row.action}`} source={row.source} subtitle={row.subtitle} action={row.action} hint={i === chosen && !row.disabled ? '↵' : row.others?.length && !expandedRow ? '→' : ''} selected={i === chosen} disabled={opening || row.disabled} onClick={e => { setIndex(i); void execute(e.shiftKey ? 'move' : e.ctrlKey || e.metaKey ? 'new' : 'here', i) }} />)}
+    {!panel && !sourcePanel && <div className="tile-launcher-results" ref={list}>{expandedRow && <span className="k-head">Other actions · {expandedRow.title}</span>}{shown.map((row, i) => <KRow key={row.key} icon={row.icon} title={row.title} label={`${row.title} · ${row.source} · ${row.action}`} source={row.source} subtitle={row.subtitle} action={row.action} hint={i === chosen && !row.disabled ? '↵' : row.others?.length && !expandedRow ? '→' : ''} selected={i === chosen} disabled={opening || row.disabled} onClick={e => { setIndex(i); void execute(e.ctrlKey || e.metaKey || e.shiftKey ? 'move' : 'new', i) }} />)}
       {!shown.length && <div className="empty-list">{found.busy ? 'Searching… ↵ won’t create anything.' : 'Nothing matches. Try a title, folder, URL, or “add …” for a new source.'}</div>}
       {rows.some(r => r.waiting) && <span className="k-head"><Status waiting /> waiting on you</span>}
     </div>}

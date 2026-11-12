@@ -44,7 +44,7 @@ test('Ctrl+W is the tile prefix inside a terminal too, and Ctrl+W ; hands the sh
     // Ctrl+W 2 from inside the terminal sends it to workspace 2 (and you go with it), like i3's mod+Shift+2.
     const id = await terminal.getAttribute('data-tile-id')
     await page.keyboard.press('Control+w'); await page.keyboard.press('2')
-    await expect(page.locator('.workspace-button.selected kbd')).toContainText('2')
+    await expect(page.locator('main.workspace-content')).toHaveAttribute('data-workspace-slot', '2')
     await expect(page.locator(`[data-tile-id="${id}"].tile-focused`)).toBeVisible()
   } finally {
     await app.close()

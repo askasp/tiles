@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
+import { homedir } from 'node:os'
 import { mkdtemp, rm, mkdir, writeFile, symlink } from 'node:fs/promises'
 import { desktopReady, launchDesktop } from './launch'
 import { fixtureServer } from './fixture'
@@ -18,9 +19,15 @@ test('universal search separates Files/OpenCode and only explicit actions create
   try {
     await desktopReady(page, { opencode: true })
     let input = await search(page, 'open chatos')
-    const folderResult = page.locator('.launcher-result').filter({ hasText: 'Browse files' }).filter({ has: page.locator('strong', { hasText: /^chatos$/ }) })
+    // This repo's folder (a machine may hold other folders named chatos).
+    const folderResult = page.locator('.launcher-result').filter({ hasText: 'Browse files' }).filter({ hasText: process.cwd().replace(homedir(), '~') }).filter({ has: page.locator('strong', { hasText: /^chatos$/ }) })
     const projectResult = page.locator('.launcher-result').filter({ hasText: 'OpenCode project' }).filter({ hasText: 'Show sessions' }).filter({ has: page.locator('strong', { hasText: /^chatos$/ }) })
-    await expect(folderResult).toHaveCount(1); await expect(projectResult).toHaveCount(1)
+    // Files wait for Tab (K is the web first); the OpenCode project is offered.
+    await expect(projectResult).toHaveCount(1); await expect(folderResult).toHaveCount(0)
+    await input.press('Tab'); await expect(page.locator('.k-scope')).toContainText('Files')
+    await expect(folderResult).toHaveCount(1)
+    await input.fill(''); await input.press('Backspace'); await input.fill('open chatos')
+    await expect(projectResult).toHaveCount(1)
     await expect(page.locator('.launcher-result').filter({ hasText: 'Start session in' })).toHaveCount(0)
     await projectResult.click()
     const project = page.locator('[data-kind="project"]:visible')

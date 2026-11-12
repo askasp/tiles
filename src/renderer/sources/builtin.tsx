@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { BrowserState } from '../../shared/types'
-import { browserTile, fileTile, isLive, reconcileBrowser, terminalTile, type TileInput } from '../../shared/tiles'
+import { browserTile, fileTile, isLive, reconcileBrowser, terminalTile, tileTitle, type TileInput } from '../../shared/tiles'
 import { terminalIntent } from '../../shared/sources'
 import { normalizeURL, uid } from '../../shared/util'
 import { api, friendlyError } from '../data'
@@ -40,6 +40,12 @@ export const browserSource = source<{ states: Record<string, BrowserState> }>({
         rows.push({ key: 'url', icon: 'web', title: input.title, source: 'Web page', subtitle: input.url!, action: existing?.status === 'visible' ? 'Go to tile' : 'Open in Browser', first: true, run: (mode: Parameters<typeof env.open>[1]) => env.open(input, mode) })
       } catch { /* Not a usable URL; stays a search. */ }
     }
+    // K is the web first: a bare name opens that site. DuckDuckGo's “\” goes straight to its first result
+    // (github → github.com, nrk → nrk.no). Something already open that matches stays first: K is how you get back to it.
+    if (!q.scope && !q.prefix && siteName.test(q.text) && !appWords.has(q.text.toLowerCase()) && !terminalIntent(q.raw)) {
+      const open = env.desktop.tiles.some(t => q.rank(`${tileTitle(t)} ${t.title} ${t.url || ''} ${t.path || ''} ${t.directory || ''}`) > 0)
+      rows.push({ key: 'site', icon: 'web', title: q.text, source: 'Web site', subtitle: 'its site · the first web result', action: 'Open site', first: !open, run: (mode: Parameters<typeof env.open>[1]) => env.open(browserTile(`https://duckduckgo.com/?q=${encodeURIComponent(`\\${q.text}`)}`), mode) })
+    }
     if (q.text && !q.text.startsWith('/') && (!q.scope || q.scope === 'web')) {
       const text = q.text.slice(0, 500)
       rows.push({ key: 'web-search', icon: 'search', title: `Search the web for “${text}”`, source: 'Web search', subtitle: 'DuckDuckGo', action: 'Search', run: (mode: Parameters<typeof env.open>[1]) => env.open(browserTile(`https://duckduckgo.com/?q=${encodeURIComponent(text)}`), mode) })
@@ -54,6 +60,13 @@ export const browserSource = source<{ states: Record<string, BrowserState> }>({
   onShortcut: (action, _state, env) => { if (action !== 'new') return false; env.address(); return true },
   released: tile => { void api.browserClose(tile.id).catch(() => {}) },
 })
+
+/** One word that could name a site: “github”, “nrk”, “hacker-news”. Dotted names are URLs (above). */
+const siteName = /^[a-z0-9][a-z0-9-]{1,62}$/i
+/** Words that mean something in ChatOS itself, not a site. */
+const appWords = new Set(['files', 'folder', 'folders', 'chat', 'chats', 'k', 'opencode', 'projects', 'sessions', 'settings', 'model', 'add', 'web', 'browser', 'keys', 'help'])
+/** Files only when asked for (Tab → Files, “files …”, a terminal's folder, or a path): K is the web first. */
+const wantsFiles = (q: { scope?: string; text: string }) => q.scope === 'files' || q.scope === 'terminal' || pathLike(q.text)
 
 /** “~/git/ch” → the home-relative path. Paths are how people name folders. */
 export const expandPath = (text: string, home: string) => text === '~' ? home : text.startsWith('~/') && home ? `${home}${text.slice(1)}` : text
@@ -74,11 +87,12 @@ export const filesSource = source<null>({
   use: () => null,
   added: () => true,
   candidates(q, _state, env) {
+    if (!wantsFiles(q)) return []
     const known = [...new Set([...env.desktop.folders, ...env.desktop.tiles.filter(t => t.kind === 'folder').map(t => t.path!)])].filter(f => f && f !== '/')
     return known.map(directory => { const input = fileTile(directory, 'folder'); return { input, score: q.rank(`${input.title} ${directory}`) } })
   },
   search(q, _state, env) {
-    if (q.scope && !['files', 'terminal'].includes(q.scope)) return undefined
+    if (!wantsFiles(q)) return undefined
     if (pathLike(q.text)) return completePath(q.text, env.home).catch(() => [])
     if (q.text.length < 2 || urlLike(q.text) || q.text.includes('/')) return undefined
     return api.findPaths(q.text).then(paths => paths.map((p): Candidate => ({ input: fileTile(p.path, p.kind, p.name), score: p.kind === 'folder' ? Math.max(q.rank(p.name), 5) : Math.max(q.rank(p.name), 4) })))

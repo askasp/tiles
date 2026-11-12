@@ -27,8 +27,9 @@ test('Slack DM results open one locally named browser tile, reused from any work
     await expect.poll(dmPages).toBe(1)
     await page.keyboard.press('Control+Alt+2')
     await expect(page.locator('.resource-tile:visible')).toHaveCount(0)
-    await open('dm Carl', 'Control+Enter')
-    await expect(page.locator('.workspace-button.selected')).toContainText('1')
+    // ↵ goes to it wherever it is; it is never opened twice.
+    await open('dm Carl')
+    await expect(page.locator('main.workspace-content')).toHaveAttribute('data-workspace-slot', '1')
     await expect(page.locator('.resource-tile:visible')).toHaveCount(1)
     await open('dm Carl', 'Shift+Enter')
     await tileAction(page, page.locator('.resource-tile:visible'), 'Hide')

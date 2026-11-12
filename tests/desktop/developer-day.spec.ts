@@ -101,7 +101,8 @@ test('a developer day: Slack DMs, tagged Front mail with replies, 2 projects × 
     await page.keyboard.press('Control+Enter')
     await expect(page.locator(`[data-resource-key="folder:${work}/src"]`)).toBeVisible()
     await expect(inside).toHaveAttribute('data-resource-key', `folder:${work}`)
-    await page.keyboard.press('Control+Alt+.'); await page.keyboard.press('n'); await page.keyboard.press('t')
+    // A terminal joins this page from K with Ctrl+↵ (␣ n t would give it its own space).
+    input = await ask(page, 'new terminal', false); await input.press('Control+Enter')
     await expect(page.locator('[data-kind="terminal"]:visible .xterm')).toBeVisible()
     const focusedID = () => page.locator('.resource-tile.tile-focused').getAttribute('data-tile-id')
     await page.locator(`[data-tile-id="${folderTile}"] .files-toolbar strong`).click()
@@ -118,7 +119,7 @@ test('a developer day: Slack DMs, tagged Front mail with replies, 2 projects × 
       for (const person of ['Anna', 'Bob', 'Carl']) {
         input = await ask(page, `dm ${person.toLowerCase()}`, false)
         await expect(page.locator('.launcher-result').first()).toContainText(`DM ${person}`)
-        await input.press(pass % 2 ? 'Control+Enter' : 'Enter')
+        await input.press(pass % 2 ? 'Enter' : 'Control+Enter')
       }
       for (let n = 0; n < 6; n++) {
         input = await ask(page, `${fixture.url}/preview/doc-${pass}-${n}`, false)
@@ -142,9 +143,9 @@ test('a developer day: Slack DMs, tagged Front mail with replies, 2 projects × 
       await page.locator('[data-kind="terminal"].tile-focused .terminal-host').click()
       await page.keyboard.press('Control+Alt+.'); await page.keyboard.press('w'); await page.keyboard.press('q')
       await expect(page.locator('.stage-tab, .browser-tabs')).toHaveCount(0)
-      for (const w of await page.locator('.workspace-button').all()) expect(Number((await w.locator('small').textContent())?.replace(/\D/g, '') || 0)).toBeLessThanOrEqual(4)
+      for (const w of await page.evaluate(() => JSON.parse(window.chatos.loadDesktop() || '{}').workspaces || []) as { tileIDs: string[] }[]) expect(w.tileIDs.length).toBeLessThanOrEqual(4)
       await page.waitForTimeout(300)
-      sizes.push({ pass, tiles: await page.evaluate(() => JSON.parse(window.chatos.loadDesktop() || '{}').tiles?.length || 0), mounted: await page.locator('.resource-tile').count(), browsers: await page.locator('.resource-tile[data-kind="browser"]').count(), pages: await livePages(app), workspaces: await page.locator('.workspace-button').count(), terminals: await page.locator('.resource-tile[data-kind="terminal"]').count() })
+      sizes.push({ pass, tiles: await page.evaluate(() => JSON.parse(window.chatos.loadDesktop() || '{}').tiles?.length || 0), mounted: await page.locator('.resource-tile').count(), browsers: await page.locator('.resource-tile[data-kind="browser"]').count(), pages: await livePages(app), workspaces: Number(await page.locator('main.workspace-content').getAttribute('data-workspaces')), terminals: await page.locator('.resource-tile[data-kind="terminal"]').count() })
     }
     console.log('DAY sizes', JSON.stringify(sizes))
     console.log('DAY kinds', JSON.stringify(await page.locator('.resource-tile').evaluateAll(els => els.reduce<Record<string, number>>((m, e) => { const k = `${(e as HTMLElement).dataset.kind}`; m[k] = (m[k] || 0) + 1; return m }, {}))))

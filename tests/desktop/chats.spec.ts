@@ -61,7 +61,8 @@ test('G: a quick ask outgrows K, continues in a Chat tile, makes a document besi
 
     // G4: chats as a list, quick asks in their own group, artifacts with each chat.
     await ask(page, 'chats', false)
-    await page.locator('.launcher-result').filter({ hasText: 'Browse chats' }).first().click()
+    // Ctrl+click joins this page (a plain click gives the list its own space).
+    await page.locator('.launcher-result').filter({ hasText: 'Browse chats' }).first().click({ modifiers: ['Control'] })
     const list = page.locator('[data-kind="chats"]:visible')
     await expect(list.locator('section[aria-label="Quick"]')).toContainText('rate limit')
     await expect(list.locator('section[aria-label="Today"]')).toContainText('1 artifact, v2')

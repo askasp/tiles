@@ -176,7 +176,7 @@ export function keyHelp(system: string): KeyGroup[] {
     ] },
     { title: 'In K', rows: [
       { keys: '↑↓ · Ctrl+J K · Ctrl+N P', label: 'Choose a result' },
-      { keys: '↵ · Ctrl+↵ · Shift+↵', label: 'Open here · in a new workspace · move here' },
+      { keys: `↵ · ${mac ? '⌘↵' : 'Ctrl+↵'}`, label: 'Open in its own space (or go to it) · join it to this page' },
       { keys: '→ · ←', label: 'Other actions on a result · back' },
       { keys: 'Tab · ⌫', label: 'Narrow to a source · widen again' },
       { keys: 'Alt+↵', label: 'Ask K to find it with the model' },

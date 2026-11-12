@@ -22,7 +22,8 @@ test('Focus: a new tile takes keyboard focus, and j/k follow the focused tile', 
     await expect.poll(() => holdsKeys(page, a)).toBe(true)
 
     // A new tile is focused for the keyboard too, not only drawn as focused.
-    await ask(page, `files ${b}`, false).then(input => input.press('Enter'))
+    // Ctrl+↵ in K joins it to this page.
+    await ask(page, `files ${b}`, false).then(input => input.press('Control+Enter'))
     await expect(folderTile(page, b)).toHaveClass(/tile-focused/)
     await expect.poll(() => holdsKeys(page, b)).toBe(true)
     await page.keyboard.press('j')
@@ -85,7 +86,7 @@ test('Focus: a new tile takes keyboard focus, and j/k follow the focused tile', 
     await expect(page.getByRole('dialog', { name: 'Actions · Tiles (same as Ctrl+W)' })).toBeVisible()
     await page.keyboard.press('2')
     await expect(page.getByRole('dialog')).toHaveCount(0)
-    await expect(page.locator('.workspace-button.selected')).toContainText('2')
+    await expect(page.locator('main.workspace-content')).toHaveAttribute('data-workspace-slot', '2')
     expect(keyErrors).toEqual([])
   } finally {
     await app.close()

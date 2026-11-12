@@ -21,6 +21,20 @@ function valid(s: TileDesktop) {
 }
 
 describe('V3 unique global resource ownership', () => {
+  it('gives each thing its own space; past nine, the space used longest ago is put away and K brings it back', () => {
+    let s = desktopInitial()
+    for (let n = 1; n <= 10; n++) s = openTile(s, sessionTile(session(n)), 'new')
+    expect(s.workspaces).toHaveLength(9)
+    expect(s.workspaces.every(w => w.tileIDs.length === 1)).toBe(true)
+    expect(s.tiles.find(t => t.id === 'session-1')?.status).toBe('hidden')
+    expect(focusedTile(s)?.id).toBe('session-10')
+    valid(s)
+    // Back from K: its own space again, and now the next oldest goes.
+    s = openTile(s, sessionTile(session(1)), 'new')
+    expect(focusedTile(s)?.id).toBe('session-1')
+    expect(s.tiles.find(t => t.id === 'session-2')?.status).toBe('hidden')
+    expect(s.workspaces).toHaveLength(9); valid(s)
+  })
   it('opens a session here and jumps to its existing workspace even for new-mode', () => {
     let s = openTile(desktopInitial(), sessionTile(session(1)))
     const owner = s.activeID

@@ -1,7 +1,4 @@
 .tile-app .workspace-bar { gap: 8px; }
-.tile-app .workspace-strip { gap: 6px; }
-.tile-app .workspace-select { padding: 0 10px; gap: 8px; min-width: 65px; }
-.tile-app .workspace-select small { font: 10px var(--mono); color: var(--muted); }
 .tile-launcher-button { background: var(--surface); gap: 10px; }
 .attention-button { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; white-space: nowrap; padding: 6px; }
 .tile-grid { height: 100%; display: grid; gap: 6px; grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr); }

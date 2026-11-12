@@ -105,9 +105,9 @@ export default function App() {
   const go = useCallback((slot: number) => { update(s => goWorkspace(s, slot)); setFocusKey(k => k + 1) }, [update])
   const move = useCallback((id: string, slot: number) => { update(s => moveTile(s, id, slot)); setFocusKey(k => k + 1) }, [update])
   const ask = useCallback((query?: string, source?: SourceID) => { setLauncher({ query, source }); setOverlay('launcher') }, [])
-  const openURL = useCallback((url: string, parent?: string) => { try { open(browserTile(url, parent)) } catch (e) { reportError(friendlyError(e)) } }, [open, reportError])
-  /** A5: a terminal opens in the folder of the focused tile, or home. */
-  const openTerminal = useCallback((directory?: string, mode: OpenMode = 'here', command?: string) => {
+  const openURL = useCallback((url: string, parent?: string) => { try { open(browserTile(url, parent), parent ? 'here' : 'new') } catch (e) { reportError(friendlyError(e)) } }, [open, reportError])
+  /** A5: a terminal opens in the folder of the focused tile, or home, in its own space (⌘↵ in K joins it to this page). */
+  const openTerminal = useCallback((directory?: string, mode: OpenMode = 'new', command?: string) => {
     const tile = focusedTile(ref.current)
     const folder = directory || (tile?.kind === 'file' ? tile.path!.replace(/\/[^/]*$/, '') || '/' : tile?.directory) || home
     if (!folder) { reportError('Choose a folder first.'); return }
@@ -343,8 +343,6 @@ export default function App() {
   ]
   return <div className={`app tile-app ${machine.platform === 'darwin' ? 'mac' : ''}`} ref={root} data-model-state={!model ? 'loading' : firstRun ? 'setup' : model.ready ? 'ready' : 'skipped'}>
     <header className="workspace-bar" onMouseDown={e => { if ((e.target as HTMLElement).closest('button')) e.preventDefault() }}>
-      <div className="workspace-strip">{desktop.workspaces.length ? desktop.workspaces.map(workspace => <button className={`workspace-button workspace-select ${workspace.id === desktop.activeID ? 'selected' : ''}`} key={workspace.id} onClick={() => go(workspace.slot)} title={`Workspace ${workspace.slot} · ${workspace.title}`}><kbd>{workspaceKey(workspace.slot)}</kbd><span className="truncate">{workspace.title}</span><small>{workspace.tileIDs.length ? `· ${workspace.tileIDs.length}` : ''}</small>{workspace.tileIDs.some(id => { const t = desktop.tiles.find(t => t.id === id); return t && tileStatus(t)?.waiting }) && <Status waiting />}</button>)
-        : <button className="workspace-button workspace-select selected" onClick={() => ask()} title="Nothing open yet"><kbd>{workspaceKey(1)}</kbd><span>empty</span></button>}</div>
       <div className="bar-right">
         <button className="tile-launcher-button" aria-label="Launcher" onClick={() => ask()}>Ask or open…<kbd>{system}+K</kbd></button>
         {sourceStatus.map(s => <button key={s.key} className="source-status" aria-label={s.label} title={`${s.label}${s.ok ? '' : ' · needs attention'}`} onClick={() => setOverlay('settings')}><span className={`status-dot ${s.ok ? 'green' : 'amber'}`} />{s.name}</button>)}
@@ -354,7 +352,8 @@ export default function App() {
       </div>
     </header>
     {storageError && <div className="connection-banner" role="alert">Local storage failed: {storageError}. Your previous save is kept; new changes may not survive a restart.</div>}
-    <main className="workspace-content">
+    {/* Workspaces have no tabs: each thing has its own space and K is how you get to it. The active one is still named here for tests and tools. */}
+    <main className="workspace-content" data-workspace-slot={activeWorkspace(desktop)?.slot ?? 0} data-workspace-title={activeWorkspace(desktop)?.title || ''} data-workspaces={desktop.workspaces.length}>
       {!visible.length && <section className="empty-desktop" aria-label="Empty desktop" data-desktop-ready>
         {!firstRun && <div className="empty-hint"><button className="tile-launcher-button large" onClick={() => ask()}>Ask or open…<kbd>{system}+K</kbd></button>
           <p>Open a page, a folder or a terminal. {model?.ready ? 'Or “add …” any service with an API.' : 'Connect a model to add services by asking.'}</p>
