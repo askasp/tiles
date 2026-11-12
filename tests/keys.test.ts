@@ -36,6 +36,9 @@ describe('key sheet', () => {
     expect(shortcutFor({ ...press('@', { control: true, alt: true, shift: true }), code: 'Digit2' })).toBe('move-workspace:2')
     expect(shortcutFor(press('0', { meta: true, shift: true }))).toBeUndefined()
     expect(shortcutFor(press('2', { meta: true }))).toBe('workspace:2')
+    // ⌘⌃digit too: unlike ⌘⇧3/4/5, macOS takes none of them.
+    for (const n of ['1', '3', '4', '5', '9']) expect(shortcutFor(press(n, { meta: true, control: true }))).toBe(`move-workspace:${n}`)
+    expect(shortcutFor(press('0', { meta: true, control: true }))).toBeUndefined()
   })
   it('opens the action menu and the key sheet from anywhere', () => {
     expect(shortcutFor(press('.', { meta: true }))).toBe('actions')

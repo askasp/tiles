@@ -9,8 +9,8 @@ import type { Input } from 'electron'
 // - Accelerators for the top few only: ⌘K, ⌘1–9, ⌘, (Ctrl+Alt instead of ⌘ on Linux, where
 //   Super belongs to the window manager).
 // - Workspaces like i3 (whose default mod is Alt): Alt+1–9 goes there, Alt+Shift+1–9 sends the
-//   focused tile there. Not on a Mac, where Option+digit types characters: ⌘1–9 goes, ⌘⇧1–9 sends
-//   (⌘⇧3/4/5 stay macOS screenshots, so Ctrl+W 3/4/5 there).
+//   focused tile there. Not on a Mac, where Option+digit types characters: ⌘1–9 goes, ⌘⌃1–9 sends
+//   (⌘⇧1–9 too, but ⌘⇧3/4/5 stay macOS screenshots).
 // Never bound, because the OS takes them: ⌘/Super+Tab and +Space, ⌘H (hide), Super+L (lock),
 // Super+arrows (window snapping), ⌘⇧3/4/5 (screenshots), ⌘F/⌘−/⌘= (find, zoom),
 // Ctrl+Alt+T and Ctrl+Alt+arrows (Ubuntu terminal, workspace switching).
@@ -22,8 +22,10 @@ export function shortcutFor(input: Input): string | undefined {
   const digit = input.code?.match(/^Digit([0-9])$/)?.[1]
   if (digit && input.alt && !input.control && !input.meta && !mac) return input.shift ? digit === '0' ? undefined : `move-workspace:${digit}` : `workspace:${digit}`
   const system = input.meta || (input.control && input.alt)
-  // ⌘⇧1–9 (Ctrl+Alt+Shift on Linux) sends the tile, as ⌘1–9 goes. macOS keeps ⌘⇧3/4/5 for screenshots.
+  // ⌘⇧1–9 (Ctrl+Alt+Shift on Linux) sends the tile, as ⌘1–9 goes. macOS keeps ⌘⇧3/4/5 for screenshots,
+  // so ⌘⌃1–9 sends it too: nothing on a Mac uses those, so all nine work.
   if (digit && system && input.shift) return digit === '0' ? undefined : `move-workspace:${digit}`
+  if (digit && input.meta && input.control && !input.alt) return digit === '0' ? undefined : `move-workspace:${digit}`
   if (system && !input.shift) {
     if (/^[0-9]$/.test(key)) return `workspace:${key}`
     if (key === 'k') return 'launcher'
@@ -160,7 +162,7 @@ export function keyHelp(system: string): KeyGroup[] {
     { title: `Accelerators · ${mac ? '⌘' : 'Super, or Ctrl+Alt'}`, rows: [
       { keys: `${S}+K · Ctrl+K`, label: 'K: search, open, ask, or add a source', actions: ['launcher'] },
       { keys: mac ? '⌘1–9 · ⌘0' : 'Alt+1–9 · Alt+0 · Ctrl+Alt+1–9', label: 'Workspace by number · home (i3)', actions: ['workspace'] },
-      { keys: mac ? '⌘⇧1–9' : 'Alt+Shift+1–9 · Ctrl+Alt+Shift+1–9', label: mac ? 'Send the focused tile to that workspace (⌘⇧3/4/5 are screenshots: Ctrl+W 3)' : 'Send the focused tile to that workspace (i3)', actions: ['move-workspace'] },
+      { keys: mac ? '⌘⌃1–9 · ⌘⇧1–9' : 'Alt+Shift+1–9 · Ctrl+Alt+Shift+1–9', label: mac ? 'Send the focused tile to that workspace (⌘⇧3/4/5 are screenshots)' : 'Send the focused tile to that workspace (i3)', actions: ['move-workspace'] },
       { keys: `${S}+,`, label: 'Settings', actions: ['settings'] },
       { keys: `${S}+. · ${S}+/`, label: 'Leader · every key', actions: ['actions', 'keys'] },
       { keys: 'Ctrl+L · Alt+D · F6', label: 'Address: the page’s address bar, or open a URL', actions: ['address'] },
