@@ -14,7 +14,7 @@ export function TerminalBody({ tile, visible, focused, focusKey, consumeDraft }:
   const host = useRef<HTMLDivElement>(null)
   const term = useRef<Terminal>(undefined)
   const fit = useRef<FitAddon>(undefined)
-  const [state, setState] = useState<{ alive: boolean; error?: string; shell?: string }>({ alive: true })
+  const [state, setState] = useState<{ alive: boolean; error?: string }>({ alive: true })
   const [generation, setGeneration] = useState(0)
   useEffect(() => {
     if (!host.current) return
@@ -47,7 +47,7 @@ export function TerminalBody({ tile, visible, focused, focusKey, consumeDraft }:
     const resize = terminal.onResize(({ cols, rows }) => { void api.terminalResize(tile.id, cols, rows).catch(() => {}) })
     void api.terminalOpen({ id: tile.id, cwd: tile.directory || '', cols: terminal.cols, rows: terminal.rows }).then(result => {
       if (result.replay) terminal.write(result.replay)
-      setState({ alive: true, shell: result.shell.split('/').pop() })
+      setState({ alive: true })
       // A suggested command is typed, never run: the person presses Enter.
       if (tile.draft && !result.replay) { const command = tile.draft; consumeDraft(); setTimeout(() => { void api.terminalInput(tile.id, command).catch(() => {}) }, 600) }
     }).catch(e => { alive = false; setState({ alive: false, error: friendlyError(e) }) })
@@ -65,6 +65,5 @@ export function TerminalBody({ tile, visible, focused, focusKey, consumeDraft }:
   return <div className="terminal-body">
     {state.error && <div className="inline-error" role="alert">{state.error}<span className="muted">{systemKey}+. t r restarts the shell</span></div>}
     <div className="terminal-host" ref={host} data-terminal-id={tile.id} />
-    <footer className="files-footer">{tile.directory}{state.shell && ` · ${state.shell}`}{!state.alive && !state.error && ' · ended'} · Closing the tile ends the shell; shelving keeps it running</footer>
   </div>
 }

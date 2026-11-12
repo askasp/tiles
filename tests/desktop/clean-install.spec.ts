@@ -87,7 +87,7 @@ test('clean install: model first, built-ins without any server, OpenCode only on
     await input.press('Enter')
     const terminal = page.locator('[data-kind="terminal"]:visible')
     await expect(terminal.locator('.xterm')).toBeVisible()
-    await expect(terminal.locator('.files-footer')).toContainText(`${home}/code/clean-slate-folder/assets`)
+    await expect(terminal.locator('.tile-source')).toHaveAttribute('title', `${home}/code/clean-slate-folder/assets`)
     await terminal.locator('.terminal-host').click()
     await page.keyboard.type('echo "pwd=$(pwd)"\n')
     await expect(terminal.locator('.xterm-rows')).toContainText(`pwd=${home}/code/clean-slate-folder/assets`)
@@ -98,7 +98,7 @@ test('clean install: model first, built-ins without any server, OpenCode only on
     // Leader n n in a terminal (⌘. works there): another terminal in the same folder (not OpenCode).
     await page.keyboard.press('Control+Alt+.'); await page.keyboard.press('n'); await page.keyboard.press('n')
     await expect(page.locator('[data-kind="terminal"]:visible')).toHaveCount(2)
-    await expect(page.locator('[data-kind="terminal"].tile-focused .files-footer')).toContainText(`${home}/code/clean-slate-folder/assets`)
+    await expect(page.locator('[data-kind="terminal"].tile-focused .tile-source')).toHaveAttribute('title', `${home}/code/clean-slate-folder/assets`)
     // ␣ w q only hides: the shell keeps running. ␣ w = brings it back; ␣ w Q ends it.
     await page.keyboard.press('Control+Alt+.'); await page.keyboard.press('w'); await page.keyboard.press('q')
     await expect(page.locator('[data-kind="terminal"]:visible')).toHaveCount(1)

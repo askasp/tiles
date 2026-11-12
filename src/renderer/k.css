@@ -117,10 +117,17 @@
 
 /* Terminal tile */
 .terminal-body { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--terminal); }
-.terminal-host { flex: 1; min-height: 0; padding: 10px 6px 4px 12px; }
+.terminal-host { flex: 1; min-height: 0; padding: 2px 4px 2px 8px; }
 .terminal-host .xterm, .terminal-host .xterm-viewport { height: 100%; }
 .terminal-host .xterm-viewport { background: var(--terminal) !important; }
-.terminal-body .files-footer { background: var(--surface); }
+/* A terminal is almost all terminal: one thin dark line for its title and folder, no footer,
+ * a hairline frame that still turns blue on focus. */
+.resource-tile[data-kind="terminal"] { border-radius: 6px; background: var(--terminal); }
+.resource-tile[data-kind="terminal"] .tile-header { height: 22px; min-height: 22px; padding: 0 8px; gap: 6px; border-bottom: 0; background: var(--terminal); color: color-mix(in srgb, var(--terminal-ink) 50%, var(--terminal)); font-size: 10.5px; }
+.resource-tile[data-kind="terminal"] .tile-header :is(.k-icon, .tile-type, .tile-menu-button) { display: none; }
+.resource-tile[data-kind="terminal"] .tile-title { flex: 0 1 auto; color: inherit; font-size: 10.5px; }
+.resource-tile[data-kind="terminal"] .tile-source { flex: 1; max-width: none; color: inherit; font-size: 10.5px; }
+.resource-tile[data-kind="terminal"].tile-focused .tile-title { color: var(--terminal-ink); }
 
 /* Image preview in Files */
 .image-preview { flex: 1; min-height: 0; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 16px; background: repeating-conic-gradient(var(--canvas) 0 25%, var(--surface) 0 50%) 0 0 / 16px 16px; }
